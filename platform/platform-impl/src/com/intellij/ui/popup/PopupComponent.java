@@ -23,6 +23,7 @@ import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.util.ReflectionUtil;
 import com.intellij.util.ui.UIUtil;
+import com.intellij.util.ui.accessibility.ScreenReader;
 import com.sun.awt.AWTUtilities;
 
 import javax.accessibility.AccessibleContext;
@@ -134,7 +135,7 @@ public interface PopupComponent {
         @Override
         public void windowClosed(WindowEvent e) {
           super.windowClosed(e);
-          A11YFix.invokeFocusGained(myDialog);
+          //A11YFix.invokeFocusGained(myDialog);
         }
       });
     }
@@ -250,13 +251,10 @@ class A11YFix {
   private static Field fAccessBridge;
   private static Method mFocusGained;
   private static boolean initialized;
-
-  public static boolean isEnabled() {
-    return SystemInfo.isWindows && false; /*TODO: pending a11y check here*/
-  }
+  private static final boolean ENABLED = SystemInfo.isWindows && ScreenReader.isEnabled(ScreenReader.ACCESS_BRIDGE);
 
   public static void invokeFocusGained(Window closingWindow) {
-    if (!isEnabled()) return;
+    if (!ENABLED || !ScreenReader.isActive()) return;
 
     IdeFocusManager manager = IdeFocusManager.findInstanceByComponent(closingWindow);
     if (manager != null) {

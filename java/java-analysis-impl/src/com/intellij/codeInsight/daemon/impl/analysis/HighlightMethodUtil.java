@@ -461,9 +461,11 @@ public class HighlightMethodUtil {
         //ensure type params are not included
         methodCallTypeByArgs = JavaPsiFacade.getElementFactory(method.getProject())
           .createRawSubstitutor(method).substitute(methodCallTypeByArgs);
-        QuickFixAction.registerQuickFixAction(highlightInfo, 
-                                              getFixRange(methodCall),
-                                              QUICK_FIX_FACTORY.createMethodReturnFix(containerMethod, methodCallTypeByArgs, true));
+        if (methodCallTypeByArgs != null) {
+          QuickFixAction.registerQuickFixAction(highlightInfo, 
+                                                getFixRange(methodCall),
+                                                QUICK_FIX_FACTORY.createMethodReturnFix(containerMethod, methodCallTypeByArgs, true));
+        }
       }
     }
   }
@@ -479,6 +481,15 @@ public class HighlightMethodUtil {
       int idx = -1;
       for (int i = 0; i < expressions.length; i++) {
         PsiExpression expression = expressions[i];
+        if (expression instanceof PsiMethodCallExpression) {
+          final JavaResolveResult result = ((PsiCallExpression)expression).resolveMethodGenerics();
+          if (result instanceof MethodCandidateInfo &&
+              PsiUtil.isLanguageLevel8OrHigher(list) &&
+              ((MethodCandidateInfo)result).isToInferApplicability() &&
+              ((MethodCandidateInfo)result).getInferenceErrorMessage() == null) {
+            continue;
+          }
+        }
         if (!TypeConversionUtil.areTypesAssignmentCompatible(substitutor.substitute(parameters[i].getType()), expression)) {
           if (idx != -1) {
             idx = -1;
@@ -596,6 +607,7 @@ public class HighlightMethodUtil {
     CastMethodArgumentFix.REGISTRAR.registerCastActions(candidates, methodCall, info, fixRange);
     WrapArrayToArraysAsListFix.REGISTAR.registerCastActions(candidates, methodCall, info, fixRange);
     WrapLongWithMathToIntExactFix.REGISTAR.registerCastActions(candidates, methodCall, info, fixRange);
+    WrapObjectWithOptionalOfNullableFix.REGISTAR.registerCastActions(candidates, methodCall, info, fixRange);
     PermuteArgumentsFix.registerFix(info, methodCall, candidates, fixRange);
     WrapExpressionFix.registerWrapAction(candidates, list.getExpressions(), info);
     registerChangeParameterClassFix(methodCall, list, info);
@@ -683,6 +695,7 @@ public class HighlightMethodUtil {
     CastMethodArgumentFix.REGISTRAR.registerCastActions(candidates, methodCall, info, fixRange);
     WrapArrayToArraysAsListFix.REGISTAR.registerCastActions(candidates, methodCall, info, fixRange);
     WrapLongWithMathToIntExactFix.REGISTAR.registerCastActions(candidates, methodCall, info, fixRange);
+    WrapObjectWithOptionalOfNullableFix.REGISTAR.registerCastActions(candidates, methodCall, info, fixRange);
     PermuteArgumentsFix.registerFix(info, methodCall, candidates, fixRange);
     WrapExpressionFix.registerWrapAction(candidates, list.getExpressions(), info);
     registerChangeParameterClassFix(methodCall, list, info);
@@ -718,6 +731,7 @@ public class HighlightMethodUtil {
     AddTypeArgumentsFix.REGISTRAR.registerCastActions(methodCandidates, methodCall, highlightInfo, fixRange);
     WrapArrayToArraysAsListFix.REGISTAR.registerCastActions(methodCandidates, methodCall, highlightInfo, fixRange);
     WrapLongWithMathToIntExactFix.REGISTAR.registerCastActions(methodCandidates, methodCall, highlightInfo, fixRange);
+    WrapObjectWithOptionalOfNullableFix.REGISTAR.registerCastActions(methodCandidates, methodCall, highlightInfo, fixRange);
     registerMethodAccessLevelIntentions(methodCandidates, methodCall, list, highlightInfo);
     registerChangeMethodSignatureFromUsageIntentions(methodCandidates, list, highlightInfo, fixRange);
     RemoveRedundantArgumentsFix.registerIntentions(methodCandidates, list, highlightInfo, fixRange);

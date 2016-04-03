@@ -1,30 +1,24 @@
 package com.intellij.vcs.log.ui.tables;
 
-import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.EmptyRunnable;
-import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.NotNullFunction;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.text.DateFormatUtil;
 import com.intellij.vcs.log.*;
 import com.intellij.vcs.log.data.CommitIdByStringCondition;
-import com.intellij.vcs.log.Hash;
-import com.intellij.vcs.log.VcsFullCommitDetails;
-import com.intellij.vcs.log.VcsRef;
-import com.intellij.vcs.log.VcsShortCommitDetails;
+import com.intellij.vcs.log.data.DataGetter;
 import com.intellij.vcs.log.data.VcsLogDataManager;
 import com.intellij.vcs.log.data.VisiblePack;
-import com.intellij.vcs.log.data.*;
 import com.intellij.vcs.log.impl.VcsLogUtil;
 import com.intellij.vcs.log.ui.VcsLogUiImpl;
 import com.intellij.vcs.log.ui.render.GraphCommitCell;
+import com.intellij.vcs.log.util.VcsUserUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.table.AbstractTableModel;
-import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 
@@ -63,22 +57,11 @@ public class GraphTableModel extends AbstractTableModel {
   }
 
   @NotNull
-  protected GraphCommitCell getCommitColumnCell(int rowIndex, @Nullable VcsShortCommitDetails details) {
-    String message = "";
-    List<VcsRef> refs = Collections.emptyList();
-    if (details != null) {
-      message = details.getSubject();
-      refs = (List<VcsRef>)myDataPack.getRefs().refsToCommit(details.getId(), details.getRoot());
-    }
-    return new GraphCommitCell(message, refs);
-  }
-
-  @NotNull
   public Integer getIdAtRow(int row) {
     return myDataPack.getVisibleGraph().getRowInfo(row).getCommit();
   }
 
-  @NotNull
+  @Nullable
   public CommitId getCommitIdAtRow(int row) {
     return myLogDataManager.getCommitId(getIdAtRow(row));
   }
@@ -132,11 +115,10 @@ public class GraphTableModel extends AbstractTableModel {
       case ROOT_COLUMN:
         return getRoot(rowIndex);
       case COMMIT_COLUMN:
-        return getCommitColumnCell(rowIndex, data);
+        return new GraphCommitCell(data.getSubject(), myDataPack.getRefs().refsToCommit(data.getId(), data.getRoot()));
       case AUTHOR_COLUMN:
-        String authorString = data.getAuthor().getName();
-        if (authorString.isEmpty()) authorString = data.getAuthor().getEmail();
-        return authorString + (data.getAuthor().equals(data.getCommitter()) ? "" : "*");
+        String authorString = VcsUserUtil.getShortPresentation(data.getAuthor());
+        return authorString + (VcsUserUtil.isSamePerson(data.getAuthor(), data.getCommitter()) ? "" : "*");
       case DATE_COLUMN:
         if (data.getAuthorTime() < 0) {
           return "";
@@ -183,6 +165,7 @@ public class GraphTableModel extends AbstractTableModel {
     fireTableDataChanged();
   }
 
+  @NotNull
   public VisiblePack getVisiblePack() {
     return myDataPack;
   }
@@ -198,11 +181,12 @@ public class GraphTableModel extends AbstractTableModel {
   }
 
   @NotNull
-  private <T extends VcsShortCommitDetails> T getDetails(int row, DataGetter<T> dataGetter) {
+  private <T extends VcsShortCommitDetails> T getDetails(int row, @NotNull DataGetter<T> dataGetter) {
     Iterable<Integer> iterable = createRowsIterable(row, UP_PRELOAD_COUNT, DOWN_PRELOAD_COUNT, getRowCount());
     return dataGetter.getCommitData(getIdAtRow(row), iterable);
   }
 
+  @NotNull
   private Iterable<Integer> createRowsIterable(final int row, final int above, final int below, final int maxRows) {
     return new Iterable<Integer>() {
       @NotNull

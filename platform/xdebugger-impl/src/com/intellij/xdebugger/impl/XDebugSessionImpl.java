@@ -43,7 +43,6 @@ import com.intellij.openapi.ui.MessageType;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.Disposer;
-import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.ToolWindowId;
 import com.intellij.ui.AppUIUtil;
@@ -87,8 +86,8 @@ public class XDebugSessionImpl implements XDebugSession {
                                                                                                false);
   private XDebugProcess myDebugProcess;
   private final Map<XBreakpoint<?>, CustomizedBreakpointPresentation> myRegisteredBreakpoints =
-    new THashMap<XBreakpoint<?>, CustomizedBreakpointPresentation>();
-  private final Set<XBreakpoint<?>> myInactiveSlaveBreakpoints = Collections.synchronizedSet(new SmartHashSet<XBreakpoint<?>>());
+    new THashMap<>();
+  private final Set<XBreakpoint<?>> myInactiveSlaveBreakpoints = Collections.synchronizedSet(new SmartHashSet<>());
   private boolean myBreakpointsDisabled;
   private final XDebuggerManagerImpl myDebuggerManager;
   private MyBreakpointListener myBreakpointListener;
@@ -110,9 +109,9 @@ public class XDebugSessionImpl implements XDebugSession {
   private final AtomicBoolean myStopped = new AtomicBoolean();
   private boolean myPauseActionSupported;
   private final AtomicBoolean myShowTabOnSuspend;
-  private final List<AnAction> myRestartActions = new SmartList<AnAction>();
-  private final List<AnAction> myExtraStopActions = new SmartList<AnAction>();
-  private final List<AnAction> myExtraActions = new SmartList<AnAction>();
+  private final List<AnAction> myRestartActions = new SmartList<>();
+  private final List<AnAction> myExtraStopActions = new SmartList<>();
+  private final List<AnAction> myExtraActions = new SmartList<>();
   private ConsoleView myConsoleView;
   private final Icon myIcon;
 
@@ -347,7 +346,7 @@ public class XDebugSessionImpl implements XDebugSession {
       return;
     }
 
-    Set<XBreakpointType<?, ?>> breakpointTypes = new THashSet<XBreakpointType<?, ?>>();
+    Set<XBreakpointType<?, ?>> breakpointTypes = new THashSet<>();
     for (XBreakpointHandler<?> handler : myDebugProcess.getBreakpointHandlers()) {
       breakpointTypes.add(getBreakpointTypeClass(handler));
     }
@@ -476,24 +475,21 @@ public class XDebugSessionImpl implements XDebugSession {
     if (ignoreBreakpoints) {
       disableBreakpoints();
     }
-    doResume();
-    myDebugProcess.startStepOver();
+    myDebugProcess.startStepOver(doResume());
   }
 
   @Override
   public void stepInto() {
     if (!myDebugProcess.checkCanPerformCommands()) return;
 
-    doResume();
-    myDebugProcess.startStepInto();
+    myDebugProcess.startStepInto(doResume());
   }
 
   @Override
   public void stepOut() {
     if (!myDebugProcess.checkCanPerformCommands()) return;
 
-    doResume();
-    myDebugProcess.startStepOut();
+    myDebugProcess.startStepOut(doResume());
   }
 
   @Override
@@ -508,8 +504,7 @@ public class XDebugSessionImpl implements XDebugSession {
   public void forceStepInto() {
     if (!myDebugProcess.checkCanPerformCommands()) return;
 
-    doResume();
-    myDebugProcess.startForceStepInto();
+    myDebugProcess.startForceStepInto(doResume());
   }
 
   @Override
@@ -519,8 +514,7 @@ public class XDebugSessionImpl implements XDebugSession {
     if (ignoreBreakpoints) {
       disableBreakpoints();
     }
-    doResume();
-    myDebugProcess.runToPosition(position);
+    myDebugProcess.runToPosition(position, doResume());
   }
 
   @Override
@@ -545,14 +539,17 @@ public class XDebugSessionImpl implements XDebugSession {
   public void resume() {
     if (!myDebugProcess.checkCanPerformCommands()) return;
 
-    doResume();
-    myDebugProcess.resume();
+    myDebugProcess.resume(doResume());
   }
 
-  public void doResume() {
-    if (!myPaused.getAndSet(false)) return;
+  @Nullable
+  private XSuspendContext doResume() {
+    if (!myPaused.getAndSet(false)) {
+      return null;
+    }
 
     myDispatcher.getMulticaster().beforeSessionResume();
+    XSuspendContext context = mySuspendContext;
     mySuspendContext = null;
     myCurrentExecutionStack = null;
     myCurrentStackFrame = null;
@@ -565,6 +562,7 @@ public class XDebugSessionImpl implements XDebugSession {
       }
     });
     myDispatcher.getMulticaster().sessionResumed();
+    return context;
   }
 
   @Override
@@ -722,7 +720,7 @@ public class XDebugSessionImpl implements XDebugSession {
   }
 
   private void handleTemporaryBreakpointHit(final XBreakpoint<?> breakpoint) {
-    addSessionListener(new XDebugSessionAdapter() {
+    addSessionListener(new XDebugSessionListener() {
       private void removeBreakpoint() {
         XDebuggerUtil.getInstance().removeBreakpoint(myProject, breakpoint);
         removeSessionListener(this);
@@ -969,9 +967,6 @@ public class XDebugSessionImpl implements XDebugSession {
   public void setWatchExpressions(@NotNull XExpression[] watchExpressions) {
     mySessionData.setWatchExpressions(watchExpressions);
     myDebuggerManager.getWatchesManager().setWatches(getConfigurationName(), watchExpressions);
-    if (Registry.is("debugger.watches.in.variables")) {
-      rebuildViews();
-    }
   }
 
   XExpression[] getWatchExpressions() {

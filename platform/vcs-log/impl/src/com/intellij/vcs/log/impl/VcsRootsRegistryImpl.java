@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package com.intellij.vcs.log.impl;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.io.PersistentStringEnumerator;
@@ -36,7 +35,6 @@ public class VcsRootsRegistryImpl implements VcsRootsRegistry, Disposable {
 
   public VcsRootsRegistryImpl(@NotNull final Project project) {
     myEnumerator = createEnumerator(project);
-    Disposer.register(project, this);
   }
 
   @NotNull
@@ -61,32 +59,20 @@ public class VcsRootsRegistryImpl implements VcsRootsRegistry, Disposable {
   }
 
   @Override
-  public int getId(@NotNull VirtualFile root) {
-    try {
-      return myEnumerator.enumerate(root.getPath());
-    }
-    catch (IOException e) {
-      LOG.error(e);
-      throw new RuntimeException(e); // to be dealt with in rr/julia/persistenthashmap branch
-    }
+  public int getId(@NotNull VirtualFile root) throws IOException {
+    return myEnumerator.enumerate(root.getPath());
   }
 
   @Override
   @Nullable
-  public VirtualFile getRootById(int id) {
-    try {
-      String path = myEnumerator.valueOf(id);
-      if (path == null) throw new RuntimeException("Can not find path by id " + id);
-      VirtualFile file = LocalFileSystem.getInstance().findFileByPath(path);
-      if (file == null) {
-        LOG.info("Can not find file by path " + path);
-        return null;
-      }
-      return file;
+  public VirtualFile getRootById(int id) throws IOException {
+    String path = myEnumerator.valueOf(id);
+    if (path == null) throw new RuntimeException("Can not find path by id " + id);
+    VirtualFile file = LocalFileSystem.getInstance().findFileByPath(path);
+    if (file == null) {
+      LOG.info("Can not find file by path " + path);
+      return null;
     }
-    catch (IOException e) {
-      LOG.error(e);
-      throw new RuntimeException(e); // to be dealt with in rr/julia/persistenthashmap branch
-    }
+    return file;
   }
 }

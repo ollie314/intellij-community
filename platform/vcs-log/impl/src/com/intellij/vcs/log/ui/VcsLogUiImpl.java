@@ -11,8 +11,8 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.MessageType;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.vcs.ui.VcsBalloonProblemNotifier;
-import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.util.PairFunction;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.UIUtil;
@@ -240,7 +240,7 @@ public class VcsLogUiImpl implements VcsLogUi, Disposable {
                           @NotNull final SettableFuture<Boolean> future) {
     if (future.isCancelled()) return;
 
-    GraphTableModel model = getTable().getGraphTableModel();
+    GraphTableModel model = getTable().getModel();
 
     int row = rowGetter.fun(model, commitId);
     if (row >= 0) {

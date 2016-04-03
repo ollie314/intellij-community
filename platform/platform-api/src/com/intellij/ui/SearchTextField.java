@@ -17,8 +17,8 @@ package com.intellij.ui;
 
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.actionSystem.ActionManager;
-import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.CommonShortcuts;
+import com.intellij.openapi.actionSystem.EmptyAction;
 import com.intellij.openapi.actionSystem.IdeActions;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.ui.JBMenuItem;
@@ -28,6 +28,7 @@ import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.ui.components.JBList;
+import com.intellij.ui.components.JBTextField;
 import com.intellij.util.ReflectionUtil;
 import com.intellij.util.ui.JBInsets;
 import com.intellij.util.ui.UIUtil;
@@ -203,10 +204,7 @@ public class SearchTextField extends JPanel {
     if (ApplicationManager.getApplication() != null) { //tests
       final ActionManager actionManager = ActionManager.getInstance();
       if (actionManager != null) {
-        final AnAction clearTextAction = actionManager.getAction(IdeActions.ACTION_CLEAR_TEXT);
-        if (clearTextAction.getShortcutSet().getShortcuts().length == 0) {
-          clearTextAction.registerCustomShortcutSet(CommonShortcuts.ESCAPE, this);
-        }
+        EmptyAction.registerWithShortcutSet(IdeActions.ACTION_CLEAR_TEXT, CommonShortcuts.ESCAPE, this);
       }
     }
   }
@@ -322,7 +320,7 @@ public class SearchTextField extends JPanel {
     getTextEditor().selectAll();
   }
 
-  public JTextField getTextEditor() {
+  public JBTextField getTextEditor() {
     return myTextField;
   }
 
@@ -466,7 +464,7 @@ public class SearchTextField extends JPanel {
     return myModel.myFullList.indexOf(getText());
   }
 
-  protected static class TextFieldWithProcessing extends JTextField {
+  protected static class TextFieldWithProcessing extends JBTextField {
     public void processKeyEvent(KeyEvent e) {
       super.processKeyEvent(e);
     }

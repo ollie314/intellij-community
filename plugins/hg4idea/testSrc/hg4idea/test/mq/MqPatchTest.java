@@ -52,7 +52,7 @@ public class MqPatchTest extends HgPlatformTest {
   private VirtualFile myMqPatchDir;
 
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
     cd(myRepository);
     appendToHgrc(myRepository, "[extensions]\n" +
@@ -61,8 +61,8 @@ public class MqPatchTest extends HgPlatformTest {
     updateRepoConfig(myProject, myRepository);
 
     hg("qinit");
-    touch(FILENAME, "f1");
     hg("branch " + BRANCH);
+    touch(FILENAME, "f1");
     myRepository.refresh(false, true);
     hg("add " + FILENAME);
     hg("commit -m \'" + MESSAGE + "\'");
@@ -75,7 +75,7 @@ public class MqPatchTest extends HgPlatformTest {
   public void testMqPatchInfoAfterQImport() throws Exception {
     cd(myRepository);
     HgQImportCommand importCommand = new HgQImportCommand(myHgRepository);
-    importCommand.execute("tip");
+    importCommand.executeInCurrentThread("tip");
     MqPatchDetails patchDetails = updateAndGetDetails();
     TimedVcsCommit tipCommitDetailsFromLog = getLastRevisionDetails();
     assertEqualsCommitInfo(tipCommitDetailsFromLog, patchDetails);
@@ -84,7 +84,9 @@ public class MqPatchTest extends HgPlatformTest {
   public void testMqPatchInfoAfterQNew() throws Exception {
     cd(myRepository);
     append(FILENAME, "modify");
-    new HgQNewCommand(myProject, myHgRepository, MESSAGE, false).execute();
+    myRepository.refresh(false,true);
+    new HgQNewCommand(myProject, myHgRepository, MESSAGE, false).executeInCurrentThread();
+    myRepository.refresh(false,true);
     MqPatchDetails patchDetails = updateAndGetDetails();
     assertEqualsCommitInfo(null, patchDetails);
   }

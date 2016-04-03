@@ -17,9 +17,11 @@ package com.intellij.codeInsight.daemon.lambda;
 
 import com.intellij.codeInsight.daemon.LightDaemonAnalyzerTestCase;
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
+import com.intellij.codeInspection.uncheckedWarnings.UncheckedWarningLocalInspection;
 import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.openapi.projectRoots.JavaSdkVersion;
 import com.intellij.openapi.projectRoots.Sdk;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.testFramework.IdeaTestUtil;
 import org.jetbrains.annotations.NonNls;
 
@@ -405,6 +407,24 @@ public class GraphInferenceHighlightingTest extends LightDaemonAnalyzerTestCase 
     doTest();
   }
 
+  public void testPullingErrorMessagesFromSubExpressionsToTheTopLevel() throws Exception {
+    doTest();
+  }
+
+  public void testHighlightArgumentWithProblem() throws Exception {
+    doTest();
+  }
+
+  public void testIDEA153632() throws Exception {
+    doTest();
+  }
+
+  public void testPartialRawSubstitutionToAvoidInferringObjectsWhenRawExpected() throws Exception {
+    final UncheckedWarningLocalInspection localInspection = new UncheckedWarningLocalInspection();
+    enableInspectionTool(localInspection);
+    doTest(true);
+  }
+
   public void testVariableNamesOfNestedCalls() throws Exception {
     IdeaTestUtil.setTestVersion(JavaSdkVersion.JDK_1_8, getModule(), getTestRootDisposable());
     String filePath = BASE_PATH + "/" + getTestName(false) + ".java";
@@ -419,18 +439,17 @@ public class GraphInferenceHighlightingTest extends LightDaemonAnalyzerTestCase 
       }
     }
 
-    assertTrue(tooltips.contains("<html><body><table border=0><tr><td>" +
-                                     "<b>identity(&nbsp;)&nbsp;</b></td><td colspan=1>in <b>Function</b>&nbsp;cannot be applied</td></tr><tr><td>to</td><td><b>()</b>&nbsp;" +
-                                     
-                           "</td></tr></table><br/>" +
-                           "reason: no instance(s) of type variable(s) K, U exist so that Map&lt;K, U&gt; conforms to Function&lt;U, V&gt;" +
-                           "</body></html>"));
-    assertTrue(tooltips.contains(
-                           "<html><body><table border=0><tr><td>" +
-                                    "<b>identity(&nbsp;)&nbsp;</b></td><td colspan=1>in <b>Function</b>&nbsp;cannot be applied</td></tr><tr><td>to</td><td><b>()</b>&nbsp;" +
-                           "</td></tr></table><br/>" +
-                           "reason: no instance(s) of type variable(s) K, U exist so that Map&lt;K, U&gt; conforms to Function&lt;U, V&gt;" +
-                           "</body></html>"));
+    boolean found = false;
+    for (String tooltip : tooltips) {
+      if (tooltip.contains("reason: no instance(s) of type variable(s) K, U exist so that Map&lt;K, U&gt; conforms to Function&lt;U, V&gt;")) {
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) {
+      fail(StringUtil.join(tooltips, ", "));
+    }
   }
 
   private void doTest() throws Exception {

@@ -487,8 +487,8 @@ public class PythonDebuggerTest extends PyEnvTestCase {
     runPythonTest(new PyDebuggerTask("/debug", "test_multithread.py") {
       @Override
       public void before() throws Exception {
-        toggleBreakpoint(getScriptPath(), 9);
-        toggleBreakpoint(getScriptPath(), 15);
+        toggleBreakpoint(getScriptPath(), 10);
+        toggleBreakpoint(getScriptPath(), 16);
       }
 
       @Override
@@ -771,8 +771,10 @@ public class PythonDebuggerTest extends PyEnvTestCase {
       }
 
       @Override
-      public void after() throws Exception {
-        PyDebuggerSettings.getInstance().setSteppingFilters(Collections.emptyList());
+      public void doFinally() {
+        final PyDebuggerSettings debuggerSettings = PyDebuggerSettings.getInstance();
+        debuggerSettings.setLibrariesFilterEnabled(false);
+        debuggerSettings.setSteppingFiltersEnabled(false);
       }
 
       @Override

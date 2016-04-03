@@ -59,6 +59,7 @@ class ExternalProjectBuilderImpl implements ModelBuilderService {
     ExternalProject externalProject = cache[project.path]
     if (externalProject != null) return externalProject
 
+    def resolveSourceSetDependencies = System.properties.'idea.resolveSourceSetDependencies' as boolean
     def isPreview = ExternalProjectPreview.name.equals(modelName)
     DefaultExternalProject defaultExternalProject = new DefaultExternalProject()
     defaultExternalProject.externalSystemId = "GRADLE"
@@ -70,7 +71,7 @@ class ExternalProjectBuilderImpl implements ModelBuilderService {
     defaultExternalProject.buildFile = project.buildFile
     defaultExternalProject.group = wrap(project.group)
     defaultExternalProject.projectDir = project.projectDir
-    defaultExternalProject.sourceSets = getSourceSets(project, isPreview)
+    defaultExternalProject.sourceSets = getSourceSets(project, isPreview, resolveSourceSetDependencies)
     defaultExternalProject.tasks = getTasks(project)
 
     defaultExternalProject.plugins = getPlugins(project)
@@ -147,7 +148,7 @@ class ExternalProjectBuilderImpl implements ModelBuilderService {
     result
   }
 
-  static Map<String, ExternalSourceSet> getSourceSets(Project project, boolean isPreview) {
+  static Map<String, ExternalSourceSet> getSourceSets(Project project, boolean isPreview, boolean resolveSourceSetDependencies) {
     final IdeaPlugin ideaPlugin = project.getPlugins().findPlugin(IdeaPlugin.class);
     def ideaPluginModule = ideaPlugin?.model?.module
     boolean inheritOutputDirs = ideaPluginModule?.inheritOutputDirs ?: false
@@ -173,10 +174,14 @@ class ExternalProjectBuilderImpl implements ModelBuilderService {
     def projectSourceCompatibility
     def projectTargetCompatibility
 
+    //noinspection GrUnresolvedAccess
     if(project.hasProperty('sourceCompatibility') && project.sourceCompatibility instanceof JavaVersion) {
+      //noinspection GrUnresolvedAccess
       projectSourceCompatibility = project.sourceCompatibility.name;
     }
+    //noinspection GrUnresolvedAccess
     if(project.hasProperty('targetCompatibility') && project.targetCompatibility instanceof JavaVersion) {
+      //noinspection GrUnresolvedAccess
       projectTargetCompatibility = project.targetCompatibility.name;
     }
 
@@ -262,8 +267,49 @@ class ExternalProjectBuilderImpl implements ModelBuilderService {
         resourcesDirectorySet.filters = filterReaders
         sources.put(ExternalSystemSourceType.SOURCE, javaDirectorySet)
         sources.put(ExternalSystemSourceType.RESOURCE, resourcesDirectorySet)
+
+        if(!resolveSourceSetDependencies && ideaTestSourceDirs) {
+          def testDirs = javaDirectorySet.srcDirs.intersect(ideaTestSourceDirs as Collection)
+          if(!testDirs.isEmpty()) {
+            javaDirectorySet.srcDirs.removeAll(ideaTestSourceDirs)
+
+            def testDirectorySet = new DefaultExternalSourceDirectorySet()
+            testDirectorySet.name = javaDirectorySet.name
+            testDirectorySet.srcDirs = testDirs
+            testDirectorySet.outputDir = javaDirectorySet.outputDir
+            testDirectorySet.inheritedCompilerOutput = javaDirectorySet.isCompilerOutputPathInherited()
+            sources.put(ExternalSystemSourceType.TEST, testDirectorySet)
+          }
+
+          def testResourcesDirs = resourcesDirectorySet.srcDirs.intersect(ideaTestSourceDirs as Collection)
+          if(!testResourcesDirs.isEmpty()) {
+            resourcesDirectorySet.srcDirs.removeAll(ideaTestSourceDirs)
+
+            def testResourcesDirectorySet = new DefaultExternalSourceDirectorySet()
+            testResourcesDirectorySet.name = resourcesDirectorySet.name
+            testResourcesDirectorySet.srcDirs = testResourcesDirs
+            testResourcesDirectorySet.outputDir = resourcesDirectorySet.outputDir
+            testResourcesDirectorySet.inheritedCompilerOutput = resourcesDirectorySet.isCompilerOutputPathInherited()
+            sources.put(ExternalSystemSourceType.TEST_RESOURCE, testResourcesDirectorySet)
+          }
+        }
+
         if (generatedDirectorySet) {
           sources.put(ExternalSystemSourceType.SOURCE_GENERATED, generatedDirectorySet)
+          if(!resolveSourceSetDependencies && ideaTestSourceDirs) {
+            def testGeneratedDirs = generatedDirectorySet.srcDirs.intersect(ideaTestSourceDirs as Collection)
+            if(!testGeneratedDirs.isEmpty()) {
+              generatedDirectorySet.srcDirs.removeAll(ideaTestSourceDirs)
+
+              def testGeneratedDirectorySet = new DefaultExternalSourceDirectorySet()
+              testGeneratedDirectorySet.name = generatedDirectorySet.name
+              testGeneratedDirectorySet.srcDirs = testGeneratedDirs
+              testGeneratedDirectorySet.outputDir = generatedDirectorySet.outputDir
+              testGeneratedDirectorySet.inheritedCompilerOutput = generatedDirectorySet.isCompilerOutputPathInherited()
+
+              sources.put(ExternalSystemSourceType.TEST_GENERATED, testGeneratedDirectorySet)
+            }
+          }
         }
 
         if (ideaPluginModule && !SourceSet.MAIN_SOURCE_SET_NAME.equals(sourceSet.name) && !SourceSet.TEST_SOURCE_SET_NAME.equals(sourceSet.name)) {
@@ -274,8 +320,10 @@ class ExternalProjectBuilderImpl implements ModelBuilderService {
         }
       }
 
-      def dependencies = new DependencyResolverImpl(project, isPreview, downloadJavadoc, downloadSources).resolveDependencies(sourceSet)
-      externalSourceSet.dependencies.addAll(dependencies)
+      if(resolveSourceSetDependencies) {
+        def dependencies = new DependencyResolverImpl(project, isPreview, downloadJavadoc, downloadSources).resolveDependencies(sourceSet)
+        externalSourceSet.dependencies.addAll(dependencies)
+      }
 
       externalSourceSet.sources = sources
       result[sourceSet.name] = externalSourceSet
@@ -293,7 +341,7 @@ class ExternalProjectBuilderImpl implements ModelBuilderService {
     }
 
     def testSourceSet = result[SourceSet.TEST_SOURCE_SET_NAME]
-    if(ideaPluginModule && testSourceSet && ideaTestSourceDirs && !ideaSourceDirs.isEmpty()) {
+    if(ideaPluginModule && testSourceSet && ideaTestSourceDirs && !ideaTestSourceDirs.isEmpty()) {
       def testGradleSourceSet = sourceSets.findByName(SourceSet.TEST_SOURCE_SET_NAME)
       if(testGradleSourceSet) {
         def testSourceDirectorySet = testSourceSet.sources[ExternalSystemSourceType.TEST]
@@ -303,10 +351,38 @@ class ExternalProjectBuilderImpl implements ModelBuilderService {
       }
     }
 
+    cleanupSharedSourceFolders(result)
+
     result
   }
 
+  private static void cleanupSharedSourceFolders(Map<String, ExternalSourceSet> map) {
+    def mainSourceSet = map[SourceSet.MAIN_SOURCE_SET_NAME]
+    cleanupSharedSourceFolders(map, mainSourceSet, null)
+    cleanupSharedSourceFolders(map, map[SourceSet.TEST_SOURCE_SET_NAME], mainSourceSet)
+  }
+
+  private static void cleanupSharedSourceFolders(Map<String, ExternalSourceSet> result, ExternalSourceSet sourceSet, ExternalSourceSet toIgnore) {
+    if(!sourceSet) return
+
+    result.entrySet().each {
+      if (!it.value.is(sourceSet) && !it.value.is(toIgnore)) {
+        def customSourceSet = it.value
+        ExternalSystemSourceType.values().each {
+          def customSourceDirectorySet = customSourceSet.sources[it] as ExternalSourceDirectorySet
+          if (customSourceDirectorySet) {
+            def mainSourcesMap = sourceSet.sources
+            mainSourcesMap.values().each {
+              customSourceDirectorySet.srcDirs.removeAll(it.srcDirs)
+            }
+          }
+        }
+      }
+    }
+  }
+
   static <T> T chooseNotNull(T ... params) {
+    //noinspection GrUnresolvedAccess
     params.findResult("", { it })
   }
 
@@ -326,14 +402,17 @@ class ExternalProjectBuilderImpl implements ModelBuilderService {
 
     try {
       if (filterableTask instanceof ContentFilterable && filterableTask.metaClass.respondsTo(filterableTask, "getMainSpec")) {
+        //noinspection GrUnresolvedAccess
         def properties = filterableTask.getMainSpec().properties
         def copyActions = properties?.allCopyActions ?: properties?.copyActions
 
         if(copyActions) {
           copyActions.each { Action<? super FileCopyDetails> action ->
             if (action.hasProperty('val$filterType') && action.hasProperty('val$properties')) {
+              //noinspection GrUnresolvedAccess
               def filterType = (action?.val$filterType as Class).name
               def filter = [filterType: filterType] as DefaultExternalFilter
+              //noinspection GrUnresolvedAccess
               def props = action?.val$properties
               if (props) {
                 if ('org.apache.tools.ant.filters.ExpandProperties'.equals(filterType) && props['project']) {
@@ -346,8 +425,11 @@ class ExternalProjectBuilderImpl implements ModelBuilderService {
               filterReaders << filter
             }
             else if (action.class.simpleName.equals('RenamingCopyAction') && action.hasProperty('transformer')) {
-              if (action.transformer.hasProperty('matcher') && action?.transformer.hasProperty('replacement')) {
-                String pattern = action?.transformer?.matcher.pattern().pattern
+              //noinspection GrUnresolvedAccess
+              if (action.transformer.hasProperty('matcher') && action?.transformer?.hasProperty('replacement')) {
+                //noinspection GrUnresolvedAccess
+                String pattern = action?.transformer?.matcher?.pattern()?.pattern
+                //noinspection GrUnresolvedAccess
                 String replacement = action?.transformer?.replacement
                 def filter = [filterType: 'RenamingCopyFilter'] as DefaultExternalFilter
                 if(pattern && replacement){

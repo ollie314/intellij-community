@@ -16,6 +16,7 @@
 package com.intellij.openapi.wm.impl;
 
 import com.intellij.diagnostic.IdeMessagePanel;
+import com.intellij.icons.AllIcons;
 import com.intellij.ide.AppLifecycleListener;
 import com.intellij.ide.DataManager;
 import com.intellij.ide.impl.ProjectUtil;
@@ -31,14 +32,11 @@ import com.intellij.openapi.actionSystem.impl.MouseGestureManager;
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationInfo;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.ex.ApplicationInfoEx;
 import com.intellij.openapi.application.ex.ApplicationManagerEx;
-import com.intellij.openapi.progress.ProgressManager;
-import com.intellij.openapi.project.DumbAwareRunnable;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
-import com.intellij.openapi.ui.impl.ShadowBorderPainter;
+import com.intellij.openapi.ui.impl.ShadowPainter;
 import com.intellij.openapi.util.*;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.IdeFrame;
@@ -55,10 +53,12 @@ import com.intellij.ui.mac.MacMainFrameDecorator;
 import com.intellij.util.Alarm;
 import com.intellij.util.io.storage.HeavyProcessLatch;
 import com.intellij.util.ui.UIUtil;
+import com.intellij.util.ui.accessibility.AccessibleContextAccessor;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.io.PowerSupplyKit;
 
+import javax.accessibility.AccessibleContext;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.WindowAdapter;
@@ -68,13 +68,11 @@ import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.io.File;
 
-import static com.intellij.openapi.ui.impl.ShadowBorderPainter.*;
-
 /**
  * @author Anton Katilin
  * @author Vladimir Kondratyev
  */
-public class IdeFrameImpl extends JFrame implements IdeFrameEx, DataProvider {
+public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContextAccessor, DataProvider {
   public static final Key<Boolean> SHOULD_OPEN_IN_FULL_SCREEN = Key.create("should.open.in.full.screen");
 
   private static final String FULL_SCREEN = "FullScreen";
@@ -259,29 +257,18 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, DataProvider {
         public void windowClosing(@NotNull final WindowEvent e) {
           if (isTemporaryDisposed())
             return;
-          final Application app = ApplicationManager.getApplication();
-          app.invokeLater(new DumbAwareRunnable() {
-            public void run() {
-              HeavyProcessLatch.INSTANCE.prioritizeUiActivity();
 
-              if (app.isDisposed()) {
-                ApplicationManagerEx.getApplicationEx().exit();
-                return;
-              }
-
-              final Project[] openProjects = ProjectManager.getInstance().getOpenProjects();
-              if (openProjects.length > 1 || (openProjects.length == 1 && SystemInfo.isMacSystemMenu)) {
-                if (myProject != null && myProject.isOpen()) {
-                  ProjectUtil.closeAndDispose(myProject);
-                }
-                app.getMessageBus().syncPublisher(AppLifecycleListener.TOPIC).projectFrameClosed();
-                WelcomeFrame.showIfNoProjectOpened();
-              }
-              else {
-                ApplicationManagerEx.getApplicationEx().exit();
-              }
+          final Project[] openProjects = ProjectManager.getInstance().getOpenProjects();
+          if (openProjects.length > 1 || openProjects.length == 1 && SystemInfo.isMacSystemMenu) {
+            if (myProject != null && myProject.isOpen()) {
+              ProjectUtil.closeAndDispose(myProject);
             }
-          }, ModalityState.NON_MODAL);
+            ApplicationManager.getApplication().getMessageBus().syncPublisher(AppLifecycleListener.TOPIC).projectFrameClosed();
+            WelcomeFrame.showIfNoProjectOpened();
+          }
+          else {
+            ApplicationManagerEx.getApplicationEx().exit();
+          }
         }
       }
     );
@@ -354,6 +341,11 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, DataProvider {
     ((IdeRootPane)getRootPane()).updateToolbar();
     ((IdeRootPane)getRootPane()).updateMainMenuActions();
     ((IdeRootPane)getRootPane()).updateNorthComponents();
+  }
+
+  @Override
+  public AccessibleContext getCurrentAccessibleContext() {
+    return accessibleContext;
   }
 
   private static final class Builder {
@@ -534,13 +526,22 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, DataProvider {
            (SHOULD_OPEN_IN_FULL_SCREEN.get(project) == Boolean.TRUE || PropertiesComponent.getInstance(project).getBoolean(FULL_SCREEN));
   }
 
+  final static ShadowPainter ourShadowPainter = new ShadowPainter(AllIcons.Windows.Shadow.Top,
+                                                                  AllIcons.Windows.Shadow.TopRight,
+                                                                  AllIcons.Windows.Shadow.Right,
+                                                                  AllIcons.Windows.Shadow.BottomRight,
+                                                                  AllIcons.Windows.Shadow.Bottom,
+                                                                  AllIcons.Windows.Shadow.BottomLeft,
+                                                                  AllIcons.Windows.Shadow.Left,
+                                                                  AllIcons.Windows.Shadow.TopLeft);
+
   @Override
   public void paint(@NotNull Graphics g) {
     UISettings.setupAntialiasing(g);
     //noinspection Since15
     super.paint(g);
     if (IdeRootPane.isFrameDecorated() && !isInFullScreen()) {
-      final BufferedImage shadow = ShadowBorderPainter.createShadow(getRootPane(), getWidth(), getHeight());
+      final BufferedImage shadow = ourShadowPainter.createShadow(getRootPane(), getWidth(), getHeight());
       g.drawImage(shadow, 0, 0, null);
     }
   }
@@ -554,7 +555,11 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, DataProvider {
   public void doLayout() {
     super.doLayout();
     if (!isInFullScreen() && IdeRootPane.isFrameDecorated()) {
-      getRootPane().setBounds(SIDE_SIZE, TOP_SIZE, getWidth() - 2 * SIDE_SIZE, getHeight() - TOP_SIZE - BOTTOM_SIZE);
+      final int leftSide = AllIcons.Windows.Shadow.Left.getIconWidth();
+      final int rightSide = AllIcons.Windows.Shadow.Right.getIconWidth();
+      final int top = AllIcons.Windows.Shadow.Top.getIconHeight();
+      final int bottom = AllIcons.Windows.Shadow.Bottom.getIconHeight();
+      getRootPane().setBounds(leftSide, top, getWidth() - leftSide - rightSide, getHeight() - top - bottom);
     }
   }
 
@@ -589,5 +594,30 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, DataProvider {
     }
 
     return ActionCallback.DONE;
+  }
+
+  @Override
+  public AccessibleContext getAccessibleContext() {
+    if (accessibleContext == null) {
+      accessibleContext = new AccessibleIdeFrameImpl();
+    }
+    return accessibleContext;
+  }
+
+  protected class AccessibleIdeFrameImpl extends AccessibleJFrame {
+    @Override
+    public String getAccessibleName() {
+      final StringBuilder builder = new StringBuilder();
+
+      if (myProject != null) {
+        builder.append(myProject.getName());
+        builder.append(" - ");
+      }
+
+      final String applicationName = ((ApplicationInfoEx)ApplicationInfo.getInstance()).getFullApplicationName();
+      builder.append(applicationName);
+
+      return builder.toString();
+    }
   }
 }

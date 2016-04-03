@@ -36,18 +36,23 @@ import com.intellij.testFramework.runInEdtAndWait
 import com.intellij.util.Alarm
 import com.intellij.util.TimeoutUtil
 import com.intellij.util.concurrency.Semaphore
+import org.assertj.core.api.Assertions.assertThat
 import org.junit.After
+import org.junit.Assume.assumeFalse
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import java.io.File
 import java.util.*
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class FileWatcherTest : BareTestFixtureTestCase() {
+  //<editor-fold desc="Set up / tear down">
+
   private val LOG: Logger by lazy { Logger.getInstance(NativeFileWatcherImpl::class.java) }
 
   private val START_STOP_DELAY = 10000L      // time to wait for the watcher spin up/down
@@ -66,6 +71,7 @@ class FileWatcherTest : BareTestFixtureTestCase() {
   private lateinit var alarm: Alarm
 
   private val watcherEvents = Semaphore()
+  private val resetHappened = AtomicBoolean()
 
   @Before fun setUp() {
     LOG.debug("================== setting up " + getTestName(false) + " ==================")
@@ -77,9 +83,10 @@ class FileWatcherTest : BareTestFixtureTestCase() {
 
     watcher = (fs as LocalFileSystemImpl).fileWatcher
     assertFalse(watcher.isOperational)
-    watcher.startup {
+    watcher.startup { reset ->
       alarm.cancelAllRequests()
       alarm.addRequest({ watcherEvents.up() }, INTER_RESPONSE_DELAY)
+      if (reset) resetHappened.set(true)
     }
     wait { !watcher.isOperational }
 
@@ -102,7 +109,7 @@ class FileWatcherTest : BareTestFixtureTestCase() {
     LOG.debug("================== tearing down up " + getTestName(false) + " ==================")
   }
 
-  // test cases
+  //</editor-fold>
 
   @Test fun testWatchRequestConvention() {
     val dir = tempDir.newFolder("dir")
@@ -357,6 +364,15 @@ class FileWatcherTest : BareTestFixtureTestCase() {
         mapOf(file1 to 'U', file2 to 'U'))
   }
 
+  @Test fun testWatchNonExistingRoot() {
+    val top = File(tempDir.root, "top")
+    val root = File(tempDir.root, "top/d1/d2/d3/root")
+    refresh(tempDir.root)
+
+    watch(root)
+    assertEvents({ root.mkdirs() }, mapOf(top to 'C'))
+  }
+
   @Test fun testWatchRootRenameRemove() {
     val top = tempDir.newFolder("top")
     val root = tempDir.newFolder("top/d1/d2/d3/root")
@@ -369,8 +385,7 @@ class FileWatcherTest : BareTestFixtureTestCase() {
     assertEvents({ root.deleteRecursively() }, mapOf(root to 'D'))
     assertEvents({ root.mkdirs() }, mapOf(root to 'C'))
     assertEvents({ top.deleteRecursively() }, mapOf(top to 'D'))
-    // todo[r.sh] current VFS implementation loses watch root once it's removed; this probably should be fixed
-    assertEvents({ root.mkdirs() }, mapOf())
+    assertEvents({ root.mkdirs() }, mapOf(top to 'C'))
   }
 
   @Test fun testSwitchingToFsRoot() {
@@ -503,7 +518,14 @@ class FileWatcherTest : BareTestFixtureTestCase() {
     assertTrue(vFile.isWritable)
   }
 
-  // helpers
+  @Test fun testSyncRefreshNonWatchedFile() {
+    val file = tempDir.newFile("test.txt")
+    val vFile = refresh(file)
+    file.writeText("new content")
+    assertThat(VfsTestUtil.print(VfsTestUtil.getEvents { vFile.refresh(false, false) })).containsOnly("U : ${vFile.path}")
+  }
+
+  //<editor-fold desc="Helpers">
 
   private fun wait(timeout: Long = START_STOP_DELAY, condition: () -> Boolean) {
     val stopAt = System.currentTimeMillis() + timeout
@@ -528,9 +550,7 @@ class FileWatcherTest : BareTestFixtureTestCase() {
   private fun refresh(file: File): VirtualFile {
     val vFile = fs.refreshAndFindFileByIoFile(file)!!
     VfsUtilCore.visitChildrenRecursively(vFile, object : VirtualFileVisitor<Any>() {
-      override fun visitFile(file: VirtualFile): Boolean {
-        file.children; return true
-      }
+      override fun visitFile(file: VirtualFile): Boolean { file.children; return true }
     })
     vFile.refresh(false, true)
     return vFile
@@ -540,9 +560,11 @@ class FileWatcherTest : BareTestFixtureTestCase() {
     LOG.debug("** waiting for ${expectedOps}")
     watcherEvents.down()
     alarm.cancelAllRequests()
+    resetHappened.set(false)
     action()
     watcherEvents.waitFor(timeout)
     watcherEvents.up()
+    assumeFalse("reset happened", resetHappened.get())
     LOG.debug("** done waiting")
 
     val events = VfsTestUtil.getEvents { fs.refresh(false) }
@@ -551,4 +573,6 @@ class FileWatcherTest : BareTestFixtureTestCase() {
     val actual = VfsTestUtil.print(events).sorted()
     assertEquals(expected, actual)
   }
+
+  //</editor-fold>
 }

@@ -30,7 +30,6 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.vcs.VcsBundle;
 import com.intellij.openapi.vcs.changes.ui.ChangesBrowserNode;
-import com.intellij.openapi.vcs.changes.ui.ChangesBrowserNodeRenderer;
 import com.intellij.openapi.vcs.changes.ui.ChangesListView;
 import com.intellij.openapi.vcs.changes.ui.TreeModelBuilder;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -46,7 +45,6 @@ import javax.swing.tree.TreePath;
 import java.awt.*;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedList;
 import java.util.List;
 
 public class UnversionedViewDialog extends DialogWrapper {
@@ -55,7 +53,6 @@ public class UnversionedViewDialog extends DialogWrapper {
   private final ChangeListManager myChangeListManager;
   private boolean myInRefresh;
   private final Project myProject;
-  private boolean myFlattenState;
 
   public UnversionedViewDialog(final Project project) {
     super(project, true);
@@ -99,10 +96,9 @@ public class UnversionedViewDialog extends DialogWrapper {
   private void initData(final List<VirtualFile> files) {
     final TreeState state = TreeState.createOn(myView, (ChangesBrowserNode)myView.getModel().getRoot());
 
-    TreeModelBuilder builder = new TreeModelBuilder(myProject, myFlattenState);
+    TreeModelBuilder builder = new TreeModelBuilder(myProject, myView.isShowFlatten());
     final DefaultTreeModel model = builder.buildModelFromFiles(files);
     myView.setModel(model);
-    myView.setCellRenderer(new ChangesBrowserNodeRenderer(myProject, myFlattenState, true));
     myView.expandPath(new TreePath(((ChangesBrowserNode)model.getRoot()).getPath()));
 
     state.applyTo(myView);
@@ -112,33 +108,25 @@ public class UnversionedViewDialog extends DialogWrapper {
     myPanel = new JPanel(new BorderLayout());
 
     final DefaultActionGroup group = new DefaultActionGroup();
-
-    final List<AnAction> actions = new LinkedList<AnAction>();
-    final CommonActionsManager cam = CommonActionsManager.getInstance();
-    final Expander expander = new Expander();
-    final AnAction expandAction = cam.createExpandAllAction(expander, myView);
-    actions.add(expandAction);
-    final AnAction collapseAction = cam.createCollapseAllAction(expander, myView);
-    actions.add(collapseAction);
-    actions.add(new ToggleShowFlattenAction());
-
-    final ActionToolbar actionToolbar = ActionManager.getInstance().createActionToolbar("UNVERSIONED_DIALOG", group, false);
+    final ActionToolbar actionToolbar = ActionManager.getInstance().createActionToolbar("UNVERSIONED_DIALOG", group, true);
 
     final ActionGroup operatingActions = (ActionGroup)ActionManager.getInstance().getAction("Unversioned.Files.Dialog");
     registerShortcuts(operatingActions, actionToolbar.getToolbarDataContext());
     refreshViewAfterActionPerformed(operatingActions);
-    actions.add(operatingActions);
+    group.add(operatingActions);
 
-    for (AnAction action : actions) {
-      group.add(action);
-    }
-    myPanel.add(actionToolbar.getComponent(), BorderLayout.WEST);
+    final CommonActionsManager cam = CommonActionsManager.getInstance();
+    final Expander expander = new Expander();
+    group.addSeparator();
+    group.add(new ToggleShowFlattenAction());
+    group.add(cam.createExpandAllAction(expander, myView));
+    group.add(cam.createCollapseAllAction(expander, myView));
+
+    myPanel.add(actionToolbar.getComponent(), BorderLayout.NORTH);
     myPanel.add(ScrollPaneFactory.createScrollPane(myView), BorderLayout.CENTER);
 
     final DefaultActionGroup secondGroup = new DefaultActionGroup();
-    for (AnAction action : actions) {
-      secondGroup.add(action);
-    }
+    secondGroup.addAll(operatingActions);
 
     myView.setMenuActions(secondGroup);
     myView.setShowFlatten(false);
@@ -190,7 +178,7 @@ public class UnversionedViewDialog extends DialogWrapper {
     }
 
     public boolean canExpand() {
-      return true;
+      return !myView.isShowFlatten();
     }
 
     public void collapseAll() {
@@ -199,7 +187,7 @@ public class UnversionedViewDialog extends DialogWrapper {
     }
 
     public boolean canCollapse() {
-      return true;
+      return !myView.isShowFlatten();
     }
   }
 
@@ -225,16 +213,14 @@ public class UnversionedViewDialog extends DialogWrapper {
       super(VcsBundle.message("changes.action.show.directories.text"),
             VcsBundle.message("changes.action.show.directories.description"),
             AllIcons.Actions.GroupByPackage);
-      myFlattenState = false;
     }
 
     public boolean isSelected(AnActionEvent e) {
-      return !myFlattenState;
+      return !myView.isShowFlatten();
     }
 
     public void setSelected(AnActionEvent e, boolean state) {
-      myFlattenState = !state;
-      myView.setShowFlatten(myFlattenState);
+      myView.setShowFlatten(!state);
       refreshView();
     }
   }

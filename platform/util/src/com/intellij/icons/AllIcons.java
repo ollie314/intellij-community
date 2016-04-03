@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -642,10 +642,13 @@ public class AllIcons {
       public static final Icon Collapse = IconLoader.getIcon("/ide/notification/collapse.png"); // 16x16
       public static final Icon CollapseHover = IconLoader.getIcon("/ide/notification/collapseHover.png"); // 16x16
       public static final Icon DropTriangle = IconLoader.getIcon("/ide/notification/dropTriangle.png"); // 11x8
+      public static final Icon ErrorEvents = IconLoader.getIcon("/ide/notification/errorEvents.png"); // 16x16
       public static final Icon Expand = IconLoader.getIcon("/ide/notification/expand.png"); // 16x16
       public static final Icon ExpandHover = IconLoader.getIcon("/ide/notification/expandHover.png"); // 16x16
       public static final Icon Gear = IconLoader.getIcon("/ide/notification/gear.png"); // 16x16
       public static final Icon GearHover = IconLoader.getIcon("/ide/notification/gearHover.png"); // 16x16
+      public static final Icon InfoEvents = IconLoader.getIcon("/ide/notification/infoEvents.png"); // 16x16
+      public static final Icon NoEvents = IconLoader.getIcon("/ide/notification/noEvents.png"); // 16x16
       
       public static class Shadow {
         public static final Icon Bottom_left = IconLoader.getIcon("/ide/notification/shadow/bottom-left.png"); // 14x16
@@ -658,6 +661,7 @@ public class AllIcons {
         public static final Icon Top = IconLoader.getIcon("/ide/notification/shadow/top.png"); // 4x4
 
       }
+      public static final Icon WarningEvents = IconLoader.getIcon("/ide/notification/warningEvents.png"); // 16x16
 
     }
     public static final Icon Notifications = IconLoader.getIcon("/ide/notifications.png"); // 16x16
@@ -1267,6 +1271,18 @@ public class AllIcons {
     public static final Icon Iconify = IconLoader.getIcon("/windows/iconify.png"); // 16x16
     public static final Icon Maximize = IconLoader.getIcon("/windows/maximize.png"); // 16x16
     public static final Icon Minimize = IconLoader.getIcon("/windows/minimize.png"); // 16x16
+    
+    public static class Shadow {
+      public static final Icon Bottom = IconLoader.getIcon("/windows/shadow/bottom.png"); // 1x8
+      public static final Icon BottomLeft = IconLoader.getIcon("/windows/shadow/bottomLeft.png"); // 8x8
+      public static final Icon BottomRight = IconLoader.getIcon("/windows/shadow/bottomRight.png"); // 8x8
+      public static final Icon Left = IconLoader.getIcon("/windows/shadow/left.png"); // 8x1
+      public static final Icon Right = IconLoader.getIcon("/windows/shadow/right.png"); // 8x1
+      public static final Icon Top = IconLoader.getIcon("/windows/shadow/top.png"); // 1x8
+      public static final Icon TopLeft = IconLoader.getIcon("/windows/shadow/topLeft.png"); // 8x8
+      public static final Icon TopRight = IconLoader.getIcon("/windows/shadow/topRight.png"); // 8x8
+
+    }
 
   }
   

@@ -46,6 +46,7 @@ import com.intellij.vcs.log.data.VisiblePack;
 import com.intellij.vcs.log.ui.VcsLogColorManager;
 import com.intellij.vcs.log.ui.render.VcsRefPainter;
 import com.intellij.vcs.log.ui.tables.GraphTableModel;
+import com.intellij.vcs.log.util.VcsUserUtil;
 import net.miginfocom.swing.MigLayout;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -178,7 +179,7 @@ class DetailsPanel extends JPanel implements ListSelectionListener {
     else {
       ((CardLayout)getLayout()).show(this, STANDARD_LAYER);
       int row = rows[0];
-      GraphTableModel tableModel = (GraphTableModel)myGraphTable.getModel();
+      GraphTableModel tableModel = myGraphTable.getModel();
       VcsFullCommitDetails commitData = tableModel.getFullDetails(row);
       if (commitData instanceof LoadingDetails) {
         myLoadingPanel.startLoading();
@@ -336,7 +337,7 @@ class DetailsPanel extends JPanel implements ListSelectionListener {
         int[] means = new int[BRANCHES_TABLE_COLUMN_COUNT - 1];
         int[] max = new int[BRANCHES_TABLE_COLUMN_COUNT - 1];
 
-        for (int i = 0; i < rowCount; i++){
+        for (int i = 0; i < rowCount; i++) {
           for (int j = 0; j < BRANCHES_TABLE_COLUMN_COUNT - 1; j++) {
             int index = rowCount * j + i;
             if (index < myBranches.size()) {
@@ -406,7 +407,8 @@ class DetailsPanel extends JPanel implements ListSelectionListener {
       return size;
     }
 
-    private String getMessageText(VcsFullCommitDetails commit) {
+    @NotNull
+    private String getMessageText(@NotNull VcsFullCommitDetails commit) {
       String fullMessage = commit.getFullMessage();
       int separator = fullMessage.indexOf("\n\n");
       String subject = separator > 0 ? fullMessage.substring(0, separator) : fullMessage;
@@ -415,7 +417,8 @@ class DetailsPanel extends JPanel implements ListSelectionListener {
              escapeMultipleSpaces(IssueLinkHtmlRenderer.formatTextWithLinks(myProject, description));
     }
 
-    private String escapeMultipleSpaces(String text) {
+    @NotNull
+    private String escapeMultipleSpaces(@NotNull String text) {
       StringBuilder result = new StringBuilder();
       for (int i = 0; i < text.length(); i++) {
         if (text.charAt(i) == ' ') {
@@ -433,12 +436,13 @@ class DetailsPanel extends JPanel implements ListSelectionListener {
       return result.toString();
     }
 
-    private static String getAuthorText(VcsFullCommitDetails commit) {
+    @NotNull
+    private static String getAuthorText(@NotNull VcsFullCommitDetails commit) {
       long authorTime = commit.getAuthorTime();
       long commitTime = commit.getCommitTime();
 
-      String authorText = commit.getAuthor().getName() + formatDateTime(authorTime);
-      if (!commit.getAuthor().equals(commit.getCommitter())) {
+      String authorText = VcsUserUtil.getShortPresentation(commit.getAuthor()) + formatDateTime(authorTime);
+      if (!VcsUserUtil.isSamePerson(commit.getAuthor(), commit.getCommitter())) {
         String commitTimeText;
         if (authorTime != commitTime) {
           commitTimeText = formatDateTime(commitTime);
@@ -446,7 +450,7 @@ class DetailsPanel extends JPanel implements ListSelectionListener {
         else {
           commitTimeText = "";
         }
-        authorText += " (committed by " + commit.getCommitter().getName() + commitTimeText + ")";
+        authorText += " (committed by " + VcsUserUtil.getShortPresentation(commit.getCommitter()) + commitTimeText + ")";
       }
       else if (authorTime != commitTime) {
         authorText += " (committed " + formatDateTime(commitTime) + ")";
@@ -542,8 +546,7 @@ class DetailsPanel extends JPanel implements ListSelectionListener {
   }
 
   private static class MessagePanel extends NonOpaquePanel {
-
-    private final JLabel myLabel;
+    @NotNull private final JLabel myLabel;
 
     MessagePanel() {
       super(new BorderLayout());

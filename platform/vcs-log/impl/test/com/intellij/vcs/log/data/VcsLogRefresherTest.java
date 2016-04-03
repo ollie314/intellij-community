@@ -19,6 +19,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.progress.impl.ProgressManagerImpl;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.Consumer;
 import com.intellij.util.ExceptionUtil;
@@ -32,6 +33,7 @@ import com.intellij.vcs.log.VcsCommitMetadata;
 import com.intellij.vcs.log.VcsLogProvider;
 import com.intellij.vcs.log.graph.GraphCommit;
 import com.intellij.vcs.log.impl.*;
+import com.intellij.vcs.test.VcsPlatformTest;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
@@ -39,7 +41,7 @@ import java.util.concurrent.*;
 
 import static com.intellij.vcs.log.TimedCommitParser.log;
 
-public class VcsLogRefresherTest extends VcsLogPlatformTest {
+public class VcsLogRefresherTest extends VcsPlatformTest {
 
   private static final Logger LOG = Logger.getInstance(VcsLogRefresherTest.class);
 
@@ -200,7 +202,13 @@ public class VcsLogRefresherTest extends VcsLogPlatformTest {
   }
 
   private VcsLogRefresherImpl createLoader(Consumer<DataPack> dataPackConsumer) {
-    myDataManager = new VcsLogDataManager(myProject, myLogProviders);
+    myDataManager = new VcsLogDataManager(myProject, myLogProviders, new Consumer<Exception>() {
+      @Override
+      public void consume(Exception e) {
+        LOG.error(e);
+      }
+    });
+    Disposer.register(myProject, myDataManager);
     return new VcsLogRefresherImpl(myProject, myDataManager.getHashMap(), myLogProviders, myDataManager.getUserRegistry(),
                                    myTopDetailsCache, dataPackConsumer, FAILING_EXCEPTION_HANDLER, RECENT_COMMITS_COUNT) {
       @Override

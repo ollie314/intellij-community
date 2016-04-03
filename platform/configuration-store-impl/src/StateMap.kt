@@ -23,6 +23,7 @@ import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vfs.CharsetToolkit
 import com.intellij.util.ArrayUtil
 import com.intellij.util.SystemProperties
+import com.intellij.util.loadElement
 import gnu.trove.THashMap
 import org.iq80.snappy.SnappyInputStream
 import org.iq80.snappy.SnappyOutputStream
@@ -66,7 +67,7 @@ fun archiveStateXml(state: Element): BufferExposingByteArrayOutputStream {
   return byteOut
 }
 
-private fun unarchiveState(state: ByteArray) = JDOMUtil.load(SnappyInputStream(ByteArrayInputStream(state)))
+private fun unarchiveState(state: ByteArray) = loadElement(SnappyInputStream(ByteArrayInputStream(state)).reader())
 
 fun getNewByteIfDiffers(key: String, newState: Any, oldState: ByteArray): ByteArray? {
   val newBytes: ByteArray
@@ -100,12 +101,12 @@ fun getNewByteIfDiffers(key: String, newState: Any, oldState: ByteArray): ByteAr
   return newBytes
 }
 
-fun stateToElement(key: String, state: Any?, newLiveStates: Map<String, Element>? = null): Element {
+fun stateToElement(key: String, state: Any?, newLiveStates: Map<String, Element>? = null): Element? {
   if (state is Element) {
     return state.clone()
   }
   else {
-    return newLiveStates?.get(key) ?: unarchiveState(state as ByteArray)
+    return newLiveStates?.get(key) ?: (state as? ByteArray)?.let { unarchiveState(it)  }
   }
 }
 

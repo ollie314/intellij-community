@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -312,7 +312,7 @@ public final class ToolWindowManagerImpl extends ToolWindowManagerEx implements 
 
     Keymap keymap = KeymapManager.getInstance().getActiveKeymap();
     Shortcut[] baseShortcut = keymap.getShortcuts("ActivateProjectToolWindow");
-    int baseModifiers = 0;
+    int baseModifiers = SystemInfo.isMac ? InputEvent.META_MASK : InputEvent.ALT_MASK;
     for (Shortcut each : baseShortcut) {
       if (each instanceof KeyboardShortcut) {
         KeyStroke keyStroke = ((KeyboardShortcut)each).getFirstKeyStroke();
@@ -483,40 +483,39 @@ public final class ToolWindowManagerImpl extends ToolWindowManagerEx implements 
   }
 
   private void registerToolWindowsFromBeans() {
-    ToolWindowEP[] beans = Extensions.getExtensions(ToolWindowEP.EP_NAME);
-    for (final ToolWindowEP bean : beans) {
-      final Condition<Project> condition = bean.getCondition();
-      if (condition == null) {
-        initToolWindow(bean);
-      }
-      else {
-        checkConditionInReadAction(bean, condition);
-      }
-    }
+    List<ToolWindowEP> beans = new ArrayList<>(Arrays.asList(Extensions.getExtensions(ToolWindowEP.EP_NAME)));
+    Collections.reverse(beans);
+
+    checkConditionsInReadAction(beans, new ArrayList<>());
   }
 
-  private void checkConditionInReadAction(@NotNull final ToolWindowEP bean, @NotNull final Condition<Project> condition) {
+  private void checkConditionsInReadAction(@NotNull List<ToolWindowEP> beans, @NotNull List<ToolWindowEP> checkedSuccessfully) {
     ProgressIndicatorUtils.scheduleWithWriteActionPriority(new ReadTask() {
-
       @Nullable
       @Override
       public Continuation performInReadAction(@NotNull ProgressIndicator indicator) throws ProcessCanceledException {
-        if (!myProject.isDisposed() && condition.value(myProject)) {
-          return new Continuation(new Runnable() {
-            @Override
-            public void run() {
-              if (!myProject.isDisposed() && getToolWindow(bean.id) == null) {
+        for (int i = beans.size() - 1; i >= 0; i--) {
+          indicator.checkCanceled();
+          ToolWindowEP bean = beans.remove(i);
+          Condition<Project> condition = ObjectUtils.notNull(bean.getCondition(), Conditions.<Project>alwaysTrue());
+          if (!myProject.isDisposed() && condition.value(myProject)) {
+            checkedSuccessfully.add(bean);
+          }
+        }
+        return new Continuation(() -> {
+          if (!myProject.isDisposed()) {
+            for (ToolWindowEP bean : checkedSuccessfully) {
+              if (getToolWindow(bean.id) == null) {
                 initToolWindow(bean);
               }
             }
-          });
-        }
-        return null;
+          }
+        }, ModalityState.any());
       }
 
       @Override
       public void onCanceled(@NotNull ProgressIndicator indicator) {
-        checkConditionInReadAction(bean, condition);
+        checkConditionsInReadAction(beans, checkedSuccessfully);
       }
     });
   }
@@ -2222,8 +2221,7 @@ public final class ToolWindowManagerImpl extends ToolWindowManagerEx implements 
 
       Window frame = myWindowedDecorator.getFrame();
       if (!frame.isShowing()) return;
-      Rectangle bounds = frame.getBounds();
-      bounds.setLocation(frame.getLocationOnScreen());
+      Rectangle bounds = getRootBounds((JFrame)frame);
       info.setFloatingBounds(bounds);
     }
 
@@ -2242,6 +2240,14 @@ public final class ToolWindowManagerImpl extends ToolWindowManagerEx implements 
     public Condition getExpireCondition() {
       return ApplicationManager.getApplication().getDisposed();
     }
+  }
+
+  @NotNull
+  private static Rectangle getRootBounds(JFrame frame) {
+    JRootPane rootPane = frame.getRootPane();
+    Rectangle bounds = rootPane.getBounds();
+    bounds.setLocation(frame.getX() + rootPane.getX(), frame.getY() + rootPane.getY());
+    return bounds;
   }
 
   private final class EditorComponentFocusWatcher extends FocusWatcher {
@@ -2383,6 +2389,12 @@ public final class ToolWindowManagerImpl extends ToolWindowManagerEx implements 
         if (owner != null) {
           info.setFloatingBounds(owner.getBounds());
         }
+      }
+      else if (info.isWindowed()) {
+        WindowedDecorator decorator = getWindowedDecorator(info.getId());
+        Window frame = decorator != null ? decorator.getFrame() : null;
+        if (frame == null || !frame.isShowing()) return;
+        info.setFloatingBounds(getRootBounds((JFrame)frame));
       }
       else { // docked and sliding windows
         ToolWindowAnchor anchor = info.getAnchor();

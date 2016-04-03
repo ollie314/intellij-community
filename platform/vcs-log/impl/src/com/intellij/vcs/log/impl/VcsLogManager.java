@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,15 +22,17 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.extensions.ExtensionPointName;
 import com.intellij.openapi.extensions.Extensions;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.ui.MessageType;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.vcs.AbstractVcs;
 import com.intellij.openapi.vcs.ProjectLevelVcsManager;
 import com.intellij.openapi.vcs.VcsRoot;
+import com.intellij.openapi.vcs.ui.VcsBalloonProblemNotifier;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.util.Consumer;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.MultiMap;
 import com.intellij.vcs.log.VcsLogProvider;
-import com.intellij.vcs.log.VcsLogRefresher;
 import com.intellij.vcs.log.data.*;
 import com.intellij.vcs.log.graph.PermanentGraph;
 import com.intellij.vcs.log.ui.VcsLogColorManagerImpl;
@@ -51,6 +53,8 @@ public class VcsLogManager implements Disposable {
   @NotNull private final Project myProject;
   @NotNull private final VcsLogTabsProperties myUiProperties;
 
+  @Nullable private Runnable myRecreateMainLogHandler;
+
   private volatile VcsLogUiImpl myUi;
   private VcsLogDataManager myDataManager;
   private VcsLogColorManagerImpl myColorManager;
@@ -59,8 +63,6 @@ public class VcsLogManager implements Disposable {
   public VcsLogManager(@NotNull Project project, @NotNull VcsLogTabsProperties uiProperties) {
     myProject = project;
     myUiProperties = uiProperties;
-
-    Disposer.register(project, this);
   }
 
   public VcsLogDataManager getDataManager() {
@@ -135,7 +137,7 @@ public class VcsLogManager implements Disposable {
     if (myDataManager != null) return true;
 
     Map<VirtualFile, VcsLogProvider> logProviders = findLogProviders(getVcsRoots(), myProject);
-    myDataManager = new VcsLogDataManager(myProject, logProviders);
+    myDataManager = new VcsLogDataManager(myProject, logProviders, new MyFatalErrorsConsumer());
     myTabsLogRefresher = new VcsLogTabsRefresher(myProject, myDataManager);
 
     refreshLogOnVcsEvents(logProviders, myTabsLogRefresher);
@@ -146,14 +148,16 @@ public class VcsLogManager implements Disposable {
     return false;
   }
 
-  private static void refreshLogOnVcsEvents(@NotNull Map<VirtualFile, VcsLogProvider> logProviders, @NotNull VcsLogRefresher refresher) {
+  private static void refreshLogOnVcsEvents(@NotNull Map<VirtualFile, VcsLogProvider> logProviders,
+                                            @NotNull VcsLogTabsRefresher refresher) {
     MultiMap<VcsLogProvider, VirtualFile> providers2roots = MultiMap.create();
     for (Map.Entry<VirtualFile, VcsLogProvider> entry : logProviders.entrySet()) {
       providers2roots.putValue(entry.getValue(), entry.getKey());
     }
 
     for (Map.Entry<VcsLogProvider, Collection<VirtualFile>> entry : providers2roots.entrySet()) {
-      entry.getKey().subscribeToRootRefreshEvents(entry.getValue(), refresher);
+      Disposable disposable = entry.getKey().subscribeToRootRefreshEvents(entry.getValue(), refresher);
+      Disposer.register(refresher, disposable);
     }
   }
 
@@ -177,6 +181,10 @@ public class VcsLogManager implements Disposable {
       }
     }
     return logProviders;
+  }
+
+  public void setRecreateMainLogHandler(@Nullable Runnable recreateMainLogHandler) {
+    myRecreateMainLogHandler = recreateMainLogHandler;
   }
 
   /**
@@ -203,5 +211,36 @@ public class VcsLogManager implements Disposable {
   @Override
   public void dispose() {
     disposeLog();
+  }
+
+  private class MyFatalErrorsConsumer implements Consumer<Exception> {
+    private boolean myIsBroken = false;
+
+    @Override
+    public void consume(@NotNull final Exception e) {
+      ApplicationManager.getApplication().invokeLater(new Runnable() {
+        @Override
+        public void run() {
+          if (!myIsBroken) {
+            myIsBroken = true;
+            processErrorFirstTime(e);
+          }
+          else {
+            LOG.debug(e);
+          }
+        }
+      });
+    }
+
+    protected void processErrorFirstTime(@NotNull Exception e) {
+      if (myRecreateMainLogHandler != null) {
+        LOG.info(e);
+        VcsBalloonProblemNotifier.showOverChangesView(myProject, "Fatal error, VCS Log recreated: " + e.getMessage(), MessageType.ERROR);
+        myRecreateMainLogHandler.run();
+      }
+      else {
+        LOG.error(e);
+      }
+    }
   }
 }

@@ -29,8 +29,8 @@ public class VcsNotifier {
     "Vcs Messages", ChangesViewContentManager.TOOLWINDOW_ID);
   public static final NotificationGroup IMPORTANT_ERROR_NOTIFICATION = new NotificationGroup(
     "Vcs Important Messages", NotificationDisplayType.STICKY_BALLOON, true);
-  public static final NotificationGroup MINOR_NOTIFICATION = new NotificationGroup(
-    "Vcs Minor Notifications", NotificationDisplayType.BALLOON, true);
+  public static final NotificationGroup STANDARD_NOTIFICATION = new NotificationGroup(
+    "Vcs Notifications", NotificationDisplayType.BALLOON, true);
   public static final NotificationGroup SILENT_NOTIFICATION = new NotificationGroup(
     "Vcs Silent Notifications", NotificationDisplayType.NONE, true);
 
@@ -46,9 +46,9 @@ public class VcsNotifier {
   }
 
   @NotNull
-  public static Notification createNotification(@NotNull NotificationGroup notificationGroup,
-                                                @NotNull String title, @NotNull String message, @NotNull NotificationType type,
-                                                @Nullable NotificationListener listener) {
+  private static Notification createNotification(@NotNull NotificationGroup notificationGroup,
+                                                 @NotNull String title, @NotNull String message, @NotNull NotificationType type,
+                                                 @Nullable NotificationListener listener) {
     // title can be empty; message can't be neither null, nor empty
     if (StringUtil.isEmptyOrSpaces(message)) {
       message = title;
@@ -128,7 +128,7 @@ public class VcsNotifier {
 
   @NotNull
   public Notification notifyMinorWarning(@NotNull String title, @NotNull String message, @Nullable NotificationListener listener) {
-    return notify(MINOR_NOTIFICATION, title, message, NotificationType.WARNING, listener);
+    return notify(STANDARD_NOTIFICATION, title, message, NotificationType.WARNING, listener);
   }
 
   @NotNull
@@ -158,7 +158,7 @@ public class VcsNotifier {
 
   @NotNull
   public Notification notifyMinorInfo(@NotNull String title, @NotNull String message, @Nullable NotificationListener listener) {
-    return notify(MINOR_NOTIFICATION, title, message, NotificationType.INFORMATION, listener);
+    return notify(STANDARD_NOTIFICATION, title, message, NotificationType.INFORMATION, listener);
   }
 
   public Notification logInfo(@NotNull String title, @NotNull String message) {
