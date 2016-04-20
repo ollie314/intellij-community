@@ -158,7 +158,7 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextBase imp
                   : InspectionsBundle.message(mySingleInspectionRun ?
                                               "inspection.results.for.inspection.toolwindow.title" :
                                               "inspection.results.for.profile.toolwindow.title",
-                                              view.getCurrentProfileName()), false);
+                                              view.getCurrentProfileName(), getCurrentScope().getDisplayName()), false);
 
   }
 
@@ -682,7 +682,7 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextBase imp
       }
     }
     if (!ApplicationManager.getApplication().isUnitTestMode()) {
-      if (myView == null && !InspectionResultsView.hasProblems(globalTools, this, createContentProvider())) {
+      if (myView == null && !ReadAction.compute(() -> InspectionResultsView.hasProblems(globalTools, this, createContentProvider())).booleanValue()) {
         return;
       }
       createViewIfNeed();
@@ -1018,7 +1018,7 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextBase imp
         }, title, null);
       }
     };
-    TransactionGuard.submitTransaction(runnable);
+    TransactionGuard.submitTransaction(project, runnable);
   }
 
   private static boolean isBinary(@NotNull PsiFile file) {

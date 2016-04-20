@@ -161,9 +161,9 @@ public class PsiMethodCallExpressionImpl extends ExpressionPsiElement implements
       final JavaResolveResult[] results = methodExpression.multiResolve(false);
       LanguageLevel languageLevel = PsiUtil.getLanguageLevel(call);
 
+      final PsiElement callParent = PsiUtil.skipParenthesizedExprUp(call.getParent());
       final PsiExpressionList parentArgList;
       if (languageLevel.isAtLeast(LanguageLevel.JDK_1_8)) {
-        final PsiElement callParent = PsiUtil.skipParenthesizedExprUp(call.getParent());
         parentArgList = callParent instanceof PsiConditionalExpression && !PsiPolyExpressionUtil.isPolyExpression((PsiExpression)callParent)
                         ? null : PsiTreeUtil.getParentOfType(call, PsiExpressionList.class);
       }
@@ -177,6 +177,9 @@ public class PsiMethodCallExpressionImpl extends ExpressionPsiElement implements
         final JavaResolveResult candidateInfo = results[i];
 
         if (genericMethodCall && PsiPolyExpressionUtil.isMethodCallPolyExpression(call, (PsiMethod)candidateInfo.getElement())) {
+          if (callParent instanceof PsiAssignmentExpression) {
+            return null;
+          }
           LOG.error("poly expression evaluation during overload resolution");
         }
 
@@ -244,6 +247,7 @@ public class PsiMethodCallExpressionImpl extends ExpressionPsiElement implements
       // 18.5.2
       // if unchecked conversion was necessary, then this substitution provides the parameter types of the invocation type, 
       // while the return type and thrown types are given by the erasure of m's type (without applying θ').
+      //due to https://bugs.openjdk.java.net/browse/JDK-8135087 erasure is called on substitutedReturnType and not on ret type itself as by spec
       return TypeConversionUtil.erasure(substitutedReturnType);
     }
 

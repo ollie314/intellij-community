@@ -59,7 +59,7 @@ public interface InspectionToolPresentation extends ProblemDescriptionsProcessor
   @NotNull
   FileStatus getElementStatus(final RefEntity element);
   @NotNull
-  Collection<RefEntity> getIgnoredRefElements();
+  Set<RefEntity> getIgnoredRefElements();
   @Nullable
   IntentionAction findQuickFixes(@NotNull CommonProblemDescriptor descriptor, final String hint);
   @NotNull
@@ -97,4 +97,12 @@ public interface InspectionToolPresentation extends ProblemDescriptionsProcessor
   default JComponent getCustomPreviewPanel(RefEntity entity) {
     return null;
   };
+
+  /**
+   * see {@link com.intellij.codeInspection.deadCode.DummyEntryPointsPresentation}
+   * @return false only if contained problem elements contain real highlighted problem in code.
+   */
+  default boolean isDummy() {
+    return false;
+  }
 }
