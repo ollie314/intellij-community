@@ -59,7 +59,7 @@ public class GuavaInspection extends BaseJavaLocalInspectionTool {
     @NotNull
     @Override
     protected Set<String> compute() {
-      return ContainerUtil.newHashSet("append", "cycle", "uniqueIndex", "index");
+      return ContainerUtil.newHashSet("append", "cycle", "uniqueIndex", "index", "toMultiset");
     }
   };
 
@@ -91,7 +91,7 @@ public class GuavaInspection extends BaseJavaLocalInspectionTool {
           @NotNull
           @Override
           protected Map<String, PsiClass> compute() {
-            Map<String, PsiClass> map = new HashMap<String, PsiClass>();
+            Map<String, PsiClass> map = new HashMap<>();
             for (TypeConversionRule rule : TypeConversionRule.EP_NAME.getExtensions()) {
               if (rule instanceof BaseGuavaTypeConversionRule) {
                 final String fromClass = ((BaseGuavaTypeConversionRule)rule).ruleFromClass();
@@ -271,7 +271,7 @@ public class GuavaInspection extends BaseJavaLocalInspectionTool {
           LOG.assertTrue(substitutionMap.size() == 2);
           LOG.assertTrue(GuavaLambda.FUNCTION.getJavaAnalogueClassQName().equals(targetClass.getQualifiedName()));
           final PsiType returnType = LambdaUtil.getFunctionalInterfaceReturnType(currentType);
-          final List<PsiType> types = new ArrayList<PsiType>(substitutionMap.values());
+          final List<PsiType> types = new ArrayList<>(substitutionMap.values());
           types.remove(returnType);
           final PsiType parameterType = types.get(0);
           return elementFactory.createType(targetClass, parameterType, returnType);
@@ -280,7 +280,7 @@ public class GuavaInspection extends BaseJavaLocalInspectionTool {
     };
   }
 
-  public class MigrateGuavaTypeFix extends LocalQuickFixAndIntentionActionOnPsiElement implements BatchQuickFix<ProblemDescriptor> {
+  public class MigrateGuavaTypeFix extends LocalQuickFixAndIntentionActionOnPsiElement implements BatchQuickFix<CommonProblemDescriptor> {
     private final PsiType myTargetType;
 
     private MigrateGuavaTypeFix(@NotNull PsiElement element, PsiType targetType) {
@@ -333,13 +333,13 @@ public class GuavaInspection extends BaseJavaLocalInspectionTool {
 
     @Override
     public void applyFix(@NotNull final Project project,
-                         @NotNull ProblemDescriptor[] descriptors,
+                         @NotNull CommonProblemDescriptor[] descriptors,
                          @NotNull List<PsiElement> psiElementsToIgnore,
                          @Nullable Runnable refreshViews) {
-      final List<PsiElement> elementsToFix = new ArrayList<PsiElement>();
-      final List<PsiType> migrationTypes = new ArrayList<PsiType>();
+      final List<PsiElement> elementsToFix = new ArrayList<>();
+      final List<PsiType> migrationTypes = new ArrayList<>();
 
-      for (ProblemDescriptor descriptor : descriptors) {
+      for (CommonProblemDescriptor descriptor : descriptors) {
         final MigrateGuavaTypeFix fix = getFix(descriptor);
         elementsToFix.add(fix.getStartElement());
         migrationTypes.add(fix.myTargetType);
@@ -348,7 +348,7 @@ public class GuavaInspection extends BaseJavaLocalInspectionTool {
       if (!elementsToFix.isEmpty()) performTypeMigration(elementsToFix, migrationTypes);
     }
 
-    private MigrateGuavaTypeFix getFix(ProblemDescriptor descriptor) {
+    private MigrateGuavaTypeFix getFix(CommonProblemDescriptor descriptor) {
       final QuickFix[] fixes = descriptor.getFixes();
       LOG.assertTrue(fixes != null);
       for (QuickFix fix : fixes) {
@@ -394,18 +394,13 @@ public class GuavaInspection extends BaseJavaLocalInspectionTool {
     private Function<PsiElement, PsiType> createMigrationTypeFunction(@NotNull final List<PsiElement> elements,
                                                                              @NotNull final List<PsiType> types) {
       LOG.assertTrue(elements.size() == types.size());
-      final Map<PsiElement, PsiType> mappings = new HashMap<PsiElement, PsiType>();
+      final Map<PsiElement, PsiType> mappings = new HashMap<>();
       final Iterator<PsiType> typeIterator = types.iterator();
       for (PsiElement element : elements) {
         PsiType type = typeIterator.next();
         mappings.put(element, type);
       }
-      return new Function<PsiElement, PsiType>() {
-        @Override
-        public PsiType fun(PsiElement element) {
-          return mappings.get(element);
-        }
-      };
+      return element -> mappings.get(element);
     }
   }
 }

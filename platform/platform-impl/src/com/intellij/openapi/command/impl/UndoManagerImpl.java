@@ -163,12 +163,7 @@ public class UndoManagerImpl extends UndoManager implements ProjectComponent, Ap
       runStartupActivity();
     }
     else {
-      myStartupManager.registerStartupActivity(new Runnable() {
-        @Override
-        public void run() {
-          runStartupActivity();
-        }
-      });
+      myStartupManager.registerStartupActivity(() -> runStartupActivity());
     }
   }
 
@@ -179,7 +174,7 @@ public class UndoManagerImpl extends UndoManager implements ProjectComponent, Ap
 
       @Override
       public void commandStarted(CommandEvent event) {
-        onCommandStarted(event.getProject(), event.getUndoConfirmationPolicy());
+        onCommandStarted(event.getProject(), event.getUndoConfirmationPolicy(), event.shouldRecordActionForOriginalDocument());
       }
 
       @Override
@@ -191,7 +186,7 @@ public class UndoManagerImpl extends UndoManager implements ProjectComponent, Ap
       public void undoTransparentActionStarted() {
         if (!isInsideCommand()) {
           myStarted = true;
-          onCommandStarted(myProject, UndoConfirmationPolicy.DEFAULT);
+          onCommandStarted(myProject, UndoConfirmationPolicy.DEFAULT, true);
         }
       }
 
@@ -225,7 +220,7 @@ public class UndoManagerImpl extends UndoManager implements ProjectComponent, Ap
     return myCommandLevel > 0;
   }
 
-  private void onCommandStarted(final Project project, UndoConfirmationPolicy undoConfirmationPolicy) {
+  private void onCommandStarted(final Project project, UndoConfirmationPolicy undoConfirmationPolicy, boolean recordOriginalReference) {
     if (myCommandLevel == 0) {
       for (UndoProvider undoProvider : myUndoProviders) {
         undoProvider.commandStarted(project);
@@ -233,7 +228,7 @@ public class UndoManagerImpl extends UndoManager implements ProjectComponent, Ap
       myCurrentActionProject = project;
     }
 
-    commandStarted(undoConfirmationPolicy, myProject == project);
+    commandStarted(undoConfirmationPolicy, myProject == project && recordOriginalReference);
 
     LOG.assertTrue(myCommandLevel == 0 || !(myCurrentActionProject instanceof DummyProject));
   }
@@ -372,7 +367,7 @@ public class UndoManagerImpl extends UndoManager implements ProjectComponent, Ap
       LOG.error("Must be called inside command");
       return;
     }
-    List<DocumentReference> refs = new ArrayList<DocumentReference>(docs.length);
+    List<DocumentReference> refs = new ArrayList<>(docs.length);
     for (Document each : docs) {
       // is document's file still valid
       VirtualFile file = FileDocumentManager.getInstance().getFile(each);
@@ -388,7 +383,7 @@ public class UndoManagerImpl extends UndoManager implements ProjectComponent, Ap
       LOG.error("Must be called inside command");
       return;
     }
-    List<DocumentReference> refs = new ArrayList<DocumentReference>(files.length);
+    List<DocumentReference> refs = new ArrayList<>(files.length);
     for (VirtualFile each : files) {
       refs.add(DocumentReferenceManager.getInstance().create(each));
     }
@@ -421,22 +416,19 @@ public class UndoManagerImpl extends UndoManager implements ProjectComponent, Ap
     myCurrentOperationState = isUndo ? UNDO : REDO;
 
     final RuntimeException[] exception = new RuntimeException[1];
-    Runnable executeUndoOrRedoAction = new Runnable() {
-      @Override
-      public void run() {
-        try {
-          if (myProject != null) {
-            PsiDocumentManager.getInstance(myProject).commitAllDocuments();
-          }
-          CopyPasteManager.getInstance().stopKillRings();
-          myMerger.undoOrRedo(editor, isUndo);
+    Runnable executeUndoOrRedoAction = () -> {
+      try {
+        if (myProject != null) {
+          PsiDocumentManager.getInstance(myProject).commitAllDocuments();
         }
-        catch (RuntimeException ex) {
-          exception[0] = ex;
-        }
-        finally {
-          myCurrentOperationState = NONE;
-        }
+        CopyPasteManager.getInstance().stopKillRings();
+        myMerger.undoOrRedo(editor, isUndo);
+      }
+      catch (RuntimeException ex) {
+        exception[0] = ex;
+      }
+      finally {
+        myCurrentOperationState = NONE;
       }
     };
 
@@ -496,7 +488,7 @@ public class UndoManagerImpl extends UndoManager implements ProjectComponent, Ap
 
   @NotNull
   static Set<DocumentReference> getDocumentReferences(@NotNull FileEditor editor) {
-    Set<DocumentReference> result = new THashSet<DocumentReference>();
+    Set<DocumentReference> result = new THashSet<>();
 
     if (editor instanceof DocumentReferenceProvider) {
       result.addAll(((DocumentReferenceProvider)editor).getDocumentReferences());
@@ -592,7 +584,7 @@ public class UndoManagerImpl extends UndoManager implements ProjectComponent, Ap
   private void doCompact() {
     Collection<DocumentReference> refs = collectReferencesWithoutMergers();
 
-    Collection<DocumentReference> openDocs = new HashSet<DocumentReference>();
+    Collection<DocumentReference> openDocs = new HashSet<>();
     for (DocumentReference each : refs) {
       VirtualFile file = each.getFile();
       if (file == null) {
@@ -612,12 +604,7 @@ public class UndoManagerImpl extends UndoManager implements ProjectComponent, Ap
     if (refs.size() <= FREE_QUEUES_LIMIT) return;
 
     DocumentReference[] backSorted = refs.toArray(new DocumentReference[refs.size()]);
-    Arrays.sort(backSorted, new Comparator<DocumentReference>() {
-      @Override
-      public int compare(DocumentReference a, DocumentReference b) {
-        return getLastCommandTimestamp(a) - getLastCommandTimestamp(b);
-      }
-    });
+    Arrays.sort(backSorted, (a, b) -> getLastCommandTimestamp(a) - getLastCommandTimestamp(b));
 
     for (int i = 0; i < backSorted.length - FREE_QUEUES_LIMIT; i++) {
       DocumentReference each = backSorted[i];
@@ -632,7 +619,7 @@ public class UndoManagerImpl extends UndoManager implements ProjectComponent, Ap
 
   @NotNull
   private Collection<DocumentReference> collectReferencesWithoutMergers() {
-    Set<DocumentReference> result = new THashSet<DocumentReference>();
+    Set<DocumentReference> result = new THashSet<>();
     myUndoStacksHolder.collectAllAffectedDocuments(result);
     myRedoStacksHolder.collectAllAffectedDocuments(result);
     return result;

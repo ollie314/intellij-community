@@ -51,8 +51,11 @@ import com.intellij.psi.codeStyle.JavaCodeStyleManager;
 import com.intellij.psi.impl.PsiClassImplUtil;
 import com.intellij.psi.search.searches.OverridingMethodsSearch;
 import com.intellij.psi.search.searches.SuperMethodsSearch;
+import com.intellij.psi.util.PropertyUtil;
+import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiUtil;
 import com.intellij.psi.util.PsiUtilCore;
+import com.intellij.util.VisibilityUtil;
 import com.intellij.util.containers.ConcurrentFactoryMap;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -120,7 +123,7 @@ class PostHighlightingVisitor {
 
     ApplicationManager.getApplication().assertReadAccessAllowed();
 
-    InspectionProfile profile = InspectionProjectProfileManager.getInstance(myProject).getInspectionProfile();
+    InspectionProfile profile = InspectionProjectProfileManager.getInstance(myProject).getCurrentProfile();
 
     myDeadCodeKey = HighlightDisplayKey.find(UnusedDeclarationInspectionBase.SHORT_NAME);
 
@@ -138,7 +141,7 @@ class PostHighlightingVisitor {
   void collectHighlights(@NotNull HighlightInfoHolder result, @NotNull ProgressIndicator progress) {
     DaemonCodeAnalyzerEx daemonCodeAnalyzer = DaemonCodeAnalyzerEx.getInstanceEx(myProject);
     FileStatusMap fileStatusMap = daemonCodeAnalyzer.getFileStatusMap();
-    InspectionProfile profile = InspectionProjectProfileManager.getInstance(myProject).getInspectionProfile();
+    InspectionProfile profile = InspectionProjectProfileManager.getInstance(myProject).getCurrentProfile();
 
     boolean unusedSymbolEnabled = profile.isToolEnabled(myDeadCodeKey, myFile);
     GlobalUsageHelper globalUsageHelper = myRefCountHolder.getGlobalUsageHelper(myFile, myDeadCodeInspection, unusedSymbolEnabled);
@@ -191,7 +194,7 @@ class PostHighlightingVisitor {
   }
 
   private boolean isUnusedImportEnabled(HighlightDisplayKey unusedImportKey) {
-    InspectionProfile profile = InspectionProjectProfileManager.getInstance(myProject).getInspectionProfile();
+    InspectionProfile profile = InspectionProjectProfileManager.getInstance(myProject).getCurrentProfile();
     if (profile.isToolEnabled(unusedImportKey, myFile) &&
         myFile instanceof PsiJavaFile &&
         HighlightingLevelManager.getInstance(myProject).shouldHighlight(myFile)) {
@@ -212,20 +215,45 @@ class PostHighlightingVisitor {
     if (parent instanceof PsiLocalVariable && myUnusedSymbolInspection.LOCAL_VARIABLE) {
       return processLocalVariable((PsiLocalVariable)parent, identifier, progress);
     }
-    if (parent instanceof PsiField && myUnusedSymbolInspection.FIELD) {
+    if (parent instanceof PsiField && compareVisibilities((PsiModifierListOwner)parent, myUnusedSymbolInspection.getFieldVisibility())) {
       return processField(myProject, (PsiField)parent, identifier, progress, helper);
     }
-    if (parent instanceof PsiParameter && myUnusedSymbolInspection.PARAMETER) {
-      if (SuppressionUtil.isSuppressed(identifier, UnusedSymbolLocalInspectionBase.UNUSED_PARAMETERS_SHORT_NAME)) return null;
-      return processParameter(myProject, (PsiParameter)parent, identifier, progress);
+    if (parent instanceof PsiParameter) {
+      final PsiElement declarationScope = ((PsiParameter)parent).getDeclarationScope();
+      if (declarationScope instanceof PsiMethod ? compareVisibilities((PsiModifierListOwner)declarationScope, myUnusedSymbolInspection.getParameterVisibility())
+                                                : myUnusedSymbolInspection.LOCAL_VARIABLE) {
+        if (SuppressionUtil.isSuppressed(identifier, UnusedSymbolLocalInspectionBase.UNUSED_PARAMETERS_SHORT_NAME)) return null;
+        return processParameter(myProject, (PsiParameter)parent, identifier, progress);
+      }
     }
-    if (parent instanceof PsiMethod && myUnusedSymbolInspection.METHOD) {
-      return processMethod(myProject, (PsiMethod)parent, identifier, progress, helper);
+    if (parent instanceof PsiMethod) {
+      if (myUnusedSymbolInspection.isIgnoreAccessors() && PropertyUtil.isSimplePropertyAccessor((PsiMethod)parent)) {
+        return null;
+      }
+      if (compareVisibilities((PsiModifierListOwner)parent, myUnusedSymbolInspection.getMethodVisibility())) {
+        return processMethod(myProject, (PsiMethod)parent, identifier, progress, helper);
+      }
     }
-    if (parent instanceof PsiClass && myUnusedSymbolInspection.CLASS) {
-      return processClass(myProject, (PsiClass)parent, identifier, progress, helper);
+    if (parent instanceof PsiClass) {
+      final String acceptedVisibility = ((PsiClass)parent).getContainingClass() == null ? myUnusedSymbolInspection.getClassVisibility()
+                                                                                        : myUnusedSymbolInspection.getInnerClassVisibility();
+      if (compareVisibilities((PsiModifierListOwner)parent, acceptedVisibility)) {
+        return processClass(myProject, (PsiClass)parent, identifier, progress, helper);
+      }
     }
     return null;
+  }
+
+  private static boolean compareVisibilities(PsiModifierListOwner listOwner, final String visibility) {
+    if (visibility != null) {
+      while (listOwner != null) {
+        if (VisibilityUtil.compare(VisibilityUtil.getVisibilityModifier(listOwner.getModifierList()), visibility) >= 0) {
+          return true;
+        }
+        listOwner = PsiTreeUtil.getParentOfType(listOwner, PsiModifierListOwner.class, true);
+      }
+    }
+    return false;
   }
 
   @Nullable
@@ -357,7 +385,6 @@ class PostHighlightingVisitor {
            method.hasModifierProperty(PsiModifier.PRIVATE) ||
            method.hasModifierProperty(PsiModifier.STATIC) ||
            !method.hasModifierProperty(PsiModifier.ABSTRACT) &&
-           myUnusedSymbolInspection.REPORT_PARAMETER_FOR_PUBLIC_METHODS &&
            !isOverriddenOrOverrides(method)) &&
           !method.hasModifierProperty(PsiModifier.NATIVE) &&
           !JavaHighlightUtil.isSerializationRelatedMethod(method, method.getContainingClass()) &&
@@ -386,12 +413,6 @@ class PostHighlightingVisitor {
                                              @NotNull PsiIdentifier identifier,
                                              @NotNull ProgressIndicator progress) {
     if (!myRefCountHolder.isReferenced(parameter) && !UnusedSymbolUtil.isImplicitUsage(myProject, parameter, progress)) {
-      //parameter is defined by functional interface
-      final PsiElement declarationScope = parameter.getDeclarationScope();
-      if (declarationScope instanceof PsiMethod &&
-          myRefCountHolder.isReferencedByMethodReference((PsiMethod)declarationScope, myLanguageLevel)) {
-        return null;
-      }
       String message = JavaErrorMessages.message("parameter.is.not.used", identifier.getText());
       return UnusedSymbolUtil.createUnusedSymbolInfo(identifier, message, myDeadCodeInfoType);
     }

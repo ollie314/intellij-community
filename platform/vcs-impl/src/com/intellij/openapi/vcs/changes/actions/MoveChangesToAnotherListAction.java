@@ -43,6 +43,8 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 
+import static com.intellij.util.containers.UtilKt.isEmpty;
+
 /**
  * @author max
  */
@@ -71,8 +73,7 @@ public class MoveChangesToAnotherListAction extends AnAction implements DumbAwar
       return false;
     }
 
-    return !ContainerUtil.isEmpty(e.getData(ChangesListView.UNVERSIONED_FILES_DATA_KEY)) ||
-           SelectedFilesHelper.hasChangedOrUnversionedFiles(project, e) ||
+    return !isEmpty(e.getData(ChangesListView.UNVERSIONED_FILES_DATA_KEY)) ||
            !ArrayUtil.isEmpty(e.getData(VcsDataKeys.CHANGES)) ||
            !ArrayUtil.isEmpty(e.getData(CommonDataKeys.VIRTUAL_FILE_ARRAY));
   }
@@ -82,7 +83,7 @@ public class MoveChangesToAnotherListAction extends AnAction implements DumbAwar
                                                          @NotNull VirtualFile[] selectedFiles,
                                                          @NotNull List<VirtualFile> unversionedFiles,
                                                          @NotNull List<VirtualFile> changedFiles) {
-    List<Change> changes = new ArrayList<Change>();
+    List<Change> changes = new ArrayList<>();
     ChangeListManager changeListManager = ChangeListManager.getInstance(project);
 
     for (VirtualFile vFile : selectedFiles) {
@@ -201,9 +202,7 @@ public class MoveChangesToAnotherListAction extends AnAction implements DumbAwar
     LocalChangeList activeChangeList = ContainerUtil.find(lists, LocalChangeList::isDefault);
     if (activeChangeList != null) return activeChangeList;
 
-    LocalChangeList emptyList = ContainerUtil.find(lists, list -> {
-      return list.getChanges().isEmpty();
-    });
+    LocalChangeList emptyList = ContainerUtil.find(lists, list -> list.getChanges().isEmpty());
 
     return ObjectUtils.chooseNotNull(emptyList, ContainerUtil.getFirstItem(lists));
   }

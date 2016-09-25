@@ -42,6 +42,11 @@ public abstract class CodeInsightAction extends AnAction {
     }
   }
 
+  @Override
+  public boolean startInTransaction() {
+    return true;
+  }
+
   @Nullable
   protected Editor getEditor(@NotNull DataContext dataContext, @NotNull Project project, boolean forUpdate) {
     return CommonDataKeys.EDITOR.getData(dataContext);
@@ -52,23 +57,17 @@ public abstract class CodeInsightAction extends AnAction {
     //final PsiFile psiFile = PsiDocumentManager.getInstance(project).getPsiFile(editor.getDocument());
     final PsiFile psiFile = PsiUtilBase.getPsiFileInEditor(editor, project);
     if (psiFile == null) return;
-    CommandProcessor.getInstance().executeCommand(project, new Runnable() {
-      @Override
-      public void run() {
-        final CodeInsightActionHandler handler = getHandler();
-        final Runnable action = new Runnable() {
-          @Override
-          public void run() {
-            if (!ApplicationManager.getApplication().isUnitTestMode() && !editor.getContentComponent().isShowing()) return;
-            handler.invoke(project, editor, psiFile);
-          }
-        };
-        if (handler.startInWriteAction()) {
-          ApplicationManager.getApplication().runWriteAction(action);
-        }
-        else {
-          action.run();
-        }
+    CommandProcessor.getInstance().executeCommand(project, () -> {
+      final CodeInsightActionHandler handler = getHandler();
+      final Runnable action = () -> {
+        if (!ApplicationManager.getApplication().isUnitTestMode() && !editor.getContentComponent().isShowing()) return;
+        handler.invoke(project, editor, psiFile);
+      };
+      if (handler.startInWriteAction()) {
+        ApplicationManager.getApplication().runWriteAction(action);
+      }
+      else {
+        action.run();
       }
     }, getCommandName(), DocCommandGroupId.noneGroupId(editor.getDocument()));
   }
@@ -77,7 +76,7 @@ public abstract class CodeInsightAction extends AnAction {
   public void beforeActionPerformedUpdate(@NotNull AnActionEvent e) {
     Project project = e.getProject();
     if (project != null) {
-      getEditor(e.getDataContext(), project, false); // ensure documents are committed
+      PsiDocumentManager.getInstance(project).commitAllDocuments();
     }
     super.beforeActionPerformedUpdate(e);
   }

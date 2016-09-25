@@ -50,12 +50,7 @@ public class CodeStyleSchemesPanel {
       @Override
       public void actionPerformed(@NotNull ActionEvent e) {
         if (!myIsReset) {
-          ApplicationManager.getApplication().invokeLater(new Runnable() {
-                @Override
-                public void run() {
-                  onCombo();
-                }
-              });
+          ApplicationManager.getApplication().invokeLater(() -> onCombo());
         }
       }
     });
@@ -110,7 +105,7 @@ public class CodeStyleSchemesPanel {
   public void resetSchemesCombo() {
     myIsReset = true;
     try {
-      List<CodeStyleScheme> schemes = new ArrayList<CodeStyleScheme>();
+      List<CodeStyleScheme> schemes = new ArrayList<>();
       schemes.addAll(myModel.getAllSortedSchemes());
       DefaultComboBoxModel model = new DefaultComboBoxModel(schemes.toArray());
       myCombo.setModel(model);

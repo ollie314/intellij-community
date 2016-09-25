@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import com.intellij.lang.ASTNode;
 import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.popup.PopupChooserBuilder;
+import com.intellij.openapi.util.Pair;
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
@@ -34,7 +35,6 @@ import com.intellij.psi.util.QualifiedName;
 import com.intellij.ui.OnePixelSplitter;
 import com.intellij.ui.components.JBList;
 import com.intellij.util.Consumer;
-import com.intellij.util.Function;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.CheckBox;
 import com.jetbrains.python.PyNames;
@@ -79,7 +79,7 @@ public class PyPep8NamingInspection extends PyInspection {
     .put("N814", "CamelCase variable imported as constant")
     .build();
 
-  public final List<String> ignoredErrors = new ArrayList<String>();
+  public final List<String> ignoredErrors = new ArrayList<>();
 
   public boolean ignoreOverriddenFunctions = true;
   public final List<String> ignoredBaseClasses = Lists.newArrayList("unittest.TestCase", "unittest.case.TestCase");
@@ -116,18 +116,24 @@ public class PyPep8NamingInspection extends PyInspection {
       final PyFunction function = PsiTreeUtil.getParentOfType(node, PyFunction.class, true, PyClass.class);
       if (function == null) return;
       final Scope scope = ControlFlowCache.getScope(function);
-      for (PyExpression expression : node.getTargets()) {
-        final String name = expression.getName();
+      for (Pair<PyExpression, PyExpression> pair : node.getTargetsToValuesMapping()) {
+        final String name = pair.getFirst().getName();
         if (name == null || scope.isGlobal(name)) continue;
-        if (expression instanceof PyTargetExpression) {
-          final PyExpression qualifier = ((PyTargetExpression)expression).getQualifier();
+        if (pair.getFirst() instanceof PyTargetExpression) {
+          final PyExpression qualifier = ((PyTargetExpression)pair.getFirst()).getQualifier();
           if (qualifier != null) {
             return;
           }
         }
+        
+        final PyCallExpression assignedValue = PyUtil.as(pair.getSecond(), PyCallExpression.class);
+        if (assignedValue != null
+            && assignedValue.getCallee() != null && PyNames.NAMEDTUPLE.equals(assignedValue.getCallee().getName())) {
+          return;
+        }
         final String errorCode = "N806";
         if (!LOWERCASE_REGEX.matcher(name).matches() && !name.startsWith("_") && !ignoredErrors.contains(errorCode)) {
-          registerAndAddRenameAndIgnoreErrorQuickFixes(expression, errorCode);
+          registerAndAddRenameAndIgnoreErrorQuickFixes(pair.getFirst(), errorCode);
         }
       }
     }
@@ -261,7 +267,7 @@ public class PyPep8NamingInspection extends PyInspection {
     private final List<String> myBaseClassNames;
 
     public IgnoreBaseClassQuickFix(@NotNull PyClass baseClass, @NotNull TypeEvalContext context) {
-      myBaseClassNames = new ArrayList<String>();
+      myBaseClassNames = new ArrayList<>();
       ContainerUtil.addIfNotNull(getBaseClassNames(), baseClass.getQualifiedName());
       for (PyClass ancestor : baseClass.getAncestorClasses(context)) {
         ContainerUtil.addIfNotNull(getBaseClassNames(), ancestor.getQualifiedName());
@@ -283,19 +289,13 @@ public class PyPep8NamingInspection extends PyInspection {
     @Override
     public void applyFix(@NotNull final Project project, @NotNull final ProblemDescriptor descriptor) {
       final JBList list = new JBList(getBaseClassNames());
-      final Runnable updateBlackList = new Runnable() {
-        @Override
-        public void run() {
-          final InspectionProfile profile = InspectionProjectProfileManager.getInstance(project).getInspectionProfile();
-          profile.modifyProfile(new Consumer<ModifiableModel>() {
-            @Override
-            public void consume(ModifiableModel model) {
-              final PyPep8NamingInspection inspection = (PyPep8NamingInspection)model
-                .getUnwrappedTool(PyPep8NamingInspection.class.getSimpleName(), descriptor.getPsiElement());
-              addIfNotNull(inspection.ignoredBaseClasses, (String)list.getSelectedValue());
-            }
-          });
-        }
+      final Runnable updateBlackList = () -> {
+        final InspectionProfile profile = InspectionProjectProfileManager.getInstance(project).getCurrentProfile();
+        profile.modifyProfile(model -> {
+          final PyPep8NamingInspection inspection = (PyPep8NamingInspection)model
+            .getUnwrappedTool(PyPep8NamingInspection.class.getSimpleName(), descriptor.getPsiElement());
+          addIfNotNull(inspection.ignoredBaseClasses, (String)list.getSelectedValue());
+        });
       };
       DataManager.getInstance().getDataContextFromFocus().doWhenDone(new Consumer<DataContext>() {
         @Override
@@ -303,12 +303,7 @@ public class PyPep8NamingInspection extends PyInspection {
           new PopupChooserBuilder(list)
             .setTitle("Ignore base class")
             .setItemChoosenCallback(updateBlackList)
-            .setFilteringEnabled(new Function<Object, String>() {
-              @Override
-              public String fun(Object o) {
-                return (String)o;
-              }
-            })
+            .setFilteringEnabled(o -> (String)o)
             .createPopup()
             .showInBestPositionFor(dataContext);
         }
@@ -345,13 +340,10 @@ public class PyPep8NamingInspection extends PyInspection {
     @Override
     public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
       final PsiFile file = descriptor.getStartElement().getContainingFile();
-      InspectionProjectProfileManager.getInstance(project).getInspectionProfile().modifyProfile(new Consumer<ModifiableModel>() {
-        @Override
-        public void consume(ModifiableModel model) {
-          PyPep8NamingInspection tool = (PyPep8NamingInspection)model.getUnwrappedTool(INSPECTION_SHORT_NAME, file);
-          if (!tool.ignoredErrors.contains(myCode)) {
-            tool.ignoredErrors.add(myCode);
-          }
+      InspectionProjectProfileManager.getInstance(project).getCurrentProfile().modifyProfile(model -> {
+        PyPep8NamingInspection tool = (PyPep8NamingInspection)model.getUnwrappedTool(INSPECTION_SHORT_NAME, file);
+        if (!tool.ignoredErrors.contains(myCode)) {
+          tool.ignoredErrors.add(myCode);
         }
       });
     }

@@ -48,13 +48,14 @@ class UpdateChannel(node: Element) {
   val status: ChannelStatus = ChannelStatus.fromCode(node.getAttributeValue("status"))
   val licensing: String = node.getAttributeValue("licensing", LICENSING_PRODUCTION)
   val homePageUrl: String? = node.getAttributeValue("url")
+  val evalDays: Int = node.getAttributeValue("evalDays")?.toInt() ?: 30
   val builds: List<BuildInfo> = node.getChildren("build").map { BuildInfo(it) }
 
   override fun toString() = id
 }
 
 class BuildInfo(node: Element) {
-  val number: BuildNumber = BuildNumber.fromString(node.getAttributeValue("number") ?: throw JDOMException("build@number missing"))
+  val number: BuildNumber = BuildNumber.fromString(node.getAttributeValue("fullNumber") ?: node.getAttributeValue("number") ?: throw JDOMException("build@number missing"))
   val apiVersion: BuildNumber = BuildNumber.fromString(node.getAttributeValue("apiVersion"), number.productCode) ?: number
   val version: String = node.getAttributeValue("version") ?: ""
   val message: String = node.getChild("message")?.value ?: ""
@@ -85,7 +86,7 @@ class ButtonInfo(node: Element) {
 }
 
 class PatchInfo(node: Element) {
-  val fromBuild: BuildNumber = BuildNumber.fromString(node.getAttributeValue("from") ?: throw JDOMException("patch@from missing"))
+  val fromBuild: BuildNumber = BuildNumber.fromString(node.getAttributeValue("fullFrom") ?: node.getAttributeValue("from") ?: throw JDOMException("patch@from missing"))
   val size: String? = node.getAttributeValue("size")
   val isAvailable: Boolean = node.getAttributeValue("exclusions")?.splitToSequence(",")?.none { it.trim() == osSuffix } ?: true
 

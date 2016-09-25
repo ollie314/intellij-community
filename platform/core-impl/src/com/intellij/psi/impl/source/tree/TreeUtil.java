@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.intellij.psi.impl.source.tree;
 
+import com.intellij.extapi.psi.StubBasedPsiElementBase;
 import com.intellij.lang.ASTNode;
 import com.intellij.lexer.Lexer;
 import com.intellij.openapi.application.ApplicationManager;
@@ -23,6 +24,8 @@ import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.util.Couple;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.Ref;
+import com.intellij.psi.PsiComment;
+import com.intellij.psi.PsiWhiteSpace;
 import com.intellij.psi.StubBuilder;
 import com.intellij.psi.impl.DebugUtil;
 import com.intellij.psi.impl.source.PsiFileImpl;
@@ -37,10 +40,7 @@ import com.intellij.psi.tree.TokenSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.Set;
+import java.util.*;
 
 public class TreeUtil {
   public static final Key<String> UNCLOSED_ELEMENT_PROPERTY = Key.create("UNCLOSED_ELEMENT_PROPERTY");
@@ -451,7 +451,7 @@ public class TreeUtil {
   }
 
   public static void bindStubsToTree(@NotNull PsiFileImpl file, @NotNull StubTree stubTree, @NotNull FileElement tree) throws StubBindingException {
-    final Iterator<StubElement<?>> stubs = stubTree.getPlainList().iterator();
+    final ListIterator<StubElement<?>> stubs = stubTree.getPlainList().listIterator();
     stubs.next();  // skip file root stub
 
     final IStubFileElementType type = file.getElementTypeForStubBuilder();
@@ -472,12 +472,34 @@ public class TreeUtil {
             throw new StubBindingException("stub:" + stub + ", AST:" + type);
           }
 
+          StubBasedPsiElementBase psi = (StubBasedPsiElementBase)node.getPsi();
           //noinspection unchecked
-          ((StubBase)stub).setPsi(node.getPsi());
+          ((StubBase)stub).setPsi(psi);
+          psi.setStubIndex(stubs.previousIndex());
         }
 
         super.visitNode(node);
       }
     });
+  }
+
+  @Nullable
+  public static ASTNode skipWhitespaceAndComments(final ASTNode node, boolean forward) {
+    return skipWhitespaceCommentsAndTokens(node, TokenSet.EMPTY, forward);
+  }
+
+  @Nullable
+  public static ASTNode skipWhitespaceCommentsAndTokens(final ASTNode node, TokenSet alsoSkip, boolean forward) {
+    ASTNode element = node;
+    while (true) {
+      if (element == null) return null;
+      if (!isWhitespaceOrComment(element) && !alsoSkip.contains(element.getElementType())) break;
+      element = forward ? element.getTreeNext(): element.getTreePrev();
+    }
+    return element;
+  }
+
+  public static boolean isWhitespaceOrComment(ASTNode element) {
+    return element.getPsi() instanceof PsiWhiteSpace || element.getPsi() instanceof PsiComment;
   }
 }

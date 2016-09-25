@@ -87,8 +87,7 @@ public class CreatePropertyFix implements IntentionAction, LocalQuickFix {
     invokeAction(project, file, myElement.retrieve(), myKey, myPropertiesFiles);
   }
 
-  @Nullable
-  private Couple<String> invokeAction(@NotNull final Project project,
+  private void invokeAction(@NotNull final Project project,
                                       @NotNull PsiFile file,
                                       @NotNull PsiElement psiElement,
                                       @Nullable final String suggestedKey,
@@ -121,7 +120,7 @@ public class CreatePropertyFix implements IntentionAction, LocalQuickFix {
         NAME, dialogCustomization
       );
     }
-    return doAction(project, psiElement, model);
+    doAction(project, psiElement, model);
   }
 
   protected static I18nizeQuickFixDialog.DialogCustomization createDefaultCustomization(String suggestedKey, List<PropertiesFile> propertiesFiles) {
@@ -151,20 +150,14 @@ public class CreatePropertyFix implements IntentionAction, LocalQuickFix {
     }
     UndoUtil.markPsiFileForUndo(psiElement.getContainingFile());
 
-    ApplicationManager.getApplication().runWriteAction(new Runnable() {
-      public void run() {
-        CommandProcessor.getInstance().executeCommand(project, new Runnable() {
-          public void run() {
-            try {
-              I18nUtil.createProperty(project, selectedPropertiesFiles, key, value);
-            }
-            catch (IncorrectOperationException e) {
-              LOG.error(e);
-            }
-          }
-        }, CodeInsightBundle.message("quickfix.i18n.command.name"), project);
+    ApplicationManager.getApplication().runWriteAction(() -> CommandProcessor.getInstance().executeCommand(project, () -> {
+      try {
+        I18nUtil.createProperty(project, selectedPropertiesFiles, key, value);
       }
-    });
+      catch (IncorrectOperationException e) {
+        LOG.error(e);
+      }
+    }, CodeInsightBundle.message("quickfix.i18n.command.name"), project));
   }
 
   public boolean startInWriteAction() {

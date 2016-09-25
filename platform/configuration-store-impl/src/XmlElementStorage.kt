@@ -21,7 +21,6 @@ import com.intellij.openapi.components.TrackingPathMacroSubstitutor
 import com.intellij.openapi.components.impl.stores.FileStorageCoreUtil
 import com.intellij.openapi.diagnostic.debug
 import com.intellij.openapi.util.JDOMUtil
-import com.intellij.util.containers.ContainerUtil
 import com.intellij.util.containers.SmartHashSet
 import com.intellij.util.loadElement
 import gnu.trove.THashMap
@@ -29,12 +28,12 @@ import org.jdom.Attribute
 import org.jdom.Element
 
 abstract class XmlElementStorage protected constructor(protected val fileSpec: String,
-                                                       protected val rootElementName: String,
+                                                       protected val rootElementName: String?,
                                                        protected val pathMacroSubstitutor: TrackingPathMacroSubstitutor? = null,
                                                        roamingType: RoamingType? = RoamingType.DEFAULT,
                                                        provider: StreamProvider? = null) : StorageBaseEx<StateMap>() {
   val roamingType: RoamingType = roamingType ?: RoamingType.DEFAULT
-  private val provider: StreamProvider? = if (provider == null || roamingType == RoamingType.DISABLED || !provider.isApplicable(fileSpec, this.roamingType)) null else provider
+  private val provider: StreamProvider? = if (provider == null || roamingType == RoamingType.DISABLED) null else provider
 
   protected abstract fun loadLocalData(): Element?
 
@@ -49,20 +48,19 @@ abstract class XmlElementStorage protected constructor(protected val fileSpec: S
   override fun loadData(): StateMap {
     val element: Element?
     // we don't use local data if has stream provider
-    if (provider != null && provider.enabled) {
-      try {
-        element = loadDataFromProvider()
-        dataLoadedFromProvider(element)
+    if (provider != null && provider.isApplicable(fileSpec, roamingType)) {
+      element = try {
+        loadDataFromProvider().apply { dataLoadedFromProvider(this) }
       }
       catch (e: Exception) {
         LOG.error(e)
-        element = null
+        null
       }
     }
     else {
       element = loadLocalData()
     }
-    return if (element == null) StateMap.EMPTY else loadState(element)
+    return element?.let { loadState(element) } ?: StateMap.EMPTY
   }
 
   protected open fun dataLoadedFromProvider(element: Element?) {
@@ -76,7 +74,7 @@ abstract class XmlElementStorage protected constructor(protected val fileSpec: S
   }
 
   fun setDefaultState(element: Element) {
-    element.name = rootElementName
+    element.name = rootElementName!!
     storageDataRef.set(loadState(element))
   }
 
@@ -94,7 +92,7 @@ abstract class XmlElementStorage protected constructor(protected val fileSpec: S
     else {
       val changedComponentNames = oldData.getChangedComponentNames(newData)
       LOG.debug { "analyzeExternalChangesAndUpdateIfNeed: changedComponentNames $changedComponentNames for ${toString()}" }
-      if (!ContainerUtil.isEmpty(changedComponentNames)) {
+      if (changedComponentNames.isNotEmpty()) {
         componentNames.addAll(changedComponentNames)
       }
     }
@@ -111,7 +109,7 @@ abstract class XmlElementStorage protected constructor(protected val fileSpec: S
 
     private val newLiveStates = THashMap<String, Element>()
 
-    override fun createSaveSession() = if (storage.checkIsSavingDisabled() || copiedStates == null) null else this
+    override fun createSaveSession() = if (copiedStates == null || storage.checkIsSavingDisabled()) null else this
 
     override fun setSerializedState(componentName: String, element: Element?) {
       element?.normalizeRootName()
@@ -125,16 +123,13 @@ abstract class XmlElementStorage protected constructor(protected val fileSpec: S
 
     override fun save() {
       val stateMap = StateMap.fromMap(copiedStates!!)
-      var element = save(stateMap, storage.rootElementName, newLiveStates)
-      if (element == null || JDOMUtil.isEmpty(element)) {
-        element = null
-      }
-      else {
+      val element = save(stateMap, storage.rootElementName, newLiveStates)
+      if (element != null) {
         storage.beforeElementSaved(element)
       }
 
       val provider = storage.provider
-      if (provider != null && provider.enabled) {
+      if (provider != null && provider.isApplicable(storage.fileSpec, storage.roamingType)) {
         if (element == null) {
           provider.delete(storage.fileSpec, storage.roamingType)
         }
@@ -167,13 +162,17 @@ abstract class XmlElementStorage protected constructor(protected val fileSpec: S
   }
 
   fun updatedFromStreamProvider(changedComponentNames: MutableSet<String>, deleted: Boolean) {
+    updatedFrom(changedComponentNames, deleted, true)
+  }
+
+  fun updatedFrom(changedComponentNames: MutableSet<String>, deleted: Boolean, streamProvider: Boolean) {
     if (roamingType == RoamingType.DISABLED) {
       // storage roaming was changed to DISABLED, but settings repository has old state
       return
     }
 
     try {
-      val newElement = if (deleted) null else loadDataFromProvider()
+      val newElement = if (deleted) null else if (streamProvider) loadDataFromProvider() else loadLocalData()
       val states = storageDataRef.get()
       if (newElement == null) {
         // if data was loaded, mark as changed all loaded components
@@ -194,21 +193,29 @@ abstract class XmlElementStorage protected constructor(protected val fileSpec: S
   }
 }
 
-fun save(states: StateMap, rootElementName: String, newLiveStates: Map<String, Element>? = null): Element? {
+private fun save(states: StateMap, rootElementName: String?, newLiveStates: Map<String, Element>? = null): Element? {
   if (states.isEmpty()) {
     return null
   }
 
-  val rootElement = Element(rootElementName)
+  val rootElement = if (rootElementName == null) null else Element(rootElementName)
   for (componentName in states.keys()) {
-    val element = states.getElement(componentName, newLiveStates) ?: continue
+    val element: Element
+    try {
+      element = states.getElement(componentName, newLiveStates) ?: continue
+    }
+    catch (e: Exception) {
+      LOG.error("Cannot save \"$componentName\" data", e)
+      continue
+    }
+
     // name attribute should be first
     val elementAttributes = element.attributes
     if (elementAttributes.isEmpty()) {
       element.setAttribute(FileStorageCoreUtil.NAME, componentName)
     }
     else {
-      var nameAttribute: Attribute? = element.getAttribute(FileStorageCoreUtil.NAME)
+      var nameAttribute = element.getAttribute(FileStorageCoreUtil.NAME)
       if (nameAttribute == null) {
         nameAttribute = Attribute(FileStorageCoreUtil.NAME, componentName)
         elementAttributes.add(0, nameAttribute)
@@ -222,9 +229,13 @@ fun save(states: StateMap, rootElementName: String, newLiveStates: Map<String, E
       }
     }
 
+    if (rootElement == null) {
+      return element
+    }
+
     rootElement.addContent(element)
   }
-  return rootElement
+  return if (JDOMUtil.isEmpty(rootElement)) null else rootElement
 }
 
 internal fun Element.normalizeRootName(): Element {

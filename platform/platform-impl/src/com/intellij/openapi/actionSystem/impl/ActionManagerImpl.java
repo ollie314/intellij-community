@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,7 +53,7 @@ import com.intellij.util.ReflectionUtil;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.MultiMap;
 import com.intellij.util.messages.MessageBusConnection;
-import com.intellij.util.pico.ConstructorInjectionComponentAdapter;
+import com.intellij.util.pico.CachingConstructorInjectionComponentAdapter;
 import com.intellij.util.ui.UIUtil;
 import gnu.trove.THashMap;
 import gnu.trove.THashSet;
@@ -116,18 +116,18 @@ public final class ActionManagerImpl extends ActionManagerEx implements Disposab
   private static final int TIMER_DELAY = 500;
   private static final int UPDATE_DELAY_AFTER_TYPING = 500;
   private final Object myLock = new Object();
-  private final Map<String,AnAction> myId2Action = new THashMap<String, AnAction>();
-  private final Map<PluginId, THashSet<String>> myPlugin2Id = new THashMap<PluginId, THashSet<String>>();
-  private final TObjectIntHashMap<String> myId2Index = new TObjectIntHashMap<String>();
-  private final Map<Object,String> myAction2Id = new THashMap<Object, String>();
-  private final MultiMap<String,String> myId2GroupId = new MultiMap<String, String>();
-  private final List<String> myNotRegisteredInternalActionIds = new ArrayList<String>();
+  private final Map<String,AnAction> myId2Action = new THashMap<>();
+  private final Map<PluginId, THashSet<String>> myPlugin2Id = new THashMap<>();
+  private final TObjectIntHashMap<String> myId2Index = new TObjectIntHashMap<>();
+  private final Map<Object,String> myAction2Id = new THashMap<>();
+  private final MultiMap<String,String> myId2GroupId = new MultiMap<>();
+  private final List<String> myNotRegisteredInternalActionIds = new ArrayList<>();
   private final List<AnActionListener> myActionListeners = ContainerUtil.createLockFreeCopyOnWriteList();
   private final KeymapManager myKeymapManager;
   private final DataManager myDataManager;
-  private final List<ActionPopupMenuImpl> myPopups = new ArrayList<ActionPopupMenuImpl>();
-  private final Map<AnAction, DataContext> myQueuedNotifications = new LinkedHashMap<AnAction, DataContext>();
-  private final Map<AnAction, AnActionEvent> myQueuedNotificationsEvents = new LinkedHashMap<AnAction, AnActionEvent>();
+  private final List<ActionPopupMenuImpl> myPopups = new ArrayList<>();
+  private final Map<AnAction, DataContext> myQueuedNotifications = new LinkedHashMap<>();
+  private final Map<AnAction, AnActionEvent> myQueuedNotificationsEvents = new LinkedHashMap<>();
   private MyTimer myTimer;
   private int myRegisteredActionsCount;
   private String myLastPreformedActionId;
@@ -482,20 +482,25 @@ public final class ActionManagerImpl extends ActionManagerEx implements Disposab
   }
 
   private AnAction getActionImpl(String id, boolean canReturnStub) {
+    AnAction action;
     synchronized (myLock) {
-      AnAction action = myId2Action.get(id);
-      if (!canReturnStub && action instanceof ActionStub) {
-        action = convert((ActionStub)action);
+      action = myId2Action.get(id);
+      if (canReturnStub || !(action instanceof ActionStub)) {
+        return action;
+      }
+    }
+    AnAction converted = convertStub((ActionStub)action);
+    synchronized (myLock) {
+      action = myId2Action.get(id);
+      if (action instanceof ActionStub) {
+        action = replaceStub((ActionStub)action, converted);
       }
       return action;
     }
   }
 
-  /**
-   * Converts action's stub to normal action.
-   */
   @NotNull
-  private AnAction convert(@NotNull ActionStub stub) {
+  private AnAction replaceStub(@NotNull ActionStub stub, AnAction anAction) {
     LOG.assertTrue(myAction2Id.containsKey(stub));
     myAction2Id.remove(stub);
 
@@ -505,7 +510,6 @@ public final class ActionManagerImpl extends ActionManagerEx implements Disposab
     LOG.assertTrue(action != null);
     LOG.assertTrue(action.equals(stub));
 
-    AnAction anAction = convertStub(stub);
     myAction2Id.put(anAction, stub.getId());
 
     return addToMap(stub.getId(), anAction, stub.getPluginId(), stub.getProjectType());
@@ -522,7 +526,7 @@ public final class ActionManagerImpl extends ActionManagerEx implements Disposab
   @Override
   public String[] getActionIds(@NotNull String idPrefix) {
     synchronized (myLock) {
-      ArrayList<String> idList = new ArrayList<String>();
+      ArrayList<String> idList = new ArrayList<>();
       for (String id : myId2Action.keySet()) {
         if (id.startsWith(idPrefix)) {
           idList.add(id);
@@ -666,7 +670,7 @@ public final class ActionManagerImpl extends ActionManagerEx implements Disposab
         group = new DefaultCompactActionGroup();
       } else {
         Class aClass = Class.forName(className, true, loader);
-        Object obj = new ConstructorInjectionComponentAdapter(className, aClass).getComponentInstance(ApplicationManager.getApplication().getPicoContainer());
+        Object obj = new CachingConstructorInjectionComponentAdapter(className, aClass).getComponentInstance(ApplicationManager.getApplication().getPicoContainer());
 
         if (!(obj instanceof ActionGroup)) {
           reportActionError(pluginId, "class with name \"" + className + "\" should be instance of " + ActionGroup.class.getName());
@@ -989,12 +993,7 @@ public final class ActionManagerImpl extends ActionManagerEx implements Disposab
       myId2Index.put(actionId, myRegisteredActionsCount++);
       myAction2Id.put(action, actionId);
       if (pluginId != null && !(action instanceof ActionGroup)){
-        THashSet<String> pluginActionIds = myPlugin2Id.get(pluginId);
-        if (pluginActionIds == null){
-          pluginActionIds = new THashSet<String>();
-          myPlugin2Id.put(pluginId, pluginActionIds);
-        }
-        pluginActionIds.add(actionId);
+        myPlugin2Id.computeIfAbsent(pluginId, k -> new THashSet<>()).add(actionId);
       }
       action.registerCustomShortcutSet(new ProxyShortcutSet(actionId, myKeymapManager), null);
     }
@@ -1072,12 +1071,7 @@ public final class ActionManagerImpl extends ActionManagerEx implements Disposab
 
   @Override
   public Comparator<String> getRegistrationOrderComparator() {
-    return new Comparator<String>() {
-      @Override
-      public int compare(String id1, String id2) {
-        return myId2Index.get(id1) - myId2Index.get(id2);
-      }
-    };
+    return (id1, id2) -> myId2Index.get(id1) - myId2Index.get(id2);
   }
 
   @NotNull
@@ -1246,7 +1240,7 @@ public final class ActionManagerImpl extends ActionManagerEx implements Disposab
 
   public Set<String> getActionIds(){
     synchronized (myLock) {
-      return new HashSet<String>(myId2Action.keySet());
+      return new HashSet<>(myId2Action.keySet());
     }
   }
 
@@ -1275,12 +1269,7 @@ public final class ActionManagerImpl extends ActionManagerEx implements Disposab
     assert app.isDispatchThread();
 
     final ActionCallback result = new ActionCallback();
-    final Runnable doRunnable = new Runnable() {
-      @Override
-      public void run() {
-        tryToExecuteNow(action, inputEvent, contextComponent, place, result);
-      }
-    };
+    final Runnable doRunnable = () -> tryToExecuteNow(action, inputEvent, contextComponent, place, result);
 
     if (now) {
       doRunnable.run();
@@ -1396,7 +1385,7 @@ public final class ActionManagerImpl extends ActionManagerEx implements Disposab
       boolean transparentOnly = myLastTimePerformed == lastEventCount;
 
       try {
-        Set<TimerListener> notified = new HashSet<TimerListener>();
+        Set<TimerListener> notified = new HashSet<>();
         myTransparentOnlyUpdate = transparentOnly;
         notifyListeners(myTransparentTimerListeners, notified);
 

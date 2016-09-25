@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -167,7 +167,7 @@ public class PsiBuilderImpl extends UserDataHolderBase implements PsiBuilder {
                          @NotNull TokenSet comments,
                          @NotNull Lexer lexer,
                          CharTable charTable,
-                         @NotNull final CharSequence text,
+                         @NotNull CharSequence text,
                          @Nullable ASTNode originalTree,
                          @Nullable CharSequence lastCommittedText,
                          @Nullable MyTreeStructure parentLightTree,
@@ -211,7 +211,7 @@ public class PsiBuilderImpl extends UserDataHolderBase implements PsiBuilder {
                         @NotNull final LighterLazyParseableNode chameleon,
                         @NotNull final CharSequence text) {
     this(project, chameleon.getContainingFile(), parserDefinition.getWhitespaceTokens(), parserDefinition.getCommentTokens(), lexer,
-         chameleon.getCharTable(), text, null, null, ((LazyParseableToken)chameleon).myParent, chameleon);
+         chameleon.getCharTable(), text, null, null, ((LazyParseableToken)chameleon).myParentStructure, chameleon);
   }
 
   private void cacheLexemes(@Nullable Object parentCachingNode) {
@@ -536,7 +536,7 @@ public class PsiBuilderImpl extends UserDataHolderBase implements PsiBuilder {
       int startOffset = getStartOffset() - myBuilder.myOffset;
       int endOffset = isDone ? getEndOffset() - myBuilder.myOffset : myBuilder.getCurrentOffset();
       CharSequence text = originalText.subSequence(startOffset, endOffset);
-      return isDone ? text.toString() : text + "...";
+      return isDone ? text.toString() : text + "\u2026";
     }
   }
 
@@ -624,7 +624,8 @@ public class PsiBuilderImpl extends UserDataHolderBase implements PsiBuilder {
   }
 
   private static class LazyParseableToken extends Token implements LighterLazyParseableNode {
-    private MyTreeStructure myParent;
+    private MyTreeStructure myParentStructure;
+    private StartMarker myParentNode;
     private FlyweightCapableTreeStructure<LighterASTNode> myParsed;
     private int myStartIndex;
     private int myEndIndex;
@@ -632,7 +633,8 @@ public class PsiBuilderImpl extends UserDataHolderBase implements PsiBuilder {
     @Override
     public void clean() {
       super.clean();
-      myParent = null;
+      myParentStructure = null;
+      myParentNode = null;
       myParsed = null;
     }
 
@@ -1145,13 +1147,15 @@ public class PsiBuilderImpl extends UserDataHolderBase implements PsiBuilder {
       throw new BlockSupport.ReparsedSuccessfullyException(diffLog);
     }
 
-    final ASTNode rootNode = createRootAST(rootMarker);
+    final TreeElement rootNode = createRootAST(rootMarker);
     bind(rootMarker, (CompositeElement)rootNode);
 
     if (isTooDeep && !(rootNode instanceof FileElement)) {
       final ASTNode childNode = rootNode.getFirstChildNode();
       childNode.putUserData(BlockSupport.TREE_DEPTH_LIMIT_EXCEEDED, Boolean.TRUE);
     }
+
+    assert rootNode.getTextLength() == myText.length() : rootNode.getElementType();
 
     return rootNode;
   }
@@ -1164,10 +1168,10 @@ public class PsiBuilderImpl extends UserDataHolderBase implements PsiBuilder {
   }
 
   @NotNull
-  private ASTNode createRootAST(@NotNull StartMarker rootMarker) {
+  private TreeElement createRootAST(@NotNull StartMarker rootMarker) {
     final IElementType type = rootMarker.getTokenType();
     @SuppressWarnings("NullableProblems")
-    final ASTNode rootNode = type instanceof ILazyParseableElementType ?
+    final TreeElement rootNode = type instanceof ILazyParseableElementType ?
                              ASTFactory.lazy((ILazyParseableElementType)type, null) : createComposite(rootMarker);
     if (myCharTable == null) {
       myCharTable = rootNode instanceof FileElement ? ((FileElement)rootNode).getCharTable() : new CharTableImpl();
@@ -1560,7 +1564,7 @@ public class PsiBuilderImpl extends UserDataHolderBase implements PsiBuilder {
         }
 
         if (oldNode.getElementType() instanceof ILazyParseableElementType && type instanceof ILazyParseableElementType ||
-            oldNode.getElementType() instanceof CustomParsingType && type instanceof CustomParsingType) {
+            oldNode.getElementType() instanceof ICustomParsingType && type instanceof ICustomParsingType) {
           return ((TreeElement)oldNode).textMatches(token.getText())
                  ? ThreeState.YES
                  : ThreeState.NO;
@@ -1688,6 +1692,9 @@ public class PsiBuilderImpl extends UserDataHolderBase implements PsiBuilder {
       if (item instanceof LazyParseableToken) {
         final FlyweightCapableTreeStructure<LighterASTNode> tree = ((LazyParseableToken)item).parseContents();
         final LighterASTNode root = tree.getRoot();
+        if (root instanceof ProductionMarker) {
+          ((ProductionMarker)root).myParent = ((LazyParseableToken)item).myParentNode;
+        }
         return tree.getChildren(tree.prepareForGetChildren(root), into);  // todo: set offset shift for kids?
       }
 
@@ -1698,11 +1705,11 @@ public class PsiBuilderImpl extends UserDataHolderBase implements PsiBuilder {
       ProductionMarker child = marker.myFirstChild;
       int lexIndex = marker.myLexemeIndex;
       while (child != null) {
-        lexIndex = insertLeaves(lexIndex, child.myLexemeIndex, marker.myBuilder);
+        lexIndex = insertLeaves(lexIndex, child.myLexemeIndex, marker.myBuilder, marker);
 
         if (child instanceof StartMarker && ((StartMarker)child).myDoneMarker.myCollapse) {
           int lastIndex = ((StartMarker)child).myDoneMarker.myLexemeIndex;
-          insertLeaf(child.getTokenType(), marker.myBuilder, child.myLexemeIndex, lastIndex, true);
+          insertLeaf(child.getTokenType(), marker.myBuilder, child.myLexemeIndex, lastIndex, true, marker);
         }
         else {
           ensureCapacity();
@@ -1715,7 +1722,7 @@ public class PsiBuilderImpl extends UserDataHolderBase implements PsiBuilder {
         child = child.myNext;
       }
 
-      insertLeaves(lexIndex, marker.myDoneMarker.myLexemeIndex, marker.myBuilder);
+      insertLeaves(lexIndex, marker.myDoneMarker.myLexemeIndex, marker.myBuilder, marker);
       into.set(nodes == null ? LighterASTNode.EMPTY_ARRAY : nodes);
       nodes = null;
 
@@ -1749,10 +1756,10 @@ public class PsiBuilderImpl extends UserDataHolderBase implements PsiBuilder {
       }
     }
 
-    private int insertLeaves(int curToken, int lastIdx, PsiBuilderImpl builder) {
+    private int insertLeaves(int curToken, int lastIdx, PsiBuilderImpl builder, StartMarker parent) {
       lastIdx = Math.min(lastIdx, builder.myLexemeCount);
       while (curToken < lastIdx) {
-        insertLeaf(builder.myLexTypes[curToken], builder, curToken, curToken + 1, false);
+        insertLeaf(builder.myLexTypes[curToken], builder, curToken, curToken + 1, false, parent);
 
         curToken++;
       }
@@ -1763,11 +1770,12 @@ public class PsiBuilderImpl extends UserDataHolderBase implements PsiBuilder {
                             @NotNull PsiBuilderImpl builder,
                             int startLexemeIndex,
                             int endLexemeIndex,
-                            boolean forceInsertion) {
+                            boolean forceInsertion,
+                            StartMarker parent) {
       final int start = builder.myLexStarts[startLexemeIndex];
       final int end = builder.myLexStarts[endLexemeIndex];
-      /** Corresponding code for heavy tree is located in {@link com.intellij.lang.impl.PsiBuilderImpl#insertLeaves}
-       *  and is applied only to plain lexemes */
+      /* Corresponding code for heavy tree is located in {@link com.intellij.lang.impl.PsiBuilderImpl#insertLeaves}
+         and is applied only to plain lexemes */
       if (start > end || !forceInsertion && start == end && !(type instanceof ILeafElementType)) {
         return;
       }
@@ -1776,7 +1784,8 @@ public class PsiBuilderImpl extends UserDataHolderBase implements PsiBuilder {
       if (type instanceof ILightLazyParseableElementType) {
         lexeme = myLazyPool.alloc();
         LazyParseableToken lazyParseableToken = (LazyParseableToken)lexeme;
-        lazyParseableToken.myParent = this;
+        lazyParseableToken.myParentStructure = this;
+        lazyParseableToken.myParentNode = parent;
         lazyParseableToken.myStartIndex = startLexemeIndex;
         lazyParseableToken.myEndIndex = endLexemeIndex;
       }
@@ -1845,14 +1854,14 @@ public class PsiBuilderImpl extends UserDataHolderBase implements PsiBuilder {
   }
 
   @NotNull
-  private TreeElement createLeaf(@NotNull IElementType type, final int start, final int end) {
+  protected TreeElement createLeaf(@NotNull IElementType type, final int start, final int end) {
     CharSequence text = myCharTable.intern(myText, start, end);
     if (myWhitespaces.contains(type)) {
       return new PsiWhiteSpaceImpl(text);
     }
 
-    if (type instanceof CustomParsingType) {
-      return (TreeElement)((CustomParsingType)type).parse(text, myCharTable);
+    if (type instanceof ICustomParsingType) {
+      return (TreeElement)((ICustomParsingType)type).parse(text, myCharTable);
     }
 
     if (type instanceof ILazyParseableElementType) {

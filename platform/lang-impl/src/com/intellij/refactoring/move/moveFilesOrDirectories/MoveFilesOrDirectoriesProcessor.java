@@ -58,7 +58,7 @@ public class MoveFilesOrDirectoriesProcessor extends BaseRefactoringProcessor {
   private final PsiDirectory myNewParent;
   private final MoveCallback myMoveCallback;
   private NonCodeUsageInfo[] myNonCodeUsages;
-  private final Map<PsiFile, List<UsageInfo>> myFoundUsages = new HashMap<PsiFile, List<UsageInfo>>();
+  private final Map<PsiFile, List<UsageInfo>> myFoundUsages = new HashMap<>();
 
   public MoveFilesOrDirectoriesProcessor(Project project,
                                          PsiElement[] elements,
@@ -96,7 +96,7 @@ public class MoveFilesOrDirectoriesProcessor extends BaseRefactoringProcessor {
   @Override
   @NotNull
   protected UsageInfo[] findUsages() {
-    ArrayList<UsageInfo> result = new ArrayList<UsageInfo>();
+    ArrayList<UsageInfo> result = new ArrayList<>();
     for (int i = 0; i < myElementsToMove.length; i++) {
       PsiElement element = myElementsToMove[i];
       if (mySearchForReferences) {
@@ -152,8 +152,8 @@ public class MoveFilesOrDirectoriesProcessor extends BaseRefactoringProcessor {
 
     try {
 
-      final List<PsiFile> movedFiles = new ArrayList<PsiFile>();
-      final Map<PsiElement, PsiElement> oldToNewMap = new HashMap<PsiElement, PsiElement>();
+      final List<PsiFile> movedFiles = new ArrayList<>();
+      final Map<PsiElement, PsiElement> oldToNewMap = new HashMap<>();
       for (final PsiElement element : myElementsToMove) {
         final RefactoringElementListener elementListener = getTransaction().getElementListener(element);
 
@@ -204,12 +204,9 @@ public class MoveFilesOrDirectoriesProcessor extends BaseRefactoringProcessor {
       final String message = e.getMessage();
       final int index = message != null ? message.indexOf("java.io.IOException") : -1;
       if (index >= 0 && message != null) {
-        ApplicationManager.getApplication().invokeLater(new Runnable() {
-          @Override
-          public void run() {
-            String cause = message.substring(index + "java.io.IOException".length());
-            Messages.showMessageDialog(myProject, cause, RefactoringBundle.message("error.title"), Messages.getErrorIcon());
-          }
+        ApplicationManager.getApplication().invokeLater(() -> {
+          String cause = message.substring(index + "java.io.IOException".length());
+          Messages.showMessageDialog(myProject, cause, RefactoringBundle.message("error.title"), Messages.getErrorIcon());
         });
       }
       else {
@@ -255,7 +252,7 @@ public class MoveFilesOrDirectoriesProcessor extends BaseRefactoringProcessor {
   }
 
   protected void retargetUsages(UsageInfo[] usages, Map<PsiElement, PsiElement> oldToNewMap) {
-    final List<NonCodeUsageInfo> nonCodeUsages = new ArrayList<NonCodeUsageInfo>();
+    final List<NonCodeUsageInfo> nonCodeUsages = new ArrayList<>();
     for (UsageInfo usageInfo : usages) {
       if (usageInfo instanceof MyUsageInfo) {
         final MyUsageInfo info = (MyUsageInfo)usageInfo;

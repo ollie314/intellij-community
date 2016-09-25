@@ -37,6 +37,7 @@ import com.intellij.openapi.editor.event.VisibleAreaEvent;
 import com.intellij.openapi.editor.event.VisibleAreaListener;
 import com.intellij.openapi.editor.ex.ScrollingModelEx;
 import com.intellij.openapi.editor.ex.util.EditorUtil;
+import com.intellij.openapi.fileEditor.impl.text.AsyncEditorLoader;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.Animator;
@@ -141,8 +142,7 @@ public class ScrollingModelImpl implements ScrollingModelEx {
     assertIsDispatchThread();
     myEditor.validateSize();
     if (myEditor.myUseNewRendering) {
-      VisualPosition caretPosition = myEditor.getCaretModel().getVisualPosition();
-      scrollTo(caretPosition, scrollType);
+      AsyncEditorLoader.performWhenLoaded(myEditor, () -> scrollTo(myEditor.getCaretModel().getVisualPosition(), scrollType));
     }
     else {
       LogicalPosition caretPosition = myEditor.getCaretModel().getLogicalPosition();
@@ -166,8 +166,7 @@ public class ScrollingModelImpl implements ScrollingModelEx {
   public void scrollTo(@NotNull LogicalPosition pos, @NotNull ScrollType scrollType) {
     assertIsDispatchThread();
 
-    Point targetLocation = myEditor.logicalPositionToXY(pos);
-    scrollTo(targetLocation, scrollType);
+    AsyncEditorLoader.performWhenLoaded(myEditor, () -> scrollTo(myEditor.logicalPositionToXY(pos), scrollType));
   }
 
   private static void assertIsDispatchThread() {
@@ -222,14 +221,18 @@ public class ScrollingModelImpl implements ScrollingModelEx {
         hOffset = Math.max(0, targetLocation.x - inset);
       }
     }
-    else if (targetLocation.x >= hOffset + viewRect.width) {
+    else if (viewRect.width > 0 && targetLocation.x >= hOffset + viewRect.width) {
       hOffset = targetLocation.x - Math.max(0, viewRect.width - xInsets);
     }
 
     // the following code tries to keeps 1 line above and 1 line below if available in viewRect
     int lineHeight = myEditor.getLineHeight();
-    int scrollUpBy = viewRect.y - targetLocation.y + (viewRect.height > lineHeight ? lineHeight : 0);
-    int scrollDownBy = targetLocation.y - viewRect.y - Math.max(0, viewRect.height - 2 * lineHeight);
+    // to avoid 'hysteresis', minAcceptableY should be always less or equal to maxAcceptableY
+    int minAcceptableY = viewRect.y + Math.max(0, Math.min(lineHeight, viewRect.height - 3 * lineHeight));
+    int maxAcceptableY = viewRect.y + (viewRect.height <= lineHeight ? 0 :
+                                       (viewRect.height - (viewRect.height <= 2 * lineHeight ? lineHeight : 2 * lineHeight)));
+    int scrollUpBy = minAcceptableY - targetLocation.y;
+    int scrollDownBy = targetLocation.y - maxAcceptableY;
     int centerPosition = targetLocation.y - viewRect.height / 3;
 
     int vOffset = viewRect.y;
@@ -448,7 +451,7 @@ public class ScrollingModelImpl implements ScrollingModelEx {
     private final int myEndVOffset;
     private final int myAnimationDuration;
 
-    private final ArrayList<Runnable> myPostRunnables = new ArrayList<Runnable>();
+    private final ArrayList<Runnable> myPostRunnables = new ArrayList<>();
 
     private final int myHDist;
     private final int myVDist;

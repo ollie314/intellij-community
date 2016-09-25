@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,33 +25,30 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.JDOMUtil;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.profile.codeInspection.InspectionProfileManager;
+import com.intellij.profile.codeInspection.SeverityProvider;
 import org.jdom.Document;
 import org.jdom.Element;
 import org.jdom.JDOMException;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
-import java.io.FileFilter;
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.Map;
 
 /**
  * User: anna
  * Date: Dec 20, 2004
  */
 public class InspectionProfileConvertor {
-  private final HashMap<String, HighlightDisplayLevel> myDisplayLevelMap = new HashMap<String, HighlightDisplayLevel>();
+  private final Map<String, HighlightDisplayLevel> myDisplayLevelMap = new HashMap<>();
   @NonNls public static final String OLD_HIGHTLIGHTING_SETTINGS_PROFILE = "EditorHighlightingSettings";
   @NonNls public static final String OLD_DEFAUL_PROFILE = "OldDefaultProfile";
 
   private static final Logger LOG = Logger.getInstance("#com.intellij.codeInsight.daemon.DaemonCodeAnalyzerSettingsConvertor");
 
-  @NonNls private static final String INSPECTIONS_TAG = "inspections";
   @NonNls private static final String NAME_ATT = "name";
-  @NonNls private static final String INSP_TOOL_TAG = "inspection_tool";
-  @NonNls private static final String CLASS_ATT = "class";
   @NonNls private static final String VERSION_ATT = "version";
   @NonNls private static final String PROFILE_NAME_ATT = "profile_name";
   @NonNls private static final String OPTION_TAG = "option";
@@ -60,17 +57,16 @@ public class InspectionProfileConvertor {
   @NonNls private static final String DEFAULT_XML = "Default.xml";
   @NonNls private static final String XML_EXTENSION = ".xml";
   @NonNls public static final String LEVEL_ATT = "level";
-  private final InspectionProfileManager myManager;
+  private final SeverityProvider myManager;
 
-  public InspectionProfileConvertor(InspectionProfileManager manager) {
+  public InspectionProfileConvertor(@NotNull SeverityProvider manager) {
     myManager = manager;
     renameOldDefaultsProfile();
   }
 
   private boolean retrieveOldSettings(@NotNull Element element) {
     boolean hasOldSettings = false;
-    for (final Object obj : element.getChildren(OPTION_TAG)) {
-      Element option = (Element)obj;
+    for (Element option : element.getChildren(OPTION_TAG)) {
       final String name = option.getAttributeValue(NAME_ATT);
       if (name != null) {
         hasOldSettings |= processElement(option, name);
@@ -81,9 +77,7 @@ public class InspectionProfileConvertor {
 
   protected boolean processElement(final Element option, final String name) {
     if (name.equals(DISPLAY_LEVEL_MAP_OPTION)) {
-      final Element levelMap = option.getChild(VALUE_ATT);
-      for (final Object o : levelMap.getChildren()) {
-        Element e = (Element)o;
+      for (Element e : option.getChild(VALUE_ATT).getChildren()) {
         String key = e.getName();
         String levelName = e.getAttributeValue(LEVEL_ATT);
         HighlightSeverity severity = myManager.getSeverityRegistrar().getSeverity(levelName);
@@ -98,34 +92,10 @@ public class InspectionProfileConvertor {
 
   public void storeEditorHighlightingProfile(@NotNull Element element, @NotNull InspectionProfile editorProfile) {
     if (retrieveOldSettings(element)) {
-
-      final ModifiableModel editorProfileModel = editorProfile.getModifiableModel();
-
+      ModifiableModel editorProfileModel = editorProfile.getModifiableModel();
       fillErrorLevels(editorProfileModel);
-      try {
-        editorProfileModel.commit();
-      }
-      catch (IOException e) {
-        LOG.error(e);
-      }
+      editorProfileModel.commit();
     }
-  }
-
-  public static Element convertToNewFormat(Element profileFile, InspectionProfile profile) {
-    Element rootElement = new Element(INSPECTIONS_TAG);
-    rootElement.setAttribute(NAME_ATT, profile.getName());
-    final InspectionToolWrapper[] tools = profile.getInspectionTools(null);
-    for (final Object o : profileFile.getChildren(INSP_TOOL_TAG)) {
-      Element toolElement = ((Element)o).clone();
-      String toolClassName = toolElement.getAttributeValue(CLASS_ATT);
-      final String shortName = convertToShortName(toolClassName, tools);
-      if (shortName == null) {
-        continue;
-      }
-      toolElement.setAttribute(CLASS_ATT, shortName);
-      rootElement.addContent(toolElement);
-    }
-    return rootElement;
   }
 
   private static void renameOldDefaultsProfile() {
@@ -135,12 +105,7 @@ public class InspectionProfileConvertor {
       return;
     }
 
-    File[] files = profileDirectory.listFiles(new FileFilter() {
-      @Override
-      public boolean accept(@NotNull File pathname) {
-        return pathname.getPath().endsWith(File.separator + DEFAULT_XML);
-      }
-    });
+    File[] files = profileDirectory.listFiles(pathname -> pathname.getPath().endsWith(File.separator + DEFAULT_XML));
     if (files == null || files.length != 1 || !files[0].isFile()) {
       return;
     }
@@ -184,17 +149,4 @@ public class InspectionProfileConvertor {
       profile.setErrorLevel(key, level, null);
     }
   }
-
-
-  @Nullable
-  private static String convertToShortName(String displayName, InspectionToolWrapper[] tools) {
-    if (displayName == null) return null;
-    for (InspectionToolWrapper tool : tools) {
-      if (displayName.equals(tool.getDisplayName())) {
-        return tool.getShortName();
-      }
-    }
-    return null;
-  }
-
 }

@@ -26,6 +26,7 @@ import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.TextRange;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
@@ -51,12 +52,19 @@ public class ShowParameterInfoContext implements CreateParameterInfoContext {
   private boolean myRequestFocus;
 
   public ShowParameterInfoContext(final Editor editor, final Project project,
-                                    final PsiFile file, int offset, int parameterListStart) {
+                                  final PsiFile file, int offset, int parameterListStart) {
+    this(editor, project, file, offset, parameterListStart, false);
+  }
+
+  public ShowParameterInfoContext(final Editor editor, final Project project,
+                                  final PsiFile file, int offset, int parameterListStart,
+                                  boolean requestFocus) {
     myEditor = editor;
     myProject = project;
     myFile = file;
     myParameterListStart = parameterListStart;
     myOffset = offset;
+    myRequestFocus = requestFocus;
   }
 
   @Override
@@ -123,7 +131,7 @@ public class ShowParameterInfoContext implements CreateParameterInfoContext {
     if (ParameterInfoController.isAlreadyShown(editor, elementStart)) return;
 
     if (editor.isDisposed() || !editor.getComponent().isVisible()) return;
-    final ParameterInfoComponent component = new ParameterInfoComponent(descriptors, editor,handler);
+    final ParameterInfoComponent component = new ParameterInfoComponent(descriptors, editor,handler,requestFocus);
     component.setParameterOwner(element);
     component.setRequestFocus(requestFocus);
     if (highlighted != null) {
@@ -205,26 +213,26 @@ public class ShowParameterInfoContext implements CreateParameterInfoContext {
     boolean p2Ok = p2.y >= 0;
 
     if (isLookupShown) {
-      if (p1Ok) return new Pair<Point, Short>(p1, HintManager.UNDER);
-      if (p2Ok) return new Pair<Point, Short>(p2, HintManager.ABOVE);
+      if (p1Ok) return new Pair<>(p1, HintManager.UNDER);
+      if (p2Ok) return new Pair<>(p2, HintManager.ABOVE);
     }
     else {
       if (preferredPosition != HintManager.DEFAULT) {
         if (preferredPosition == HintManager.ABOVE) {
-          if (p2Ok) return new Pair<Point, Short>(p2, HintManager.ABOVE);
+          if (p2Ok) return new Pair<>(p2, HintManager.ABOVE);
         } else if (preferredPosition == HintManager.UNDER) {
-          if (p1Ok) return new Pair<Point, Short>(p1, HintManager.UNDER);
+          if (p1Ok) return new Pair<>(p1, HintManager.UNDER);
         }
       }
 
-      if (p1Ok) return new Pair<Point, Short>(p1, HintManager.UNDER);
-      if (p2Ok) return new Pair<Point, Short>(p2, HintManager.ABOVE);
+      if (p1Ok) return new Pair<>(p1, HintManager.UNDER);
+      if (p2Ok) return new Pair<>(p2, HintManager.ABOVE);
     }
 
     int underSpace = layeredPane.getHeight() - p1.y;
     int aboveSpace = p2.y;
-    return aboveSpace > underSpace ? new Pair<Point, Short>(new Point(p2.x, 0), HintManager.UNDER) : new Pair<Point, Short>(p1,
-                                                                                                                            HintManager.ABOVE);
+    return aboveSpace > underSpace ? new Pair<>(new Point(p2.x, 0), HintManager.UNDER) : new Pair<>(p1,
+                                                                                                    HintManager.ABOVE);
   }
 
   public void setRequestFocus(boolean requestFocus) {
@@ -252,12 +260,15 @@ public class ShowParameterInfoContext implements CreateParameterInfoContext {
                                                    int offset,
                                                    final boolean awtTooltip,
                                                    short preferredPosition) {
-      final TextRange textRange = list.getTextRange();
-      offset = textRange.contains(offset) ? offset:textRange.getStartOffset() + 1;
+      if (list != null) {
+        TextRange range = list.getTextRange();
+        if (!range.contains(offset)) {
+          offset = range.getStartOffset() + 1;
+        }
+      }
       if (previousOffset == offset) return Pair.create(previousBestPoint, previousBestPosition);
 
-      String listText = list.getText();
-      final boolean isMultiline = listText.indexOf('\n') >= 0 || listText.indexOf('\r') >= 0;
+      final boolean isMultiline = list != null && StringUtil.containsAnyChar(list.getText(), "\n\r");
       final LogicalPosition pos = myEditor.offsetToLogicalPosition(offset);
       Pair<Point, Short> position;
 
@@ -266,7 +277,7 @@ public class ShowParameterInfoContext implements CreateParameterInfoContext {
       }
       else {
         Point p = HintManagerImpl.getHintPosition(hint, myEditor, pos, HintManager.ABOVE);
-        position = new Pair<Point, Short>(p, HintManager.ABOVE);
+        position = new Pair<>(p, HintManager.ABOVE);
       }
       previousBestPoint = position.getFirst();
       previousBestPosition = position.getSecond();

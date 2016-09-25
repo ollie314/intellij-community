@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,14 +28,13 @@ import com.intellij.openapi.externalSystem.service.project.ExternalSystemProject
 import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil;
 import com.intellij.openapi.externalSystem.util.ExternalSystemDebugEnvironment;
 import com.intellij.openapi.module.StdModuleTypes;
+import com.intellij.openapi.roots.DependencyScope;
 import com.intellij.openapi.util.Factory;
 import com.intellij.openapi.util.Key;
-import com.intellij.openapi.util.KeyValue;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.ArrayUtil;
-import com.intellij.util.BooleanFunction;
 import com.intellij.util.Function;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.ContainerUtilRt;
@@ -81,6 +80,7 @@ public class GradleProjectResolver implements ExternalSystemProjectResolver<Grad
     Key.create("resolvedSourceSets");
   public static final Key<Map<String/* output path */, Pair<String /* module id*/, ExternalSystemSourceType>>> MODULES_OUTPUTS =
     Key.create("moduleOutputsMap");
+  public static final Key<Map<ExternalSystemSourceType, String /* output path*/>> GRADLE_OUTPUTS = Key.create("gradleOutputs");
   public static final Key<Map<String/* artifact path */, String /* module id*/>> CONFIGURATION_ARTIFACTS =
     Key.create("gradleArtifactsMap");
 
@@ -139,7 +139,7 @@ public class GradleProjectResolver implements ExternalSystemProjectResolver<Grad
 
     final ProjectImportAction projectImportAction = new ProjectImportAction(resolverCtx.isPreviewMode());
 
-    final List<KeyValue<String, String>> extraJvmArgs = new ArrayList<KeyValue<String, String>>();
+    final List<Pair<String, String>> extraJvmArgs = new ArrayList<>();
     final List<String> commandLineArgs = ContainerUtil.newArrayList();
     final Set<Class> toolingExtensionClasses = ContainerUtil.newHashSet();
 
@@ -177,8 +177,8 @@ public class GradleProjectResolver implements ExternalSystemProjectResolver<Grad
     }
 
     final ParametersList parametersList = new ParametersList();
-    for (KeyValue<String, String> jvmArg : extraJvmArgs) {
-      parametersList.addProperty(jvmArg.getKey(), jvmArg.getValue());
+    for (Pair<String, String> jvmArg : extraJvmArgs) {
+      parametersList.addProperty(jvmArg.first, jvmArg.second);
     }
 
     final BuildEnvironment buildEnvironment = GradleExecutionHelper.getBuildEnvironment(resolverCtx.getConnection());
@@ -253,7 +253,7 @@ public class GradleProjectResolver implements ExternalSystemProjectResolver<Grad
 
     // import project data
     ProjectData projectData = projectResolverChain.createProject();
-    DataNode<ProjectData> projectDataNode = new DataNode<ProjectData>(ProjectKeys.PROJECT, projectData, null);
+    DataNode<ProjectData> projectDataNode = new DataNode<>(ProjectKeys.PROJECT, projectData, null);
 
     // import java project data
     JavaProjectData javaProjectData = projectResolverChain.createJavaProjectData();
@@ -426,18 +426,23 @@ public class GradleProjectResolver implements ExternalSystemProjectResolver<Grad
         final ModuleData moduleData = pair.first.getData();
         if (targetModuleOutputPaths == null) {
           final Set<String> compileSet = ContainerUtil.newHashSet();
-          ContainerUtil.addAllNotNull(compileSet,
-                                      moduleData.getCompileOutputPath(ExternalSystemSourceType.SOURCE),
-                                      moduleData.getCompileOutputPath(ExternalSystemSourceType.RESOURCE));
+          Map<ExternalSystemSourceType, String> gradleOutputs = pair.first.getUserData(GRADLE_OUTPUTS);
+          if(gradleOutputs != null) {
+            ContainerUtil.addAllNotNull(compileSet,
+                                        gradleOutputs.get(ExternalSystemSourceType.SOURCE),
+                                        gradleOutputs.get(ExternalSystemSourceType.RESOURCE));
+          }
           if (!compileSet.isEmpty() && ContainerUtil.intersects(libraryPaths, compileSet)) {
             targetModuleOutputPaths = compileSet;
           }
           else {
             final Set<String> testSet = ContainerUtil.newHashSet();
-            ContainerUtil.addAllNotNull(testSet,
-                                        moduleData.getCompileOutputPath(ExternalSystemSourceType.TEST),
-                                        moduleData.getCompileOutputPath(ExternalSystemSourceType.TEST_RESOURCE));
-            if (compileSet.isEmpty() && ContainerUtil.intersects(libraryPaths, testSet)) {
+            if(gradleOutputs != null) {
+              ContainerUtil.addAllNotNull(testSet,
+                                          gradleOutputs.get(ExternalSystemSourceType.TEST),
+                                          gradleOutputs.get(ExternalSystemSourceType.TEST_RESOURCE));
+            }
+            if (!testSet.isEmpty() && ContainerUtil.intersects(libraryPaths, testSet)) {
               targetModuleOutputPaths = testSet;
             }
           }
@@ -450,14 +455,21 @@ public class GradleProjectResolver implements ExternalSystemProjectResolver<Grad
           moduleDependencyData.setProductionOnTestDependency(true);
         }
         final DataNode<ModuleDependencyData> found = ExternalSystemApiUtil.find(
-          libraryNodeParent, ProjectKeys.MODULE_DEPENDENCY, new BooleanFunction<DataNode<ModuleDependencyData>>() {
-            @Override
-            public boolean fun(DataNode<ModuleDependencyData> node) {
-              if (moduleDependencyData.getInternalName().equals(node.getData().getInternalName())) {
-                moduleDependencyData.setModuleDependencyArtifacts(node.getData().getModuleDependencyArtifacts());
-              }
-              return moduleDependencyData.equals(node.getData());
+          libraryNodeParent, ProjectKeys.MODULE_DEPENDENCY, node -> {
+            if (moduleDependencyData.getInternalName().equals(node.getData().getInternalName())) {
+              moduleDependencyData.setModuleDependencyArtifacts(node.getData().getModuleDependencyArtifacts());
             }
+
+            final boolean result;
+            // ignore provided scope during the search since it can be resolved incorrectly for file dependencies on a source set outputs
+            if(moduleDependencyData.getScope() == DependencyScope.PROVIDED) {
+              moduleDependencyData.setScope(node.getData().getScope());
+              result = moduleDependencyData.equals(node.getData());
+              moduleDependencyData.setScope(DependencyScope.PROVIDED);
+            } else {
+              result = moduleDependencyData.equals(node.getData());
+            }
+            return result;
           });
 
         if (targetModuleOutputPaths != null) {
@@ -546,7 +558,7 @@ public class GradleProjectResolver implements ExternalSystemProjectResolver<Grad
 
     if (rootExternalProject == null) return externalProjectMap;
 
-    Queue<ExternalProject> queue = new LinkedList<ExternalProject>();
+    Queue<ExternalProject> queue = new LinkedList<>();
     queue.add(rootExternalProject);
 
     while (!queue.isEmpty()) {
@@ -575,12 +587,7 @@ public class GradleProjectResolver implements ExternalSystemProjectResolver<Grad
 
   private static void mergeSourceSetContentRoots(@NotNull Map<String, Pair<DataNode<ModuleData>, IdeaModule>> moduleMap,
                                                  @NotNull ProjectResolverContext resolverCtx) {
-    final Factory<Counter> counterFactory = new Factory<Counter>() {
-      @Override
-      public Counter create() {
-        return new Counter();
-      }
-    };
+    final Factory<Counter> counterFactory = () -> new Counter();
 
     final Map<String, Counter> weightMap = ContainerUtil.newHashMap();
     for (final Pair<DataNode<ModuleData>, IdeaModule> pair : moduleMap.values()) {
@@ -769,7 +776,7 @@ public class GradleProjectResolver implements ExternalSystemProjectResolver<Grad
     if (settings != null) {
       List<ClassHolder<? extends GradleProjectResolverExtension>> extensionClasses = settings.getResolverExtensions();
 
-      Deque<GradleProjectResolverExtension> extensions = new ArrayDeque<GradleProjectResolverExtension>();
+      Deque<GradleProjectResolverExtension> extensions = new ArrayDeque<>();
       for (ClassHolder<? extends GradleProjectResolverExtension> holder : extensionClasses) {
         final GradleProjectResolverExtension extension;
         try {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2012 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package com.intellij.codeInsight.intention.impl;
 
 import com.intellij.codeInsight.CodeInsightBundle;
 import com.intellij.codeInsight.CodeInsightUtil;
+import com.intellij.codeInsight.FileModificationService;
 import com.intellij.codeInsight.intention.PsiElementBaseIntentionAction;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.progress.ProgressIndicatorProvider;
@@ -70,7 +71,7 @@ public class ReplaceCastWithVariableAction extends PsiElementBaseIntentionAction
   public void invoke(@NotNull Project project, Editor editor, @NotNull PsiElement element) throws IncorrectOperationException {
     final PsiTypeCastExpression typeCastExpression = PsiTreeUtil.getParentOfType(element, PsiTypeCastExpression.class);
 
-    if (typeCastExpression == null) {
+    if (typeCastExpression == null || !FileModificationService.getInstance().preparePsiElementForWrite(element)) {
       return;
     }
 
@@ -112,11 +113,11 @@ public class ReplaceCastWithVariableAction extends PsiElementBaseIntentionAction
       return false;
     }
 
-    final Ref<Boolean> result = new Ref<Boolean>();
+    final Ref<Boolean> result = new Ref<>();
 
     scope.accept(
       new JavaRecursiveElementWalkingVisitor() {
-        private boolean inScope = false;
+        private boolean inScope;
 
         @Override
         public void visitElement(PsiElement element) {

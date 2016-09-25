@@ -18,6 +18,7 @@ package com.intellij.openapi.options.newEditor;
 import com.intellij.CommonBundle;
 import com.intellij.openapi.actionSystem.DataProvider;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.TransactionGuard;
 import com.intellij.openapi.help.HelpManager;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.options.ConfigurableGroup;
@@ -74,12 +75,9 @@ public class SettingsDialog extends DialogWrapper implements DataProvider {
 
   @Override
   public void show() {
-    DumbService.allowStartingDumbModeInside(DumbModePermission.MAY_START_BACKGROUND, new Runnable() {
-      @Override
-      public void run() {
-        SettingsDialog.super.show();
-      }
-    });
+    TransactionGuard.getInstance().submitTransactionAndWait(
+      () -> DumbService.allowStartingDumbModeInside(DumbModePermission.MAY_START_BACKGROUND, () ->
+        super.show()));
   }
 
 
@@ -127,7 +125,7 @@ public class SettingsDialog extends DialogWrapper implements DataProvider {
   @NotNull
   @Override
   protected Action[] createActions() {
-    ArrayList<Action> actions = new ArrayList<Action>();
+    ArrayList<Action> actions = new ArrayList<>();
     actions.add(getOKAction());
     actions.add(getCancelAction());
     Action apply = myEditor.getApplyAction();
@@ -157,7 +155,7 @@ public class SettingsDialog extends DialogWrapper implements DataProvider {
   public void doOKAction() {
     if (myEditor.apply()) {
       ApplicationManager.getApplication().saveAll();
-      SettingsDialog.super.doOKAction();
+      super.doOKAction();
     }
   }
 

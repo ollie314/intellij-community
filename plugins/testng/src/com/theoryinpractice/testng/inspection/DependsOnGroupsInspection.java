@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,9 +40,6 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * @author Hani Suleiman Date: Aug 3, 2005 Time: 3:34:56 AM
- */
 public class DependsOnGroupsInspection extends BaseJavaLocalInspectionTool {
   private static final Logger LOGGER = Logger.getInstance("TestNG Runner");
   private static final Pattern PATTERN = Pattern.compile("\"([a-zA-Z0-9_\\-\\(\\)]*)\"");
@@ -74,7 +71,7 @@ public class DependsOnGroupsInspection extends BaseJavaLocalInspectionTool {
 
   @Nullable
   public JComponent createOptionsPanel() {
-    final LabeledComponent<JTextField> definedGroups = new LabeledComponent<JTextField>();
+    final LabeledComponent<JTextField> definedGroups = new LabeledComponent<>();
     definedGroups.setText("&Defined Groups");
     final JTextField textField = new JTextField(StringUtil.join(ArrayUtil.toStringArray(groups), ","));
     textField.getDocument().addDocumentListener(new DocumentAdapter() {
@@ -99,7 +96,7 @@ public class DependsOnGroupsInspection extends BaseJavaLocalInspectionTool {
     PsiAnnotation[] annotations = TestNGUtil.getTestNGAnnotations(psiClass);
     if (annotations.length == 0) return ProblemDescriptor.EMPTY_ARRAY;
 
-    List<ProblemDescriptor> problemDescriptors = new ArrayList<ProblemDescriptor>();
+    List<ProblemDescriptor> problemDescriptors = new ArrayList<>();
     for (PsiAnnotation annotation : annotations) {
 
       PsiNameValuePair dep = null;
@@ -142,7 +139,7 @@ public class DependsOnGroupsInspection extends BaseJavaLocalInspectionTool {
         }
       }
     }
-    return problemDescriptors.toArray(new ProblemDescriptor[]{});
+    return problemDescriptors.toArray(ProblemDescriptor.EMPTY_ARRAY);
   }
 
   private class GroupNameQuickFix implements LocalQuickFix {
@@ -166,7 +163,7 @@ public class DependsOnGroupsInspection extends BaseJavaLocalInspectionTool {
     public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor problemDescriptor) {
       groups.add(myGroupName);
       final InspectionProfile inspectionProfile =
-        InspectionProjectProfileManager.getInstance(project).getInspectionProfile();
+        InspectionProjectProfileManager.getInstance(project).getCurrentProfile();
       //correct save settings
       InspectionProfileManager.getInstance().fireProfileChanged(inspectionProfile);
       //TODO lesya

@@ -30,7 +30,6 @@ import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.JBIterable;
 import com.intellij.util.containers.JBTreeTraverser;
 import com.intellij.util.containers.WeakHashMap;
-import com.intellij.util.ui.accessibility.ScreenReader;
 import org.intellij.lang.annotations.Language;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -92,31 +91,6 @@ public class UIUtil {
   private static final Logger LOG = Logger.getInstance("#com.intellij.util.ui.UIUtil");
 
   public static final String BORDER_LINE = "<hr size=1 noshade>";
-
-  private static final StyleSheet DEFAULT_HTML_KIT_CSS;
-
-  static {
-    blockATKWrapper();
-    // save the default JRE CSS and ..
-    HTMLEditorKit kit = new HTMLEditorKit();
-    DEFAULT_HTML_KIT_CSS = kit.getStyleSheet();
-    // .. erase global ref to this CSS so no one can alter it
-    kit.setStyleSheet(null);
-  }
-
-  private static void blockATKWrapper() {
-    /*
-     * The method should be called before java.awt.Toolkit.initAssistiveTechnologies()
-     * which is called from Toolkit.getDefaultToolkit().
-     */
-    if (!(SystemInfo.isLinux && Registry.is("linux.jdk.accessibility.atkwrapper.block"))) return;
-
-    if (ScreenReader.isEnabled(ScreenReader.ATK_WRAPPER)) {
-      // Replace AtkWrapper with a dummy Object. It'll be instantiated & GC'ed right away, a NOP.
-      System.setProperty("javax.accessibility.assistive_technologies", "java.lang.Object");
-      LOG.info(ScreenReader.ATK_WRAPPER + " is blocked, see IDEA-149219");
-    }
-  }
 
   public static int getMultiClickInterval() {
     Object property = Toolkit.getDefaultToolkit().getDesktopProperty("awt.multiClickInterval");
@@ -188,8 +162,8 @@ public class UIUtil {
     drawLine(g, startX, bottomY, endX, bottomY, null, color);
   }
 
-  private static final GrayFilter DEFAULT_GRAY_FILTER = new GrayFilter(true, 50);
-  private static final GrayFilter DARCULA_GRAY_FILTER = new GrayFilter(true, 30);
+  private static final GrayFilter DEFAULT_GRAY_FILTER = new GrayFilter(true, 70);
+  private static final GrayFilter DARCULA_GRAY_FILTER = new GrayFilter(true, 20);
 
   public static GrayFilter getGrayFilter() {
     return isUnderDarcula() ? DARCULA_GRAY_FILTER : DEFAULT_GRAY_FILTER;
@@ -254,7 +228,16 @@ public class UIUtil {
       return color;
     }
   });
-  public static final Color SIDE_PANEL_BACKGROUND = new JBColor(new Color(0xE6EBF0), new Color(0x3E434C));
+
+  public static final Color SIDE_PANEL_BACKGROUND = new JBColor(new NotNullProducer<Color>() {
+    final JBColor myDefaultValue = new JBColor(new Color(0xE6EBF0), new Color(0x3E434C));
+    @NotNull
+    @Override
+    public Color produce() {
+      Color color = UIManager.getColor("SidePanel.background");
+      return color == null ? myDefaultValue : color;
+    }
+  });
 
   public static final Color AQUA_SEPARATOR_FOREGROUND_COLOR = new JBColor(Gray._190, Gray.x51);
   public static final Color AQUA_SEPARATOR_BACKGROUND_COLOR = new JBColor(Gray._240, Gray.x51);
@@ -292,7 +275,7 @@ public class UIUtil {
     }
   };
 
-  private static volatile Pair<String, Integer> ourSystemFontData = null;
+  private static volatile Pair<String, Integer> ourSystemFontData;
 
   public static final float DEF_SYSTEM_FONT_SIZE = 12f; // TODO: consider 12 * 1.33 to compensate JDK's 72dpi font scale
 
@@ -354,9 +337,9 @@ public class UIUtil {
       return isRetina;
     }
 
-    /**
-     * Could be quite easily implemented with [NSScreen backingScaleFactor]
-     * and JNA
+    /*
+      Could be quite easily implemented with [NSScreen backingScaleFactor]
+      and JNA
      */
     //private static boolean isAppleRetina (Graphics2D g2d) {
     //  return false;
@@ -625,12 +608,12 @@ public class UIUtil {
 
   public static void setEnabled(Component component, boolean enabled, boolean recursively, final boolean visibleOnly) {
     JBIterable<Component> all = recursively ? uiTraverser(component).expandAndFilter(
-      visibleOnly ? Conditions.<Component>alwaysTrue() : new Condition<Component>() {
+      visibleOnly ? new Condition<Component>() {
         @Override
         public boolean value(Component c) {
           return c.isVisible();
         }
-      }).traverse() : JBIterable.of(component);
+      } : Conditions.<Component>alwaysTrue()).traverse() : JBIterable.of(component);
     Color fg = enabled ? getLabelForeground() : getLabelDisabledForeground();
     for (Component c : all) {
       c.setEnabled(enabled);
@@ -1071,6 +1054,10 @@ public class UIUtil {
 
   public static Color getPanelBackground() {
     return UIManager.getColor("Panel.background");
+  }
+
+  public static Color getEditorPaneBackground() {
+    return UIManager.getColor("EditorPane.background");
   }
 
   public static Color getTreeBackground() {
@@ -1766,6 +1753,16 @@ public class UIUtil {
     }
   }
 
+  /**
+   * Creates a HiDPI-aware BufferedImage in device scale.
+   *
+   * @param width the width in user coordinate space
+   * @param height the height in user coordinate space
+   * @param type the type of the image
+   *
+   * @return a HiDPI-aware BufferedImage in device scale
+   */
+  @NotNull
   public static BufferedImage createImage(int width, int height, int type) {
     if (isRetina()) {
       return RetinaImage.create(width, height, type);
@@ -1774,6 +1771,17 @@ public class UIUtil {
     return new BufferedImage(width, height, type);
   }
 
+  /**
+   * Creates a HiDPI-aware BufferedImage in the graphics scale.
+   *
+   * @param g the graphics of the referent scale
+   * @param width the width in user coordinate space
+   * @param height the height in user coordinate space
+   * @param type the type of the image
+   *
+   * @return a HiDPI-aware BufferedImage in the graphics scale
+   */
+  @NotNull
   public static BufferedImage createImageForGraphics(Graphics2D g, int width, int height, int type) {
     if (isRetina(g)) {
       return RetinaImage.create(width, height, type);
@@ -1997,6 +2005,35 @@ public class UIUtil {
     g.drawString(s, x, y);
   }
 
+  /**
+   * Draws a centered string in the passed rectangle.
+   * @param g the {@link Graphics} instance to draw to
+   * @param rect the {@link Rectangle} to use as bounding box
+   * @param str the string to draw
+   * @param horzCentered if true, the string will be centered horizontally
+   * @param vertCentered if true, the string will be centered vertically
+   */
+  public static void drawCenteredString(Graphics2D g, Rectangle rect, String str, boolean horzCentered, boolean vertCentered) {
+    FontMetrics fm = g.getFontMetrics(g.getFont());
+    int textWidth = fm.stringWidth(str);
+    int x = horzCentered ? Math.max(rect.x, rect.x + (rect.width - textWidth) / 2) : rect.x;
+    int y = vertCentered ? Math.max(rect.y, rect.y + rect.height / 2 + fm.getAscent() * 2 / 5) : rect.y;
+    Shape oldClip = g.getClip();
+    g.clip(rect);
+    g.drawString(str, x, y);
+    g.setClip(oldClip);
+  }
+
+  /**
+   * Draws a centered string in the passed rectangle.
+   * @param g the {@link Graphics} instance to draw to
+   * @param rect the {@link Rectangle} to use as bounding box
+   * @param str the string to draw
+   */
+  public static void drawCenteredString(Graphics2D g, Rectangle rect, String str) {
+    drawCenteredString(g, rect, str, true, true);
+  }
+
   public static boolean isFocusAncestor(@NotNull final JComponent component) {
     final Component owner = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
     if (owner == null) return false;
@@ -2044,7 +2081,7 @@ public class UIUtil {
   }
 
   @Nullable
-  public static Component findParentByCondition(@NotNull Component c, Condition<Component> condition) {
+  public static Component findParentByCondition(@Nullable Component c, @NotNull Condition<Component> condition) {
     Component eachParent = c;
     while (eachParent != null) {
       if (condition.value(eachParent)) return eachParent;
@@ -2053,14 +2090,9 @@ public class UIUtil {
     return null;
   }
 
+  @Deprecated
   public static <T extends Component> T findParentByClass(@NotNull Component c, Class<T> cls) {
-    for (Component component = c; component != null; component = component.getParent()) {
-      if (cls.isAssignableFrom(component.getClass())) {
-        @SuppressWarnings({"unchecked"}) final T t = (T)component;
-        return t;
-      }
-    }
-    return null;
+    return getParentOfType(cls, c);
   }
 
   @Language("HTML")
@@ -2226,8 +2258,7 @@ public class UIUtil {
   }
 
   /**
-   * @deprecated
-   * @use JBColor.border()
+   * @deprecated use {@link JBColor#border()}
    */
   public static Color getBorderColor() {
     return isUnderDarcula() ? Gray._50 : BORDER_COLOR;
@@ -2278,65 +2309,30 @@ public class UIUtil {
   }
 
   public static HTMLEditorKit getHTMLEditorKit(boolean noGapsBetweenParagraphs) {
-    Font font = getLabelFont();
-    @NonNls String family = !SystemInfo.isWindows && font != null ? font.getFamily() : "Tahoma";
-    int size = font != null ? font.getSize() : JBUI.scale(11);
-
-    String customCss = String.format("body, div, p { font-family: %s; font-size: %s; }", family, size);
-    if (noGapsBetweenParagraphs) {
-      customCss += " p { margin-top: 0; }";
-    }
-
-    final StyleSheet style = new StyleSheet();
-    style.addStyleSheet(isUnderDarcula() ? (StyleSheet)UIManager.getDefaults().get("StyledEditorKit.JBDefaultStyle") : DEFAULT_HTML_KIT_CSS);
-    style.addRule(customCss);
-
-    return new HTMLEditorKit() {
-      @Override
-      public StyleSheet getStyleSheet() {
-        return style;
-      }
-    };
+    return HTMLEditorKitProvider.getHTMLEditorKit(noGapsBetweenParagraphs);
   }
 
   public static void removeScrollBorder(final Component c) {
-    new AwtVisitor(c) {
-      @Override
-      public boolean visit(final Component component) {
-        if (component instanceof JScrollPane) {
-          if (!hasNonPrimitiveParents(c, component)) {
-            final JScrollPane scrollPane = (JScrollPane)component;
-            Integer keepBorderSides = getClientProperty(scrollPane, KEEP_BORDER_SIDES);
-            if (keepBorderSides != null) {
-              if (scrollPane.getBorder() instanceof LineBorder) {
-                Color color = ((LineBorder)scrollPane.getBorder()).getLineColor();
-                scrollPane.setBorder(new SideBorder(color, keepBorderSides.intValue()));
-              }
-              else {
-                scrollPane.setBorder(new SideBorder(getBoundsColor(), keepBorderSides.intValue()));
-              }
-            }
-            else {
-              scrollPane.setBorder(new SideBorder(getBoundsColor(), SideBorder.NONE));
-            }
-          }
+    for (JScrollPane scrollPane : uiTraverser(c).filter(JScrollPane.class)) {
+      if (!uiParents(scrollPane, true)
+        .takeWhile(Conditions.notEqualTo(c))
+        .filter(Conditions.not(Conditions.instanceOf(JPanel.class, JLayeredPane.class)))
+        .isEmpty()) continue;
+
+      Integer keepBorderSides = getClientProperty(scrollPane, KEEP_BORDER_SIDES);
+      if (keepBorderSides != null) {
+        if (scrollPane.getBorder() instanceof LineBorder) {
+          Color color = ((LineBorder)scrollPane.getBorder()).getLineColor();
+          scrollPane.setBorder(new SideBorder(color, keepBorderSides.intValue()));
         }
-        return false;
+        else {
+          scrollPane.setBorder(new SideBorder(getBoundsColor(), keepBorderSides.intValue()));
+        }
       }
-    };
-  }
-
-  public static boolean hasNonPrimitiveParents(Component stopParent, Component c) {
-    Component eachParent = c.getParent();
-    while (true) {
-      if (eachParent == null || eachParent == stopParent) return false;
-      if (!isPrimitive(eachParent)) return true;
-      eachParent = eachParent.getParent();
+      else {
+        scrollPane.setBorder(new SideBorder(getBoundsColor(), SideBorder.NONE));
+      }
     }
-  }
-
-  public static boolean isPrimitive(Component c) {
-    return c instanceof JPanel || c instanceof JLayeredPane;
   }
 
   public static Point getCenterPoint(Dimension container, Dimension child) {
@@ -2370,7 +2366,8 @@ public class UIUtil {
     return String.format("<p style=\"margin: 0 %dpx 0 %dpx;\">%s</p>", hPadding, hPadding, html);
   }
 
-  public static String convertSpace2Nbsp(String html) {
+  @NotNull
+  public static String convertSpace2Nbsp(@NotNull String html) {
     @NonNls StringBuilder result = new StringBuilder();
     int currentPos = 0;
     int braces = 0;
@@ -2396,8 +2393,8 @@ public class UIUtil {
   }
 
   /**
-   * Please use Application.invokeLater() with a modality state, unless you work with Swings internals
-   * and 'runnable' deals with Swings components only and doesn't access any PSI, VirtualFiles, project/module model or other project settings.<p/>
+   * Please use Application.invokeLater() with a modality state (or GuiUtils, or TransactionGuard methods), unless you work with Swings internals
+   * and 'runnable' deals with Swings components only and doesn't access any PSI, VirtualFiles, project/module model or other project settings. For those, use GuiUtils, application.invoke* or TransactionGuard methods.<p/>
    *
    * On AWT thread, invoked runnable immediately, otherwise do {@link SwingUtilities#invokeLater(Runnable)} on it.
    */
@@ -2411,7 +2408,7 @@ public class UIUtil {
   }
 
   /**
-   * Please use Application.invokeAndWait() with a modality state, unless you work with Swings internals
+   * Please use Application.invokeAndWait() with a modality state (or GuiUtils, or TransactionGuard methods), unless you work with Swings internals
    * and 'runnable' deals with Swings components only and doesn't access any PSI, VirtualFiles, project/module model or other project settings.<p/>
    *
    * Invoke and wait in the event dispatch thread
@@ -2437,7 +2434,7 @@ public class UIUtil {
   }
 
   /**
-   * Please use Application.invokeAndWait() with a modality state, unless you work with Swings internals
+   * Please use Application.invokeAndWait() with a modality state (or GuiUtils, or TransactionGuard methods), unless you work with Swings internals
    * and 'runnable' deals with Swings components only and doesn't access any PSI, VirtualFiles, project/module model or other project settings.<p/>
    *
    * Invoke and wait in the event dispatch thread
@@ -2460,7 +2457,7 @@ public class UIUtil {
   }
 
   /**
-   * Please use Application.invokeAndWait() with a modality state, unless you work with Swings internals
+   * Please use Application.invokeAndWait() with a modality state (or GuiUtils, or TransactionGuard methods), unless you work with Swings internals
    * and 'runnable' deals with Swings components only and doesn't access any PSI, VirtualFiles, project/module model or other project settings.<p/>
    *
    * Invoke and wait in the event dispatch thread
@@ -2762,34 +2759,37 @@ public class UIUtil {
     return child == parent;
   }
 
+  /**
+   * Searches above in the component hierarchy starting from the specified component.
+   * Note that the initial component is also checked.
+   *
+   * @param type      expected class
+   * @param component initial component
+   * @return a component of the specified type, or {@code null} if the search is failed
+   * @see SwingUtilities#getAncestorOfClass
+   */
   @Nullable
-  public static <T> T getParentOfType(Class<? extends T> cls, Component c) {
-    Component eachParent = c;
-    while (eachParent != null) {
-      if (cls.isAssignableFrom(eachParent.getClass())) {
-        @SuppressWarnings({"unchecked"}) final T t = (T)eachParent;
-        return t;
+  public static <T> T getParentOfType(@NotNull Class<? extends T> type, Component component) {
+    while (component != null) {
+      if (type.isInstance(component)) {
+        //noinspection unchecked
+        return (T)component;
       }
-
-      eachParent = eachParent.getParent();
+      component = component.getParent();
     }
-
     return null;
   }
 
   @NotNull
-  public static JBIterable<Component> getParents(@Nullable Component c) {
-    return JBIterable.generate(c, new Function.Mono<Component>() {
-      @Override
-      public Component fun(Component c) {
-        return c.getParent();
-      }
-    });
+  public static JBIterable<Component> uiParents(@Nullable Component c, boolean strict) {
+    return strict ? JBIterable.generate(c, COMPONENT_PARENT).skip(1) : JBIterable.generate(c, COMPONENT_PARENT);
   }
 
   @NotNull
-  public static JBTreeTraverser<Component> uiTraverser() {
-    return new JBTreeTraverser<Component>(COMPONENT_CHILDREN);
+  public static JBIterable<Component> uiChildren(@Nullable Component component) {
+    if (!(component instanceof Container)) return JBIterable.empty();
+    Container container = (Container)component;
+    return JBIterable.of(container.getComponents());
   }
 
   @NotNull
@@ -2799,8 +2799,7 @@ public class UIUtil {
 
   public static final Key<Iterable<? extends Component>> NOT_IN_HIERARCHY_COMPONENTS = Key.create("NOT_IN_HIERARCHY_COMPONENTS");
 
-  private static final Function<Component, Iterable<Component>> COMPONENT_CHILDREN = new Function<Component, Iterable<Component>>() {
-    @NotNull
+  private static final Function<Component, JBIterable<Component>> COMPONENT_CHILDREN = new Function<Component, JBIterable<Component>>() {
     @Override
     public JBIterable<Component> fun(@NotNull Component c) {
       JBIterable<Component> result;
@@ -2812,11 +2811,8 @@ public class UIUtil {
         // Disabling these children results in ugly UI: WEB-10733
         result = JBIterable.empty();
       }
-      else if (c instanceof Container) {
-        result = JBIterable.of(((Container)c).getComponents());
-      }
       else {
-        result = JBIterable.empty();
+        result = uiChildren(c);
       }
       if (c instanceof JComponent) {
         JComponent jc = (JComponent)c;
@@ -2832,6 +2828,14 @@ public class UIUtil {
       return result;
     }
   };
+
+  private static final Function.Mono<Component> COMPONENT_PARENT = new Function.Mono<Component>() {
+    @Override
+    public Component fun(Component c) {
+      return c.getParent();
+    }
+  };
+
 
   public static void scrollListToVisibleIfNeeded(@NotNull final JList list) {
     SwingUtilities.invokeLater(new Runnable() {
@@ -3271,7 +3275,7 @@ public class UIUtil {
     // Evaluate the value depending on our current theme
     if (lcdContrastValue == 0) {
       if (SystemInfo.isMacIntel64) {
-        lcdContrastValue = isUnderDarcula() ? 140 : 200;
+        lcdContrastValue = isUnderDarcula() ? 140 : 230;
       } else {
         Map map = (Map)Toolkit.getDefaultToolkit().getDesktopProperty("awt.font.desktophints");
 
@@ -3502,7 +3506,7 @@ public class UIUtil {
     return null;
   }
 
-  private static Map<String, String> ourRealFontFamilies = null;
+  private static Map<String, String> ourRealFontFamilies;
 
   //Experimental, seems to be reliable under MacOS X only
 
@@ -3596,6 +3600,22 @@ public class UIUtil {
    */
   public static Window getWindow(Component component) {
     return component instanceof Window ? (Window)component : SwingUtilities.getWindowAncestor(component);
+  }
+
+  /**
+   * Places the specified window at the top of the stacking order and shows it in front of any other windows.
+   * If the window is iconified it will be shown anyway.
+   *
+   * @param window the window to activate
+   */
+  public static void toFront(Window window) {
+    if (window instanceof Frame) {
+      Frame frame = (Frame)window;
+      frame.setState(Frame.NORMAL);
+    }
+    if (window != null) {
+      window.toFront();
+    }
   }
 
   public static Image getDebugImage(Component component) {

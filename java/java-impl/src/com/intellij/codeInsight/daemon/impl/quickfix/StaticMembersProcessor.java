@@ -16,6 +16,7 @@
 package com.intellij.codeInsight.daemon.impl.quickfix;
 
 import com.intellij.codeInsight.CodeInsightUtil;
+import com.intellij.codeInsight.ImportFilter;
 import com.intellij.codeInsight.completion.JavaCompletionUtil;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.psi.*;
@@ -129,9 +130,15 @@ abstract class StaticMembersProcessor<T extends PsiMember & PsiDocCommentOwner> 
   @Override
   public boolean process(T member) {
     ProgressManager.checkCanceled();
-    if (JavaCompletionUtil.isInExcludedPackage(member, false) || !member.hasModifierProperty(PsiModifier.STATIC)) return true;
-    PsiFile file = member.getContainingFile();
     final PsiClass containingClass = member.getContainingClass();
+    if (containingClass != null) {
+      final String qualifiedName = containingClass.getQualifiedName();
+      final PsiFile containingFile = myPlace.getContainingFile();
+      if (qualifiedName != null && containingFile != null && !ImportFilter.shouldImport(containingFile, qualifiedName)) {
+        return true;
+      }
+    }
+    PsiFile file = member.getContainingFile();
     if (file instanceof PsiJavaFile
         //do not show methods from default package
         && !((PsiJavaFile)file).getPackageName().isEmpty()) {
@@ -148,18 +155,24 @@ abstract class StaticMembersProcessor<T extends PsiMember & PsiDocCommentOwner> 
                               Collection<T> members,
                               List<T> list,
                               List<T> applicableList) {
-    final Boolean alreadyMentioned = myPossibleClasses.get(containingClass);
+    Boolean alreadyMentioned = myPossibleClasses.get(containingClass);
     if (alreadyMentioned == Boolean.TRUE) return;
     if (containingClass.getQualifiedName() == null) {
       return;
     }
     if (alreadyMentioned == null) {
-      if (!members.isEmpty()) {
-        list.add(members.iterator().next());
-      }
       myPossibleClasses.put(containingClass, false);
     }
     for (T member : members) {
+      if (JavaCompletionUtil.isInExcludedPackage(member, false) || !member.hasModifierProperty(PsiModifier.STATIC)) {
+        continue;
+      }
+
+      if (alreadyMentioned == null) {
+        list.add(member);
+        alreadyMentioned = Boolean.FALSE;
+      }
+
       if (!PsiUtil.isAccessible(myPlace.getProject(), member, myPlace, containingClass)) {
         continue;
       }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package com.intellij.codeInsight.daemon.impl.quickfix;
 
+import com.intellij.codeInsight.FileModificationService;
 import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
@@ -96,7 +97,7 @@ public class ConvertSwitchToIfIntention implements IntentionAction {
     final boolean hadSideEffects;
     final String expressionText;
     final Project project = switchStatement.getProject();
-    if (RemoveUnusedVariableUtil.checkSideEffects(switchExpression, null, new ArrayList<PsiElement>())) {
+    if (RemoveUnusedVariableUtil.checkSideEffects(switchExpression, null, new ArrayList<>())) {
       hadSideEffects = true;
 
       final JavaCodeStyleManager javaCodeStyleManager =
@@ -125,11 +126,11 @@ public class ConvertSwitchToIfIntention implements IntentionAction {
       return;
     }
     final List<SwitchStatementBranch> openBranches =
-      new ArrayList<SwitchStatementBranch>();
+      new ArrayList<>();
     final Set<PsiLocalVariable> declaredVariables =
-      new HashSet<PsiLocalVariable>();
+      new HashSet<>();
     final List<SwitchStatementBranch> allBranches =
-      new ArrayList<SwitchStatementBranch>();
+      new ArrayList<>();
     SwitchStatementBranch currentBranch = null;
     final PsiElement[] children = body.getChildren();
     for (int i = 1; i < children.length - 1; i++) {
@@ -226,6 +227,7 @@ public class ConvertSwitchToIfIntention implements IntentionAction {
                         firstBranch, ifStatementText);
     }
     if (ifStatementText.length() == 0) return;
+    if (!FileModificationService.getInstance().preparePsiElementForWrite(switchStatement)) return;
     final JavaPsiFacade psiFacade = JavaPsiFacade.getInstance(project);
     final PsiElementFactory factory = psiFacade.getElementFactory();
     if (hadSideEffects) {

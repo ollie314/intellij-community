@@ -29,6 +29,7 @@ import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.MessageDialogBuilder;
 import com.intellij.openapi.util.IconLoader;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.wm.ToolWindowId;
 import com.intellij.util.messages.MessageBus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -47,6 +48,8 @@ public class NotificationTestAction extends AnAction implements DumbAware {
   public static final String TEST_GROUP_ID = "Test Notification";
   private static final NotificationGroup TEST_STICKY_GROUP =
     new NotificationGroup("Test Sticky Notification", NotificationDisplayType.STICKY_BALLOON, true);
+  private static final NotificationGroup TEST_TOOLWINDOW_GROUP =
+    NotificationGroup.toolWindowGroup("Test ToolWindow Notification", ToolWindowId.TODO_VIEW, true);
   private static final String MESSAGE_KEY = "NotificationTestAction_Message";
 
   public void actionPerformed(@NotNull AnActionEvent event) {
@@ -125,16 +128,11 @@ public class NotificationTestAction extends AnAction implements DumbAware {
           notification.expire();
         }
       });
-      ApplicationManager.getApplication().executeOnPooledThread(new Runnable() {
-        @Override
-        public void run() {
-          myMessageBus.syncPublisher(Notifications.TOPIC).notify(notification);
-        }
-      });
+      ApplicationManager.getApplication().executeOnPooledThread(() -> myMessageBus.syncPublisher(Notifications.TOPIC).notify(notification));
     }
 
     private void newNotification(String text) {
-      final List<NotificationInfo> notifications = new ArrayList<NotificationInfo>();
+      final List<NotificationInfo> notifications = new ArrayList<>();
       NotificationInfo notification = null;
 
       for (String line : StringUtil.splitByLines(text, false)) {
@@ -184,14 +182,14 @@ public class NotificationTestAction extends AnAction implements DumbAware {
         else if (line.startsWith("Listener:")) {
           notification.setAddListener("true".equals(StringUtil.substringAfter(line, ":")));
         }
+        else if (line.startsWith("Toolwindow:")) {
+          notification.setToolwindow("true".equals(StringUtil.substringAfter(line, ":")));
+        }
       }
 
-      ApplicationManager.getApplication().executeOnPooledThread(new Runnable() {
-        @Override
-        public void run() {
-          for (NotificationInfo info : notifications) {
-            myMessageBus.syncPublisher(Notifications.TOPIC).notify(info.getNotification());
-          }
+      ApplicationManager.getApplication().executeOnPooledThread(() -> {
+        for (NotificationInfo info : notifications) {
+          myMessageBus.syncPublisher(Notifications.TOPIC).notify(info.getNotification());
         }
       });
     }
@@ -206,6 +204,7 @@ public class NotificationTestAction extends AnAction implements DumbAware {
     private NotificationType myType = NotificationType.INFORMATION;
     private boolean mySticky;
     private boolean myAddListener;
+    private boolean myToolwindow;
 
     private Notification myNotification;
 
@@ -219,6 +218,9 @@ public class NotificationTestAction extends AnAction implements DumbAware {
           return myNotification = new StatisticsNotification(StatisticsNotificationManager.GROUP_DISPLAY_ID, getListener()).setIcon(icon);
         }
         String displayId = mySticky ? TEST_STICKY_GROUP.getDisplayId() : TEST_GROUP_ID;
+        if (myToolwindow) {
+          displayId = TEST_TOOLWINDOW_GROUP.getDisplayId();
+        }
         String content = myContent == null ? "" : StringUtil.join(myContent, "\n");
         if (icon == null) {
           myNotification =
@@ -259,7 +261,7 @@ public class NotificationTestAction extends AnAction implements DumbAware {
 
     public void addContent(@NotNull String content) {
       if (myContent == null) {
-        myContent = new ArrayList<String>();
+        myContent = new ArrayList<>();
       }
       myContent.add(content);
     }
@@ -270,6 +272,10 @@ public class NotificationTestAction extends AnAction implements DumbAware {
 
     public void setSticky(boolean sticky) {
       mySticky = sticky;
+    }
+
+    public void setToolwindow(boolean toolwindow) {
+      myToolwindow = toolwindow;
     }
 
     public void setType(@Nullable String type) {
@@ -286,7 +292,7 @@ public class NotificationTestAction extends AnAction implements DumbAware {
 
     @Override
     public void hyperlinkUpdate(@NotNull Notification notification, @NotNull HyperlinkEvent event) {
-      if (MessageDialogBuilder.yesNo("Notification Listener", event.getDescription() + "      Expire?").is()) {
+      if (MessageDialogBuilder.yesNo("Notification Listener", event.getDescription() + "      Expire?").isYes()) {
         myNotification.expire();
         myNotification = null;
       }
@@ -308,7 +314,7 @@ public class NotificationTestAction extends AnAction implements DumbAware {
 
       @Override
       public void actionPerformed(AnActionEvent e) {
-        if (MessageDialogBuilder.yesNo("AnAction", getTemplatePresentation().getText() + "      Expire?").is()) {
+        if (MessageDialogBuilder.yesNo("AnAction", getTemplatePresentation().getText() + "      Expire?").isYes()) {
           myNotification.expire();
           myNotification = null;
         }

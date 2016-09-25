@@ -43,17 +43,14 @@ public final class PyTypeUtil {
                                                                 boolean inherited,
                                                                 @NotNull final TypeEvalContext context) {
 
-    final List<T> result = new ArrayList<T>();
-    type.visitMembers(new Processor<PsiElement>() {
-      @Override
-      public boolean process(final PsiElement t) {
-        if (expectedMemberType.isInstance(t)) {
-          @SuppressWarnings("unchecked") // Already checked
-          final T castedElement = (T)t;
-          result.add(castedElement);
-        }
-        return true;
+    final List<T> result = new ArrayList<>();
+    type.visitMembers(t -> {
+      if (expectedMemberType.isInstance(t)) {
+        @SuppressWarnings("unchecked") // Already checked
+        final T castedElement = (T)t;
+        result.add(castedElement);
       }
+      return true;
     }, inherited, context);
     return result;
   }

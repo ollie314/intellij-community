@@ -77,18 +77,11 @@ public abstract class MarkRootActionBase extends DumbAwareAction {
         modifyRoots(file, entry);
       }
     }
-    DumbService.allowStartingDumbModeInside(DumbModePermission.MAY_START_BACKGROUND, new Runnable() {
-      @Override
-      public void run() {
-        ApplicationManager.getApplication().runWriteAction(new Runnable() {
-          @Override
-          public void run() {
-            model.commit();
-            module.getProject().save();
-          }
-        });
-      }
-    });
+    DumbService.allowStartingDumbModeInside(DumbModePermission.MAY_START_BACKGROUND,
+                                            () -> ApplicationManager.getApplication().runWriteAction(() -> {
+                                              model.commit();
+                                              module.getProject().save();
+                                            }));
   }
 
   protected abstract void modifyRoots(VirtualFile file, ContentEntry entry);
@@ -185,9 +178,9 @@ public abstract class MarkRootActionBase extends DumbAwareAction {
   public static class RootsSelection {
     public static final RootsSelection EMPTY = new RootsSelection();
 
-    public List<SourceFolder> mySelectedRoots = new ArrayList<SourceFolder>();
-    public List<ExcludeFolder> mySelectedExcludeRoots = new ArrayList<ExcludeFolder>();
-    public List<VirtualFile> mySelectedDirectories = new ArrayList<VirtualFile>();
+    public List<SourceFolder> mySelectedRoots = new ArrayList<>();
+    public List<ExcludeFolder> mySelectedExcludeRoots = new ArrayList<>();
+    public List<VirtualFile> mySelectedDirectories = new ArrayList<>();
     public boolean myHaveSelectedFilesUnderSourceRoots;
   }
 }

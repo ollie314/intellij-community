@@ -304,6 +304,47 @@ public class InlineMethodTest extends LightRefactoringTestCase {
     doTestConflict("Inlined method is used in method reference with side effects in qualifier");
   }
 
+  public void testInaccessibleSuperCallWhenQualifiedInline() throws Exception {
+    doTestConflict("Inlined method calls super.bar() which won't be accessed in class <b><code>B</code></b>");
+  }
+
+  public void testSuperCallWhenUnqualifiedInline() throws Exception {
+    doTestInlineThisOnly();
+  }
+
+  public void testDeleteOverrideAnnotations() throws Exception {
+    doTest();
+  }
+
+  public void testNegativeArguments() throws Exception {
+    doTest();
+  }
+
+  public void testInaccessibleFieldInSuperClass() throws Exception {
+    doTestConflict("Field <b><code>A.i</code></b> that is used in inlined method is not accessible from call site(s) in method <b><code>B.bar()</code></b>");
+  }
+
+  public void testPrivateFieldInSuperClassInSameFile() throws Exception {
+    doTest();
+  }
+
+  public void testInlineMultipleOccurrencesInFieldInitializer() throws Exception {
+    doTest();
+  }
+
+  public void testAvoidMultipleSubstitutionInParameterTypes() throws Exception {
+    doTest();
+  }
+
+  public void testRespectProjectScopeSrc() throws Exception {
+    doTest();
+  }
+
+  @Override
+  protected Sdk getProjectJDK() {
+    return getTestName(false).contains("Src") ? IdeaTestUtil.getMockJdk17() : super.getProjectJDK();
+  }
+
   private void doTestInlineThisOnly() {
     @NonNls String fileName = "/refactoring/inlineMethod/" + getTestName(false) + ".java";
     configureByFile(fileName);
@@ -338,16 +379,11 @@ public class InlineMethodTest extends LightRefactoringTestCase {
     final PsiReference ref = myFile.findReferenceAt(myEditor.getCaretModel().getOffset());
     PsiReferenceExpression refExpr = ref instanceof PsiReferenceExpression ? (PsiReferenceExpression)ref : null;
     assertTrue(element instanceof PsiMethod);
-    PsiMethod method = (PsiMethod)element;
+    PsiMethod method = (PsiMethod)element.getNavigationElement();
     final boolean condition = InlineMethodProcessor.checkBadReturns(method) && !InlineUtil.allUsagesAreTailCalls(method);
     assertFalse("Bad returns found", condition);
     final InlineMethodProcessor processor =
       new InlineMethodProcessor(getProject(), method, refExpr, myEditor, options.isInlineThisOnly(), nonCode, nonCode);
     processor.run();
-  }
-
-  @Override
-  protected Sdk getProjectJDK() {
-    return IdeaTestUtil.getMockJdk18();
   }
 }

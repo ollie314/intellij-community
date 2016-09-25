@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -75,13 +75,17 @@ binding.setVariable("isEap", {
   return "true" == p("component.version.eap")
 })
 
-binding.setVariable("mem32", "-server -Xms128m -Xmx512m -XX:MaxPermSize=250m -XX:ReservedCodeCacheSize=240m")
-binding.setVariable("mem64", "-Xms128m -Xmx750m -XX:MaxPermSize=350m -XX:ReservedCodeCacheSize=240m")
+/**
+ * @deprecated these properies aren't used in new build scripts anymore (they are still used in CLion and AppCode build scripts which aren't rewritten yet;
+ * modify {@link org.jetbrains.intellij.build.impl.VmOptionsGenerator} instead
+ */
+binding.setVariable("mem32", "-server -Xms128m -Xmx512m -XX:ReservedCodeCacheSize=240m")
+binding.setVariable("mem64", "-Xms128m -Xmx750m -XX:ReservedCodeCacheSize=240m")
 binding.setVariable("common_vmoptions", "-XX:+UseConcMarkSweepGC -XX:SoftRefLRUPolicyMSPerMB=50 -ea " +
                                         "-Dsun.io.useCanonCaches=false -Djava.net.preferIPv4Stack=true " +
                                         "-XX:+HeapDumpOnOutOfMemoryError -XX:-OmitStackTraceInFastThrow")
 
-binding.setVariable("vmOptions", { "$common_vmoptions".trim() })
+binding.setVariable("vmOptions", { "$common_vmoptions ${isEap() ? '-XX:MaxJavaStackTraceDepth=-1' : ''}".trim() })
 binding.setVariable("vmOptions32", { "$mem32 ${vmOptions()}".trim() })
 binding.setVariable("vmOptions64", { "$mem64 ${vmOptions()}".trim() })
 
@@ -277,7 +281,7 @@ projectBuilder.buildInfoPrinter = new TeamCityBuildInfoPrinter()
 projectBuilder.compressJars = false
 
 binding.setVariable("notifyArtifactBuilt", { String artifactPath ->
-  if (!FileUtil.startsWith(artifactPath, home)) {
+  if (!FileUtil.startsWith(FileUtil.toSystemIndependentName(artifactPath), FileUtil.toSystemIndependentName(home))) {
     projectBuilder.error("Artifact path $artifactPath should start with $home")
   }
   def relativePath = artifactPath.substring(home.length())
@@ -353,7 +357,7 @@ binding.setVariable("commonJvmArgsForTests", {
     "-Didea.config.path=${p("teamcity.build.tempDir")}/config",
     "-Didea.system.path=${p("teamcity.build.tempDir")}/system",
     "-Xdebug",
-    "-XX:ReservedCodeCacheSize=240m",
+    "-XX:ReservedCodeCacheSize=300m",
     "-XX:SoftRefLRUPolicyMSPerMB=50",
     "-XX:+UseConcMarkSweepGC",
     "-XX:-OmitStackTraceInFastThrow",
@@ -371,6 +375,10 @@ binding.setVariable("classPathLibs", [
         "jna.jar"
 ])
 
+/**
+ * @deprecated these properies aren't used in new build scripts anymore (they are still used in CLion and AppCode build scripts which aren't rewritten yet;
+ * modify {@link org.jetbrains.intellij.build.CommunityRepositoryModules} instead
+ */
 binding.setVariable("platformApiModules", [
   "analysis-api",
   "built-in-server-api",
@@ -403,6 +411,7 @@ binding.setVariable("platformImplementationModules", [
   "analysis-impl",
   "built-in-server",
   "core-impl",
+  "credential-store",
   "diff-impl",
   "dvcs-impl",
   "editor-ui-ex",
@@ -538,6 +547,7 @@ binding.setVariable("layoutMacApp", { String path, String ch, Map args ->
     replacefilter(token: "@@version@@", value: version)
     replacefilter(token: "@@vmoptions@@", value: vmOptions)
     replacefilter(token: "@@idea_properties@@", value: coreProperties)
+    replacefilter(token: "@@idea.paths.selector@@", value: args.system_selector)
     replacefilter(token: "@@class_path@@", value: classPath)
     replacefilter(token: "@@help_id@@", value: helpId)
     replacefilter(token: "@@url_schemes@@", value: urlSchemes)
@@ -742,6 +752,7 @@ binding.setVariable("zipSources", { String home, String targetDir ->
         include(name: "**/*.$it")
       }
       exclude(name: "**/testData/**")
+      exclude(name: "out/**")
     }
   }
 
@@ -812,6 +823,7 @@ private Map readIdeaProperties(Map args) {
                            "java.endorsed.dirs": "",
                            "idea.smooth.progress": "false",
                            "apple.laf.useScreenMenuBar": "true",
+                           "apple.awt.fileDialogForDirectories": "true",
                            "apple.awt.graphics.UseQuartz": "true",
                            "apple.awt.fullscreencapturealldisplays": "false"]
   if (args.platform_prefix != null) {
@@ -884,30 +896,29 @@ binding.setVariable("bundledJDK64s"){
 private bundledJDK(boolean win64) {
   requireProperty("artifact.linux.no.jdk", "true")
   requireProperty("artifact.mac.no.jdk", "true")
-  requireProperty("jdk.oracle.win", "jdk1.8")
-  requireProperty("jdk.win",   "openjdk.1.8")
-  requireProperty("jdk.mac",   "openjdk.1.8")
-  requireProperty("jdk.linux", "openjdk.1.8")
+  requireProperty("jdk.oracle.win", "jdk8u")
+  requireProperty("jdk.win",   "jbre8")
+  requireProperty("jdk.mac",   "jbre8")
+  requireProperty("jdk.linux", "jbre8")
 
   if (new File("${home}/build/jdk").exists()) {
     def jdkDir = new File("${home}/build/jdk/win")
     if (p("jdk.oracle.win") != "false" && (jdkDir.exists() && jdkDir.isDirectory())) {
-      setProperty("winJDK", getPathToBundledJDK(jdkDir, p("jdk.oracle.win"), (win64 ? "x64.zip": "x32.zip")))
+      setProperty("winJDK", getPathToBundledJDK(jdkDir, p("jdk.oracle.win"), (win64 ? "x64.tar.gz": "x86.tar.gz")))
       extractRedistJre(winJDK, "${paths.sandbox}/jdk.oracle.win/jre")
     }
-    jdkDir = new File("${home}/build/jdk/win/custom")
     if (p("jdk.win") != "false" && (jdkDir.exists() && jdkDir.isDirectory())) {
-      setProperty("winCustomJDKx32", getPathToBundledJDK(jdkDir, p("jdk.win"), (win64 ? "x64.tar.gz": "x32.tar.gz")))
-      extractRedistJre(winCustomJDKx32, "${paths.sandbox}/jdk.win")
+      setProperty("winCustomJDKx32", getPathToBundledJDK(jdkDir, p("jdk.win"), (win64 ? "x64.tar.gz": "x86.tar.gz")))
+      extractRedistJre(winCustomJDKx32, "${paths.sandbox}/jdk.win/jre")
     }
-    jdkDir = new File("${home}/build/jdk/mac/custom")
+    jdkDir = new File("${home}/build/jdk/mac")
     if (p("jdk.mac") != "false" && (jdkDir.exists() && jdkDir.isDirectory())) {
       setProperty("macCustomJDK", getPathToBundledJDK(jdkDir, p("jdk.mac"), ".tar.gz"))
     }
-    jdkDir = new File("${home}/build/jdk/linux/custom")
+    jdkDir = new File("${home}/build/jdk/linux")
     if (p("jdk.linux") != "false" && (jdkDir.exists() && jdkDir.isDirectory())) {
       setProperty("linuxJDK", getPathToBundledJDK(jdkDir, p("jdk.linux"), ".tar.gz"))
-      extractRedistJre(linuxJDK, "${paths.sandbox}/jdk.linux")
+      extractRedistJre(linuxJDK, "${paths.sandbox}/jdk.linux/jre")
     }
   }
 }
@@ -1138,6 +1149,7 @@ binding.setVariable("buildWinLauncher", { String ch, String inputPath, String ou
     def paths = getProperty("paths")
     def launcherPropertiesTemp = "${paths.sandbox}/launcher.properties"
     copyAndPatchFile(launcherProperties, launcherPropertiesTemp, ["PRODUCT_PATHS_SELECTOR": pathsSelector,
+                                                                  "product_uc" : p("component.names.product").toLowerCase(),
                                                                   "IDE-NAME": p("component.names.product").toUpperCase()])
     launcherProperties = launcherPropertiesTemp
   }
@@ -1167,6 +1179,9 @@ binding.setVariable("layoutUpdater", { String target, String jarName = "updater.
   layout(target) {
     jar(jarName) {
       module("updater")
+      manifest {
+        attribute(name: "Main-Class", value: "com.intellij.updater.Bootstrap")
+      }
     }
   }
 })

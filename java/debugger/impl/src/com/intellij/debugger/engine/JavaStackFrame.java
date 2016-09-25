@@ -45,7 +45,6 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.ui.ColoredTextContainer;
-import com.intellij.util.Function;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.text.CharArrayUtil;
 import com.intellij.xdebugger.XDebugSession;
@@ -202,16 +201,18 @@ public class JavaStackFrame extends XStackFrame {
         children.add(JavaValue.create(returnValueDescriptor, evaluationContext, myNodeManager));
       }
       // add context exceptions
+      Set<ObjectReference> exceptions = new HashSet<>();
       for (Pair<Breakpoint, Event> pair : DebuggerUtilsEx.getEventDescriptors(debuggerContext.getSuspendContext())) {
-        final Event debugEvent = pair.getSecond();
+        Event debugEvent = pair.getSecond();
         if (debugEvent instanceof ExceptionEvent) {
-          final ObjectReference exception = ((ExceptionEvent)debugEvent).exception();
+          ObjectReference exception = ((ExceptionEvent)debugEvent).exception();
           if (exception != null) {
-            final ValueDescriptorImpl exceptionDescriptor = myNodeManager.getThrownExceptionObjectDescriptor(myDescriptor, exception);
-            children.add(JavaValue.create(exceptionDescriptor, evaluationContext, myNodeManager));
+            exceptions.add(exception);
           }
         }
       }
+      exceptions.forEach(e -> children.add(
+        JavaValue.create(myNodeManager.getThrownExceptionObjectDescriptor(myDescriptor, e), evaluationContext, myNodeManager)));
 
       try {
         buildVariables(debuggerContext, evaluationContext, debugProcess, children, thisObjectReference, location);
@@ -282,12 +283,7 @@ public class JavaStackFrame extends XStackFrame {
         final SourcePosition sourcePosition = debuggerContext.getSourcePosition();
         final Map<String, LocalVariableProxyImpl> visibleVariables =
           ContainerUtil.map2Map(getVisibleVariables(),
-                                new Function<LocalVariableProxyImpl, Pair<String, LocalVariableProxyImpl>>() {
-                                  @Override
-                                  public Pair<String, LocalVariableProxyImpl> fun(LocalVariableProxyImpl var) {
-                                    return Pair.create(var.name(), var);
-                                  }
-                                });
+                                var -> Pair.create(var.name(), var));
 
         Pair<Set<String>, Set<TextWithImports>> usedVars = EMPTY_USED_VARS;
         if (sourcePosition != null) {

@@ -64,7 +64,6 @@ import org.slf4j.Logger;
 import org.slf4j.impl.Log4jLoggerFactory;
 
 import java.io.File;
-import java.io.FilenameFilter;
 import java.rmi.RemoteException;
 import java.rmi.server.UnicastRemoteObject;
 import java.util.*;
@@ -82,7 +81,7 @@ public class MavenServerManager extends RemoteObjectWrapper<MavenServer> impleme
 
   @NonNls private static final String MAIN_CLASS = "org.jetbrains.idea.maven.server.RemoteMavenServer";
 
-  private static final String DEFAULT_VM_OPTIONS = "-Xmx512m";
+  private static final String DEFAULT_VM_OPTIONS = "-Xmx768m";
 
   private static final String FORCE_MAVEN2_OPTION = "-Didea.force.maven2";
 
@@ -104,7 +103,7 @@ public class MavenServerManager extends RemoteObjectWrapper<MavenServer> impleme
       if (pluginFileOrDir.isDirectory()) {
         File parentFile = getMavenPluginParentFile();
         myBundledMaven2Home = new File(parentFile, "maven2-server-impl/lib/maven2");
-        myBundledMaven3Home = new File(parentFile, "maven30-server-impl/lib/maven3");
+        myBundledMaven3Home = new File(parentFile, "maven3-server-impl/lib/maven3");
       }
       else {
         myBundledMaven2Home = new File(root, "maven2");
@@ -122,7 +121,7 @@ public class MavenServerManager extends RemoteObjectWrapper<MavenServer> impleme
     @Attribute
     public String embedderJdk = MavenRunnerSettings.USE_INTERNAL_JAVA;
     @Attribute
-    public String mavenHome;
+    public String mavenHome = BUNDLED_MAVEN_3;
     @Attribute
     public MavenExecutionOptions.LoggingLevel loggingLevel = MavenExecutionOptions.LoggingLevel.INFO;
   }
@@ -239,7 +238,7 @@ public class MavenServerManager extends RemoteObjectWrapper<MavenServer> impleme
 
         params.setMainClass(MAIN_CLASS);
 
-        Map<String, String> defs = new THashMap<String, String>();
+        Map<String, String> defs = new THashMap<>();
         defs.putAll(MavenUtil.getPropertiesFromMavenOpts());
 
         // pass ssl-related options
@@ -295,7 +294,7 @@ public class MavenServerManager extends RemoteObjectWrapper<MavenServer> impleme
                            NotificationType.WARNING).notify(null);
         }
 
-        final List<String> classPath = new ArrayList<String>();
+        final List<String> classPath = new ArrayList<>();
         classPath.add(PathUtil.getJarPathForClass(org.apache.log4j.Logger.class));
         if (currentMavenVersion == null || StringUtil.compareVersionNumbers(currentMavenVersion, "3.1") < 0) {
           classPath.add(PathUtil.getJarPathForClass(Logger.class));
@@ -303,7 +302,7 @@ public class MavenServerManager extends RemoteObjectWrapper<MavenServer> impleme
         }
 
         classPath.addAll(PathManager.getUtilClassPath());
-        ContainerUtil.addIfNotNull(PathUtil.getJarPathForClass(Query.class), classPath);
+        ContainerUtil.addIfNotNull(classPath, PathUtil.getJarPathForClass(Query.class));
         params.getClassPath().add(PathManager.getResourceRoot(getClass(), "/messages/CommonBundle.properties"));
         params.getClassPath().addAll(classPath);
         params.getClassPath().addAllFiles(collectClassPathAndLibsFolder(forceMaven2));
@@ -314,7 +313,7 @@ public class MavenServerManager extends RemoteObjectWrapper<MavenServer> impleme
         }
         else {
           if (!xmxSet) {
-            params.getVMParametersList().add("-Xmx512m");
+            params.getVMParametersList().add("-Xmx768m");
           }
         }
 
@@ -386,7 +385,7 @@ public class MavenServerManager extends RemoteObjectWrapper<MavenServer> impleme
     File mavenHome = forceMaven2 ? BundledMavenPathHolder.myBundledMaven2Home : currentMavenVersion == null ? BundledMavenPathHolder.myBundledMaven3Home : getCurrentMavenHomeFile();
 
     final File pluginFileOrDir = new File(PathUtil.getJarPathForClass(MavenServerManager.class));
-    final List<File> classpath = new ArrayList<File>();
+    final List<File> classpath = new ArrayList<>();
     final String root = pluginFileOrDir.getParent();
 
     if (pluginFileOrDir.isDirectory()) {
@@ -408,7 +407,7 @@ public class MavenServerManager extends RemoteObjectWrapper<MavenServer> impleme
           classpath.add(new File(root, "maven30-server-impl"));
         }
         else {
-          classpath.add(new File(root, "maven32-server-impl"));
+          classpath.add(new File(root, "maven3-server-impl"));
         }
       }
     }
@@ -427,7 +426,7 @@ public class MavenServerManager extends RemoteObjectWrapper<MavenServer> impleme
           classpath.add(new File(root, "maven30-server-impl.jar"));
         }
         else {
-          classpath.add(new File(root, "maven32-server-impl.jar"));
+          classpath.add(new File(root, "maven3-server-impl.jar"));
         }
       }
     }
@@ -444,12 +443,7 @@ public class MavenServerManager extends RemoteObjectWrapper<MavenServer> impleme
   private static void addMavenLibs(List<File> classpath, File mavenHome) {
     addDir(classpath, new File(mavenHome, "lib"));
     File bootFolder = new File(mavenHome, "boot");
-    File[] classworldsJars = bootFolder.listFiles(new FilenameFilter() {
-      @Override
-      public boolean accept(File dir, String name) {
-        return StringUtil.contains(name, "classworlds");
-      }
-    });
+    File[] classworldsJars = bootFolder.listFiles((dir, name) -> StringUtil.contains(name, "classworlds"));
     if (classworldsJars != null) {
       Collections.addAll(classpath, classworldsJars);
     }
@@ -466,7 +460,10 @@ public class MavenServerManager extends RemoteObjectWrapper<MavenServer> impleme
     }
   }
 
-  public MavenEmbedderWrapper createEmbedder(final Project project, final boolean alwaysOnline) {
+  public MavenEmbedderWrapper createEmbedder(final Project project,
+                                             final boolean alwaysOnline,
+                                             @Nullable String workingDirectory,
+                                             @Nullable String multiModuleProjectDirectory) {
     return new MavenEmbedderWrapper(this) {
       @NotNull
       @Override
@@ -478,8 +475,8 @@ public class MavenServerManager extends RemoteObjectWrapper<MavenServer> impleme
         }
 
         settings.setProjectJdk(MavenUtil.getSdkPath(ProjectRootManager.getInstance(project).getProjectSdk()));
-
-        return MavenServerManager.this.getOrCreateWrappee().createEmbedder(settings);
+        return MavenServerManager.this.getOrCreateWrappee()
+          .createEmbedder(new MavenEmbedderSettings(settings, workingDirectory, multiModuleProjectDirectory));
       }
     };
   }

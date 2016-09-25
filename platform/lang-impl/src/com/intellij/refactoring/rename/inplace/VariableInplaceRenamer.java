@@ -59,7 +59,7 @@ import java.util.List;
  * @author ven
  */
 public class VariableInplaceRenamer extends InplaceRefactoring {
-  public static final LanguageExtension<ResolveSnapshotProvider> INSTANCE = new LanguageExtension<ResolveSnapshotProvider>(
+  public static final LanguageExtension<ResolveSnapshotProvider> INSTANCE = new LanguageExtension<>(
     "com.intellij.rename.inplace.resolveSnapshotProvider"
   );
   private ResolveSnapshotProvider.ResolveSnapshot mySnapshot;
@@ -100,14 +100,11 @@ public class VariableInplaceRenamer extends InplaceRefactoring {
     final PsiFile currentFile = PsiDocumentManager.getInstance(myProject).getPsiFile(myEditor.getDocument());
     if (stringToSearch != null) {
       TextOccurrencesUtil
-        .processUsagesInStringsAndComments(myElementToRename, stringToSearch, true, new PairProcessor<PsiElement, TextRange>() {
-          @Override
-          public boolean process(PsiElement psiElement, TextRange textRange) {
-            if (psiElement.getContainingFile() == currentFile) {
-              stringUsages.add(Pair.create(psiElement, textRange));
-            }
-            return true;
+        .processUsagesInStringsAndComments(myElementToRename, stringToSearch, true, (psiElement, textRange) -> {
+          if (psiElement.getContainingFile() == currentFile) {
+            stringUsages.add(Pair.create(psiElement, textRange));
           }
+          return true;
         });
     }
   }
@@ -196,13 +193,12 @@ public class VariableInplaceRenamer extends InplaceRefactoring {
     if (variable != null) {
       final int offset = variable.getTextOffset();
       restoreCaretOffset(offset);
+      if (ApplicationManager.getApplication().isUnitTestMode()) {
+        return;
+      }
       JBPopupFactory.getInstance()
-        .createConfirmation("Inserted identifier is not valid", "Continue editing", "Cancel", new Runnable() {
-          @Override
-          public void run() {
-            createInplaceRenamerToRestart(variable, myEditor, newName).performInplaceRefactoring(nameSuggestions);
-          }
-        }, 0).showInBestPositionFor(myEditor);
+        .createConfirmation("Inserted identifier is not valid", "Continue editing", "Cancel",
+                            () -> createInplaceRenamerToRestart(variable, myEditor, newName).performInplaceRefactoring(nameSuggestions), 0).showInBestPositionFor(myEditor);
     }
   }
 
@@ -235,9 +231,9 @@ public class VariableInplaceRenamer extends InplaceRefactoring {
       AutomaticRenamerFactory[] factories = Extensions.getExtensions(AutomaticRenamerFactory.EP_NAME);
       for (AutomaticRenamerFactory renamerFactory : factories) {
         if (elementToRename != null && renamerFactory.isApplicable(elementToRename)) {
-          final List<UsageInfo> usages = new ArrayList<UsageInfo>();
+          final List<UsageInfo> usages = new ArrayList<>();
           final AutomaticRenamer renamer =
-            renamerFactory.createRenamer(elementToRename, newName, new ArrayList<UsageInfo>());
+            renamerFactory.createRenamer(elementToRename, newName, new ArrayList<>());
           if (renamer.hasAnythingToRename()) {
             if (!ApplicationManager.getApplication().isUnitTestMode()) {
               final AutomaticRenamingDialog renamingDialog = new AutomaticRenamingDialog(myProject, renamer);
@@ -246,17 +242,7 @@ public class VariableInplaceRenamer extends InplaceRefactoring {
               }
             }
 
-            final Runnable runnable = new Runnable() {
-              @Override
-              public void run() {
-                ApplicationManager.getApplication().runReadAction(new Runnable() {
-                  @Override
-                  public void run() {
-                    renamer.findUsages(usages, false, false);
-                  }
-                });
-              }
-            };
+            final Runnable runnable = () -> ApplicationManager.getApplication().runReadAction(() -> renamer.findUsages(usages, false, false));
 
             if (!ProgressManager.getInstance()
               .runProcessWithProgressSynchronously(runnable, RefactoringBundle.message("searching.for.variables"), true, myProject)) {
@@ -264,18 +250,15 @@ public class VariableInplaceRenamer extends InplaceRefactoring {
             }
 
             if (!CommonRefactoringUtil.checkReadOnlyStatus(myProject, PsiUtilCore.toPsiElementArray(renamer.getElements()))) return;
-            final Runnable performAutomaticRename = new Runnable() {
-              @Override
-              public void run() {
-                CommandProcessor.getInstance().markCurrentCommandAsGlobal(myProject);
-                final UsageInfo[] usageInfos = usages.toArray(new UsageInfo[usages.size()]);
-                final MultiMap<PsiElement, UsageInfo> classified = RenameProcessor.classifyUsages(renamer.getElements(), usageInfos);
-                for (final PsiNamedElement element : renamer.getElements()) {
-                  final String newElementName = renamer.getNewName(element);
-                  if (newElementName != null) {
-                    final Collection<UsageInfo> infos = classified.get(element);
-                    RenameUtil.doRename(element, newElementName, infos.toArray(new UsageInfo[infos.size()]), myProject, RefactoringElementListener.DEAF);
-                  }
+            final Runnable performAutomaticRename = () -> {
+              CommandProcessor.getInstance().markCurrentCommandAsGlobal(myProject);
+              final UsageInfo[] usageInfos = usages.toArray(new UsageInfo[usages.size()]);
+              final MultiMap<PsiElement, UsageInfo> classified = RenameProcessor.classifyUsages(renamer.getElements(), usageInfos);
+              for (final PsiNamedElement element : renamer.getElements()) {
+                final String newElementName = renamer.getNewName(element);
+                if (newElementName != null) {
+                  final Collection<UsageInfo> infos = classified.get(element);
+                  RenameUtil.doRename(element, newElementName, infos.toArray(new UsageInfo[infos.size()]), myProject, RefactoringElementListener.DEAF);
                 }
               }
             };
@@ -288,12 +271,7 @@ public class VariableInplaceRenamer extends InplaceRefactoring {
             if (ApplicationManager.getApplication().isUnitTestMode()) {
               writeCommandAction.execute();
             } else {
-              ApplicationManager.getApplication().invokeLater(new Runnable() {
-                @Override
-                public void run() {
-                  writeCommandAction.execute();
-                }
-              });
+              ApplicationManager.getApplication().invokeLater(() -> writeCommandAction.execute());
             }
           }
         }
@@ -340,12 +318,7 @@ public class VariableInplaceRenamer extends InplaceRefactoring {
       else {
         if (mySnapshot != null) {
           if (isIdentifier(myInsertedName, myLanguage)) {
-            ApplicationManager.getApplication().runWriteAction(new Runnable() {
-              @Override
-              public void run() {
-                mySnapshot.apply(myInsertedName);
-              }
-            });
+            ApplicationManager.getApplication().runWriteAction(() -> mySnapshot.apply(myInsertedName));
           }
         }
       }

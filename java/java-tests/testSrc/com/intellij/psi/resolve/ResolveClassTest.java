@@ -16,15 +16,18 @@
 package com.intellij.psi.resolve;
 
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.module.ModifiableModuleModel;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.module.StdModuleTypes;
 import com.intellij.openapi.roots.ModuleRootModificationUtil;
+import com.intellij.openapi.util.RecursionManager;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.packageDependencies.DependenciesBuilder;
 import com.intellij.psi.*;
+import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.testFramework.PlatformTestUtil;
 import com.intellij.testFramework.PsiTestUtil;
 import com.intellij.testFramework.ResolveTestCase;
@@ -201,10 +204,15 @@ public class ResolveClassTest extends ResolveTestCase {
 
   public void testStaticImportInTheSameClassPerformance() throws Exception {
     PsiReference ref = configure();
+    ensureIndexUpToDate();
     long start = System.currentTimeMillis();
     assertNull(ref.resolve());
     long elapsed = System.currentTimeMillis() - start;
     PlatformTestUtil.assertTiming("exponent?", 500, elapsed);
+  }
+
+  private void ensureIndexUpToDate() {
+    getJavaFacade().findClass(CommonClassNames.JAVA_UTIL_LIST, GlobalSearchScope.allScope(myProject));
   }
 
   public void testStaticImportNetworkPerformance() throws Exception {
@@ -220,30 +228,40 @@ public class ResolveClassTest extends ResolveTestCase {
       createFile(myModule, "Foo" + i + ".java", imports + "class Foo" + i + " extends Bar1, Bar2, Bar3 {}");
     }
 
+    ensureIndexUpToDate();
     System.gc();
     long start = System.currentTimeMillis();
     assertNull(ref.resolve());
     PlatformTestUtil.assertTiming("exponent?", 20000, System.currentTimeMillis() - start);
   }
 
+  public void testQualifiedAnonymousClass() throws Exception {
+    RecursionManager.assertOnRecursionPrevention(getTestRootDisposable());
+
+    PsiReference ref = configure();
+    VirtualFile file = ref.getElement().getContainingFile().getVirtualFile();
+    assertNotNull(file);
+    VirtualFile pkg = WriteAction.compute(() -> file.getParent().createChildDirectory(this, "foo"));
+    createFile(myModule, pkg, "Outer.java", "package foo; public class Outer { protected static class Inner { protected Inner() {} } }");
+
+    assertEquals("Inner", assertInstanceOf(ref.resolve(), PsiClass.class).getName());
+  }
+
   @SuppressWarnings({"ConstantConditions"})
   private void configureDependency() {
-    ApplicationManager.getApplication().runWriteAction(new Runnable() {
-      @Override
-      public void run() {
-        ModifiableModuleModel modifiableModel = ModuleManager.getInstance(getProject()).getModifiableModel();
-        Module module = modifiableModel.newModule("a.iml", StdModuleTypes.JAVA.getId());
-        modifiableModel.commit();
+    ApplicationManager.getApplication().runWriteAction(() -> {
+      ModifiableModuleModel modifiableModel = ModuleManager.getInstance(getProject()).getModifiableModel();
+      Module module = modifiableModel.newModule("a.iml", StdModuleTypes.JAVA.getId());
+      modifiableModel.commit();
 
-        VirtualFile root = LocalFileSystem.getInstance().refreshAndFindFileByPath(getTestDataPath() + "/class/dependentModule");
-        assert root != null;
+      VirtualFile root = LocalFileSystem.getInstance().refreshAndFindFileByPath(getTestDataPath() + "/class/dependentModule");
+      assert root != null;
 
-        PsiTestUtil.addContentRoot(module, root);
-        PsiTestUtil.addSourceRoot(module, root.findChild("src"));
-        PsiTestUtil.addSourceRoot(module, root.findChild("test"), true);
+      PsiTestUtil.addContentRoot(module, root);
+      PsiTestUtil.addSourceRoot(module, root.findChild("src"));
+      PsiTestUtil.addSourceRoot(module, root.findChild("test"), true);
 
-        ModuleRootModificationUtil.addDependency(getModule(), module);
-      }
+      ModuleRootModificationUtil.addDependency(getModule(), module);
     });
   }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,12 +52,28 @@ public abstract class CompatibilityVisitor extends PyAnnotator {
     AVAILABLE_PREFIXES.put(LanguageLevel.PYTHON30, Sets.newHashSet("R", "B"));
     AVAILABLE_PREFIXES.put(LanguageLevel.PYTHON31, Sets.newHashSet("R", "B", "BR"));
     AVAILABLE_PREFIXES.put(LanguageLevel.PYTHON32, Sets.newHashSet("R", "B", "BR"));
+    AVAILABLE_PREFIXES.put(LanguageLevel.PYTHON36, Sets.newHashSet("R", "U", "B", "BR", "RB", "F", "FR", "RF"));
   }
 
   private static final Set<String> DEFAULT_PREFIXES = Sets.newHashSet(Sets.newHashSet("R", "U", "B", "BR", "RB"));
 
   public CompatibilityVisitor(List<LanguageLevel> versionsToProcess) {
     myVersionsToProcess = versionsToProcess;
+  }
+
+  @Override
+  public void visitPyAnnotation(PyAnnotation node) {
+    final PsiElement parent = node.getParent();
+    if (!(parent instanceof PyFunction || parent instanceof PyNamedParameter)) {
+      final StringBuilder message = new StringBuilder(myCommonMessage);
+      int len = 0;
+      for (LanguageLevel languageLevel : myVersionsToProcess) {
+        if (languageLevel.isOlderThan(LanguageLevel.PYTHON36)) {
+          len = appendLanguageLevel(message, len, languageLevel);
+        }
+      }
+      commonRegisterProblem(message, " not support variable annotations", len, node, null);
+    }
   }
 
   @Override
@@ -238,42 +254,55 @@ public abstract class CompatibilityVisitor extends PyAnnotator {
   @Override
   public void visitPyNumericLiteralExpression(final PyNumericLiteralExpression node) {
     super.visitPyNumericLiteralExpression(node);
-    int len = 0;
-    LocalQuickFix quickFix = null;
-    StringBuilder message = new StringBuilder(myCommonMessage);
-    String suffix = "";
-    for (int i = 0; i != myVersionsToProcess.size(); ++i) {
-      LanguageLevel languageLevel = myVersionsToProcess.get(i);
-      if (languageLevel.isPy3K()) {
-        if (!node.isIntegerLiteral()) {
-          continue;
+
+    final String text = node.getText();
+
+    if (node.isIntegerLiteral()) {
+      if (text.endsWith("l") || text.endsWith("L")) {
+        final StringBuilder message = new StringBuilder(myCommonMessage);
+        final String suffix = " not support a trailing \'l\' or \'L\'.";
+        int len = 0;
+
+        for (LanguageLevel languageLevel : myVersionsToProcess) {
+          if (languageLevel.isPy3K()) {
+            len = appendLanguageLevel(message, len, languageLevel);
+          }
         }
-        final String text = node.getText();
-        if (text.endsWith("l") || text.endsWith("L")) {
-          len = appendLanguageLevel(message, len, languageLevel);
-          suffix = " not support a trailing \'l\' or \'L\'.";
-          quickFix = new RemoveTrailingLQuickFix();
-        }
-        if (text.length() > 1 && text.charAt(0) == '0') {
-          final char c = Character.toLowerCase(text.charAt(1));
-          if (c != 'o' && c != 'b' && c != 'x') {
-            boolean isNull = true;
-            for (char a : text.toCharArray()) {
-              if ( a != '0') {
-                isNull = false;
-                break;
-              }
-            }
-            if (!isNull) {
+
+        commonRegisterProblem(message, suffix, len, node, new RemoveTrailingLQuickFix());
+      }
+
+      if (text.length() > 1 && text.charAt(0) == '0') {
+        final char secondChar = Character.toLowerCase(text.charAt(1));
+        if (secondChar != 'o' && secondChar != 'b' && secondChar != 'x' && text.chars().anyMatch(c -> c != '0')) {
+          final StringBuilder message = new StringBuilder(myCommonMessage);
+          final String suffix = " not support this syntax. It requires '0o' prefix for octal literals";
+          int len = 0;
+
+          for (LanguageLevel languageLevel : myVersionsToProcess) {
+            if (languageLevel.isPy3K()) {
               len = appendLanguageLevel(message, len, languageLevel);
-              quickFix = new ReplaceOctalNumericLiteralQuickFix();
-              suffix = " not support this syntax. It requires '0o' prefix for octal literals";
             }
           }
+
+          commonRegisterProblem(message, suffix, len, node, new ReplaceOctalNumericLiteralQuickFix());
         }
       }
     }
-    commonRegisterProblem(message, suffix, len, node, quickFix);
+
+    if (text.contains("_")) {
+      final StringBuilder message = new StringBuilder(myCommonMessage);
+      final String suffix = " not support underscores in numeric literals";
+      int len = 0;
+
+      for (LanguageLevel languageLevel : myVersionsToProcess) {
+        if (languageLevel.isOlderThan(LanguageLevel.PYTHON36)) {
+          len = appendLanguageLevel(message, len, languageLevel);
+        }
+      }
+
+      commonRegisterProblem(message, suffix, len, node, new PyRemoveUnderscoresInNumericLiteralsQuickFix());
+    }
   }
 
   @Override
@@ -381,7 +410,7 @@ public abstract class CompatibilityVisitor extends PyAnnotator {
   @Override
   public void visitPyWithStatement(PyWithStatement node) {
     super.visitPyWithStatement(node);
-    Set<PyWithItem> problemItems = new HashSet<PyWithItem>();
+    Set<PyWithItem> problemItems = new HashSet<>();
     StringBuilder message = new StringBuilder(myCommonMessage);
     for (int i = 0; i != myVersionsToProcess.size(); ++i) {
       LanguageLevel languageLevel = myVersionsToProcess.get(i);
@@ -464,7 +493,7 @@ public abstract class CompatibilityVisitor extends PyAnnotator {
     if (myVersionsToProcess.contains(LanguageLevel.PYTHON24)) {
       PyExpression assignedValue = node.getAssignedValue();
 
-      Stack<PsiElement> st = new Stack<PsiElement>();           // PY-2796
+      Stack<PsiElement> st = new Stack<>();           // PY-2796
       if (assignedValue != null)
         st.push(assignedValue);
       while (!st.isEmpty()) {
@@ -725,7 +754,7 @@ public abstract class CompatibilityVisitor extends PyAnnotator {
   }
 
   private void highlightIncorrectArguments(@NotNull PyCallExpression callExpression) {
-    final Set<String> keywordArgumentNames = new HashSet<String>();
+    final Set<String> keywordArgumentNames = new HashSet<>();
     boolean seenKeywordArgument = false;
     boolean seenKeywordContainer = false;
     boolean seenPositionalContainer = false;

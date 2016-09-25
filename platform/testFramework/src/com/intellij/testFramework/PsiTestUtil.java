@@ -38,8 +38,8 @@ import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiFileFactory;
 import com.intellij.psi.impl.DebugUtil;
 import com.intellij.util.IncorrectOperationException;
-import com.intellij.util.ThrowableRunnable;
 import com.intellij.util.containers.ContainerUtil;
+import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.jps.model.JpsElement;
@@ -92,7 +92,7 @@ public class PsiTestUtil {
     assert vDir != null && vDir.isDirectory() : dir;
     PlatformTestCase.synchronizeTempDirVfs(vDir);
 
-    EdtTestUtil.runInEdtAndWait((ThrowableRunnable<Throwable>)() -> {
+    EdtTestUtil.runInEdtAndWait(() -> {
       AccessToken token = WriteAction.start();
       try {
         if (rootPath != null) {
@@ -114,7 +114,7 @@ public class PsiTestUtil {
     return vDir;
   }
 
-  public static void removeAllRoots(Module module, Sdk jdk) {
+  public static void removeAllRoots(@NotNull Module module, Sdk jdk) {
     ModuleRootModificationUtil.updateModel(module, model -> {
       model.clear();
       model.setSdk(jdk);
@@ -372,14 +372,21 @@ public class PsiTestUtil {
     ModuleRootModificationUtil.updateModel(module, model -> model.getModuleExtension(JavaModuleExternalPaths.class).setJavadocUrls(urls));
   }
 
-  public static Sdk addJdkAnnotations(Sdk sdk) {
+  @NotNull
+  @Contract(pure=true)
+  public static Sdk addJdkAnnotations(@NotNull Sdk sdk) {
     String path = FileUtil.toSystemIndependentName(PlatformTestUtil.getCommunityPath()) + "/java/jdkAnnotations";
     VirtualFile root = LocalFileSystem.getInstance().findFileByPath(path);
-    if (root != null) {
-      SdkModificator sdkModificator = sdk.getSdkModificator();
-      sdkModificator.addRoot(root, AnnotationOrderRootType.getInstance());
-      sdkModificator.commitChanges();
+    Sdk clone;
+    try {
+      clone = (Sdk)sdk.clone();
     }
-    return sdk;
+    catch (CloneNotSupportedException e) {
+      throw new RuntimeException(e);
+    }
+    SdkModificator sdkModificator = clone.getSdkModificator();
+    sdkModificator.addRoot(root, AnnotationOrderRootType.getInstance());
+    sdkModificator.commitChanges();
+    return clone;
   }
 }

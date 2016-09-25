@@ -31,6 +31,7 @@ import com.intellij.debugger.ui.impl.DebuggerTreeRenderer;
 import com.intellij.debugger.ui.impl.watch.*;
 import com.intellij.debugger.ui.tree.*;
 import com.intellij.debugger.ui.tree.render.*;
+import com.intellij.debugger.ui.tree.render.Renderer;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -225,7 +226,7 @@ public class JavaValue extends XNamedValue implements NodeDescriptorProvider, XV
     }
   }
 
-  private static String truncateToMaxLength(String value) {
+  private static String truncateToMaxLength(@NotNull String value) {
     return value.substring(0, Math.min(value.length(), XValueNode.MAX_VALUE_LENGTH));
   }
 
@@ -294,17 +295,18 @@ public class JavaValue extends XNamedValue implements NodeDescriptorProvider, XV
           }
         }
 
-        String value = myValue;
         if (myValueDescriptor.isString()) {
           renderer.renderStringValue(myValue, "\"", XValueNode.MAX_VALUE_LENGTH);
           return;
         }
-        else if (myValueDescriptor.getLastRenderer() instanceof ToStringRenderer ||
-                 myValueDescriptor.getLastRenderer() instanceof ToStringBasedRenderer) {
-          value = StringUtil.wrapWithDoubleQuote(truncateToMaxLength(myValue));
+
+        String value = truncateToMaxLength(myValue);
+        Renderer lastRenderer = myValueDescriptor.getLastRenderer();
+        if (lastRenderer instanceof CompoundTypeRenderer) {
+          lastRenderer = ((CompoundTypeRenderer)lastRenderer).getLabelRenderer();
         }
-        else if (myValueDescriptor.getLastRenderer() instanceof CompoundReferenceRenderer) {
-          value = truncateToMaxLength(myValue);
+        if (lastRenderer instanceof ToStringRenderer) {
+          value = StringUtil.wrapWithDoubleQuote(value);
         }
         renderer.renderValue(value);
       }
@@ -439,18 +441,15 @@ public class JavaValue extends XNamedValue implements NodeDescriptorProvider, XV
 
       @Override
       public void contextAction() throws Exception {
-        ApplicationManager.getApplication().runReadAction(new Runnable() {
-          @Override
-          public void run() {
-            SourcePosition position = SourcePositionProvider.getSourcePosition(myValueDescriptor, getProject(), getDebuggerContext(), false);
+        ApplicationManager.getApplication().runReadAction(() -> {
+          SourcePosition position = SourcePositionProvider.getSourcePosition(myValueDescriptor, getProject(), getDebuggerContext(), false);
+          if (position != null) {
+            navigatable.setSourcePosition(DebuggerUtilsEx.toXSourcePosition(position));
+          }
+          if (inline) {
+            position = SourcePositionProvider.getSourcePosition(myValueDescriptor, getProject(), getDebuggerContext(), true);
             if (position != null) {
               navigatable.setSourcePosition(DebuggerUtilsEx.toXSourcePosition(position));
-            }
-            if (inline) {
-              position = SourcePositionProvider.getSourcePosition(myValueDescriptor, getProject(), getDebuggerContext(), true);
-              if (position != null) {
-                navigatable.setSourcePosition(DebuggerUtilsEx.toXSourcePosition(position));
-              }
             }
           }
         });
@@ -491,12 +490,7 @@ public class JavaValue extends XNamedValue implements NodeDescriptorProvider, XV
       @Override
       protected void doAction(@Nullable final SourcePosition sourcePosition) {
         if (sourcePosition != null) {
-          ApplicationManager.getApplication().runReadAction(new Runnable() {
-            @Override
-            public void run() {
-              navigatable.setSourcePosition(DebuggerUtilsEx.toXSourcePosition(sourcePosition));
-            }
-          });
+          ApplicationManager.getApplication().runReadAction(() -> navigatable.setSourcePosition(DebuggerUtilsEx.toXSourcePosition(sourcePosition)));
         }
       }
     });
@@ -618,12 +612,9 @@ public class JavaValue extends XNamedValue implements NodeDescriptorProvider, XV
   public void reBuild(final XValueNodeImpl node) {
     DebuggerManagerThreadImpl.assertIsManagerThread();
     myCurrentChildrenStart = 0;
-    node.getTree().getLaterInvocator().offer(new Runnable() {
-      @Override
-      public void run() {
-        node.clearChildren();
-        computePresentation(node, XValuePlace.TREE);
-      }
+    node.getTree().getLaterInvocator().offer(() -> {
+      node.clearChildren();
+      computePresentation(node, XValuePlace.TREE);
     });
   }
 }

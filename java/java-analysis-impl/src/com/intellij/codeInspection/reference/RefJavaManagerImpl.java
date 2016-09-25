@@ -23,12 +23,16 @@ import com.intellij.codeInspection.deadCode.UnusedDeclarationInspectionBase;
 import com.intellij.codeInspection.ex.*;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.*;
+import com.intellij.openapi.roots.ProjectRootManager;
+import com.intellij.openapi.util.Comparing;
+import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.*;
 import com.intellij.psi.javadoc.PsiDocComment;
 import com.intellij.psi.javadoc.PsiDocTag;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.psi.util.PsiUtilCore;
 import com.intellij.util.IncorrectOperationException;
 import gnu.trove.THashMap;
 import org.jdom.Element;
@@ -75,9 +79,17 @@ public class RefJavaManagerImpl extends RefJavaManager {
   }
 
   @Override
+  public RefImplicitConstructor getImplicitConstructor(String classFQName) {
+    final RefEntity entity = getReference(CLASS, classFQName);
+    if (entity == null) return null;
+    final RefClass refClass = (RefClass)entity;
+    return (RefImplicitConstructor)refClass.getDefaultConstructor();
+  }
+
+  @Override
   public RefPackage getPackage(String packageName) {
     if (myPackages == null) {
-      myPackages = new THashMap<String, RefPackage>();
+      myPackages = new THashMap<>();
     }
 
     RefPackage refPackage = myPackages.get(packageName);
@@ -100,7 +112,17 @@ public class RefJavaManagerImpl extends RefJavaManager {
 
   public boolean isEntryPoint(final RefElement element) {
     UnusedDeclarationInspectionBase tool = getDeadCodeTool(element);
-    return tool != null && tool.isEntryPoint(element);
+    return tool != null && tool.isEntryPoint(element) && isTestSource(tool, element);
+  }
+
+  private static boolean isTestSource(UnusedDeclarationInspectionBase tool, RefElement refElement) {
+    if (tool.isTestEntryPoints()) return true;
+    final PsiElement element = refElement.getElement();
+    final VirtualFile file = PsiUtilCore.getVirtualFile(element);
+    if (file != null) {
+      return !ProjectRootManager.getInstance(element.getProject()).getFileIndex().isInTestSourceContent(file);
+    }
+    return false;
   }
 
   @Nullable
@@ -108,23 +130,14 @@ public class RefJavaManagerImpl extends RefJavaManager {
     PsiFile file = ((RefElementImpl)element).getContainingFile();
     if (file == null) return null;
 
-    return getDeadCodeTool(file);
+    return getDeadCodeTool(file.getContainingFile());
   }
 
-  private static final UserDataCache<Ref<UnusedDeclarationInspectionBase>, PsiFile, RefManagerImpl> DEAD_CODE_TOOL = new UserDataCache<Ref<UnusedDeclarationInspectionBase>, PsiFile, RefManagerImpl>("DEAD_CODE_TOOL") {
-    @Override
-    protected Ref<UnusedDeclarationInspectionBase> compute(PsiFile file, RefManagerImpl refManager) {
-      Tools tools = ((GlobalInspectionContextBase)refManager.getContext()).getTools().get(UnusedDeclarationInspectionBase.SHORT_NAME);
-      InspectionToolWrapper toolWrapper = tools == null ? null : tools.getEnabledTool(file);
-      InspectionProfileEntry tool = toolWrapper == null ? null : toolWrapper.getTool();
-      return Ref.create(tool instanceof UnusedDeclarationInspectionBase ? (UnusedDeclarationInspectionBase)tool : null);
-    }
-  };
-
-  @Nullable
-  private UnusedDeclarationInspectionBase getDeadCodeTool(PsiElement element) {
-    PsiFile file = element.getContainingFile();
-    return file != null ? DEAD_CODE_TOOL.get(file, myRefManager).get() : null;
+  private UnusedDeclarationInspectionBase getDeadCodeTool(PsiFile file) {
+    Tools tools = ((GlobalInspectionContextBase)myRefManager.getContext()).getTools().get(UnusedDeclarationInspectionBase.SHORT_NAME);
+    InspectionToolWrapper toolWrapper = tools == null ? null : tools.getEnabledTool(file);
+    InspectionProfileEntry tool = toolWrapper == null ? null : toolWrapper.getTool();
+    return tool instanceof UnusedDeclarationInspectionBase ? (UnusedDeclarationInspectionBase)tool : null;
   }
 
   @Override
@@ -164,14 +177,10 @@ public class RefJavaManagerImpl extends RefJavaManager {
   public RefParameter getParameterReference(final PsiParameter param, final int index) {
     LOG.assertTrue(myRefManager.isValidPointForReference(), "References may become invalid after process is finished");
     
-    return myRefManager.getFromRefTableOrCache(param, new NullableFactory<RefParameter>() {
-      @Nullable
-      @Override
-      public RefParameter create() {
-        RefParameter ref = new RefParameterImpl(param, index, myRefManager);
-        ((RefParameterImpl)ref).initialize();
-        return ref;
-      }
+    return myRefManager.getFromRefTableOrCache(param, () -> {
+      RefParameter ref = new RefParameterImpl(param, index, myRefManager);
+      ((RefParameterImpl)ref).initialize();
+      return ref;
     });
   }
 
@@ -249,6 +258,9 @@ public class RefJavaManagerImpl extends RefJavaManager {
   @Override
   @Nullable
   public RefEntity getReference(final String type, final String fqName) {
+    if (IMPLICIT_CONSTRUCTOR.equals(type)) {
+      return getImplicitConstructor(fqName);
+    }
     if (METHOD.equals(type)) {
       return RefMethodImpl.methodFromExternalName(myRefManager, fqName);
     }
@@ -270,7 +282,10 @@ public class RefJavaManagerImpl extends RefJavaManager {
   @Override
   @Nullable
   public String getType(final RefEntity ref) {
-    if (ref instanceof RefMethod) {
+    if (ref instanceof RefImplicitConstructor) {
+      return IMPLICIT_CONSTRUCTOR;
+    }
+    else if (ref instanceof RefMethod) {
       return METHOD;
     }
     else if (ref instanceof RefClass) {
@@ -337,7 +352,7 @@ public class RefJavaManagerImpl extends RefJavaManager {
       getEntryPointsManager().addEntryPoint(refElement, false);
     }
 
-    if (psiElement instanceof PsiClass) {
+    /*if (psiElement instanceof PsiClass) {
       PsiClass psiClass = (PsiClass)psiElement;
 
       EntryPointsManager entryPointsManager = getEntryPointsManager();
@@ -350,7 +365,7 @@ public class RefJavaManagerImpl extends RefJavaManager {
       else if (psiClass.isEnum()) {
         entryPointsManager.addEntryPoint(refElement, false);
       }
-    }
+    }*/
   }
 
   private static void appendPackageElement(final Element element, final String packageName) {

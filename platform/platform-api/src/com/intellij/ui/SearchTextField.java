@@ -201,12 +201,16 @@ public class SearchTextField extends JPanel {
       }
     }
 
-    if (ApplicationManager.getApplication() != null) { //tests
+    if (toClearTextOnEscape()) {
       final ActionManager actionManager = ActionManager.getInstance();
       if (actionManager != null) {
         EmptyAction.registerWithShortcutSet(IdeActions.ACTION_CLEAR_TEXT, CommonShortcuts.ESCAPE, this);
       }
     }
+  }
+
+  protected boolean toClearTextOnEscape() {
+    return ApplicationManager.getApplication() != null;
   }
 
   protected void onFieldCleared() {
@@ -274,7 +278,7 @@ public class SearchTextField extends JPanel {
 
   public List<String> getHistory() {
     final int itemsCount = myModel.getSize();
-    final List<String> history = new ArrayList<String>(itemsCount);
+    final List<String> history = new ArrayList<>(itemsCount);
     for (int i = 0; i < itemsCount; i++) {
       history.add(myModel.getElementAt(i));
     }
@@ -333,7 +337,7 @@ public class SearchTextField extends JPanel {
   }
 
   public class MyModel extends AbstractListModel {
-    private List<String> myFullList = new ArrayList<String>();
+    private List<String> myFullList = new ArrayList<>();
 
     private String mySelectedItem;
 
@@ -393,7 +397,7 @@ public class SearchTextField extends JPanel {
     }
 
     public void setItems(List<String> aList) {
-      myFullList = new ArrayList<String>(aList);
+      myFullList = new ArrayList<>(aList);
       fireContentsChanged();
     }
   }
@@ -416,15 +420,13 @@ public class SearchTextField extends JPanel {
   }
 
   protected Runnable createItemChosenCallback(final JList list) {
-    return new Runnable() {
-      public void run() {
-        final String value = (String)list.getSelectedValue();
-        getTextEditor().setText(value != null ? value : "");
-        addCurrentTextToHistory();
-        if (myPopup != null) {
-          myPopup.cancel();
-          myPopup = null;
-        }
+    return () -> {
+      final String value = (String)list.getSelectedValue();
+      getTextEditor().setText(value != null ? value : "");
+      addCurrentTextToHistory();
+      if (myPopup != null) {
+        myPopup.cancel();
+        myPopup = null;
       }
     };
   }

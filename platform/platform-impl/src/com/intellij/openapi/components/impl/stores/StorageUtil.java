@@ -41,14 +41,17 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 
 import javax.swing.event.HyperlinkEvent;
-import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
 public class StorageUtil {
+  public static final String NOTIFICATION_GROUP_ID = "Load Error";
+  
   @TestOnly
   public static String DEBUG_LOG = null;
 
@@ -64,7 +67,7 @@ public class StorageUtil {
                      "and allow project file sharing in version control systems.<br>" +
                      "Some of the files describing the current project settings contain unknown path variables " +
                      "and " + productName + " cannot restore those paths.";
-    new UnknownMacroNotification("Load Error", "Load error: undefined path variables", content, NotificationType.ERROR,
+    new UnknownMacroNotification(NOTIFICATION_GROUP_ID, "Load error: undefined path variables", content, NotificationType.ERROR,
                                  new NotificationListener() {
                                    @Override
                                    public void hyperlinkUpdate(@NotNull Notification notification, @NotNull HyperlinkEvent event) {
@@ -75,7 +78,7 @@ public class StorageUtil {
 
   public static void checkUnknownMacros(@NotNull Project project, boolean notify) {
     // use linked set/map to get stable results
-    Set<String> unknownMacros = new LinkedHashSet<String>();
+    Set<String> unknownMacros = new LinkedHashSet<>();
     Map<TrackingPathMacroSubstitutor, IComponentStore> substitutorToStore = ContainerUtil.newLinkedHashMap();
     collect(project, unknownMacros, substitutorToStore);
     for (Module module : ModuleManager.getInstance(project).getModules()) {
@@ -98,7 +101,7 @@ public class StorageUtil {
                                          boolean showDialog,
                                          @NotNull Set<String> unknownMacros,
                                          @NotNull Map<TrackingPathMacroSubstitutor, IComponentStore> substitutorToStore) {
-    if (unknownMacros.isEmpty() || (showDialog && !ProjectMacrosUtil.checkMacros(project, new THashSet<String>(unknownMacros)))) {
+    if (unknownMacros.isEmpty() || (showDialog && !ProjectMacrosUtil.checkMacros(project, new THashSet<>(unknownMacros)))) {
       return;
     }
 
@@ -155,28 +158,29 @@ public class StorageUtil {
   }
 
   @NotNull
-  public static VirtualFile getOrCreateVirtualFile(@Nullable final Object requestor, @NotNull final File file) throws IOException {
-    VirtualFile virtualFile = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file);
+  public static VirtualFile getOrCreateVirtualFile(@Nullable final Object requestor, @NotNull final Path file) throws IOException {
+    VirtualFile virtualFile = LocalFileSystem.getInstance().refreshAndFindFileByPath(FileUtil.toSystemIndependentName(file.toString()));
     if (virtualFile != null) {
       return virtualFile;
     }
-    File absoluteFile = file.getAbsoluteFile();
-    FileUtil.createParentDirs(absoluteFile);
+    Path absoluteFile = file.toAbsolutePath();
 
-    File parentFile = absoluteFile.getParentFile();
+    Path parentFile = absoluteFile.getParent();
+    Files.createDirectories(parentFile);
+
     // need refresh if the directory has just been created
-    final VirtualFile parentVirtualFile = StringUtil.isEmpty(parentFile.getPath()) ? null : LocalFileSystem.getInstance().refreshAndFindFileByIoFile(parentFile);
+    final VirtualFile parentVirtualFile = LocalFileSystem.getInstance().refreshAndFindFileByPath(FileUtil.toSystemIndependentName(parentFile.toString()));
     if (parentVirtualFile == null) {
       throw new IOException(ProjectBundle.message("project.configuration.save.file.not.found", parentFile));
     }
 
     if (ApplicationManager.getApplication().isWriteAccessAllowed()) {
-      return parentVirtualFile.createChildData(requestor, file.getName());
+      return parentVirtualFile.createChildData(requestor, file.getFileName().toString());
     }
 
     AccessToken token = WriteAction.start();
     try {
-      return parentVirtualFile.createChildData(requestor, file.getName());
+      return parentVirtualFile.createChildData(requestor, file.getFileName().toString());
     }
     finally {
       token.finish();

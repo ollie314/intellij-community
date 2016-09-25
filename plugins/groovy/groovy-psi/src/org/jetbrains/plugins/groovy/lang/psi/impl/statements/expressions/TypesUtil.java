@@ -25,13 +25,13 @@ import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.util.InheritanceUtil;
 import com.intellij.psi.util.PsiUtil;
 import com.intellij.psi.util.TypeConversionUtil;
-import com.intellij.util.Function;
 import com.intellij.util.containers.ComparatorUtil;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.HashMap;
 import gnu.trove.THashMap;
 import gnu.trove.TIntObjectHashMap;
 import gnu.trove.TObjectIntHashMap;
+import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -64,7 +64,7 @@ import static org.jetbrains.plugins.groovy.lang.psi.impl.statements.expressions.
 public class TypesUtil {
 
   @NonNls
-  public static final Map<String, PsiType> ourQNameToUnboxed = new HashMap<String, PsiType>();
+  public static final Map<String, PsiType> ourQNameToUnboxed = new HashMap<>();
   public static final PsiPrimitiveType[] PRIMITIVES = {
     PsiType.BYTE,
     PsiType.CHAR,
@@ -94,7 +94,7 @@ public class TypesUtil {
                                                                       @NotNull GroovyPsiElement place,
                                                                       PsiType[] argumentTypes,
                                                                       boolean incompleteCode) {
-    return ResolveUtil.getMethodCandidates(thisType, ourOperationsToOperatorNames.get(tokenType), place, true, incompleteCode, false, argumentTypes);
+    return ResolveUtil.getMethodCandidates(thisType, ourOperationsToOperatorNames.get(tokenType), place, true, incompleteCode, argumentTypes);
   }
 
 
@@ -105,7 +105,7 @@ public class TypesUtil {
     return ResolveUtil.getMethodCandidates(thisType, ourUnaryOperationsToOperatorNames.get(tokenType), place, argumentTypes);
   }
 
-  private static final Map<IElementType, String> ourPrimitiveTypesToClassNames = new HashMap<IElementType, String>();
+  private static final Map<IElementType, String> ourPrimitiveTypesToClassNames = new HashMap<>();
   private static final String NULL = "null";
 
   static {
@@ -132,8 +132,8 @@ public class TypesUtil {
     ourPrimitiveTypesToClassNames.put(GroovyTokenTypes.kBYTE, CommonClassNames.JAVA_LANG_BYTE);
   }
 
-  private static final Map<IElementType, String> ourOperationsToOperatorNames = new HashMap<IElementType, String>();
-  private static final Map<IElementType, String> ourUnaryOperationsToOperatorNames = new HashMap<IElementType, String>();
+  private static final Map<IElementType, String> ourOperationsToOperatorNames = new HashMap<>();
+  private static final Map<IElementType, String> ourUnaryOperationsToOperatorNames = new HashMap<>();
 
   static {
     ourOperationsToOperatorNames.put(GroovyTokenTypes.mPLUS, PLUS);
@@ -165,7 +165,7 @@ public class TypesUtil {
     ourUnaryOperationsToOperatorNames.put(GroovyTokenTypes.mBNOT, BITWISE_NEGATE);
   }
 
-  private static final TObjectIntHashMap<String> TYPE_TO_RANK = new TObjectIntHashMap<String>();
+  private static final TObjectIntHashMap<String> TYPE_TO_RANK = new TObjectIntHashMap<>();
 
   static {
     TYPE_TO_RANK.put(CommonClassNames.JAVA_LANG_BYTE, 1);
@@ -192,7 +192,7 @@ public class TypesUtil {
   }
 
 
-  private static final TIntObjectHashMap<String> RANK_TO_TYPE = new TIntObjectHashMap<String>();
+  private static final TIntObjectHashMap<String> RANK_TO_TYPE = new TIntObjectHashMap<>();
 
   static {
     RANK_TO_TYPE.put(1, CommonClassNames.JAVA_LANG_INTEGER);
@@ -463,6 +463,18 @@ public class TypesUtil {
   }
 
   @NotNull
+  public static PsiClassType createType(@NotNull PsiClass clazz) {
+    return createType(clazz, null);
+  }
+
+  @NotNull
+  public static PsiClassType createType(@NotNull PsiClass clazz, @Nullable PsiElement context, PsiType... parameters) {
+    return JavaPsiFacade.getInstance(
+      (context == null ? clazz : context).getProject()
+    ).getElementFactory().createType(clazz, parameters);
+  }
+
+  @NotNull
   public static PsiClassType getJavaLangObject(@NotNull PsiElement context) {
     return LazyFqnClassType.getLazyType(CommonClassNames.JAVA_LANG_OBJECT, context);
   }
@@ -605,15 +617,15 @@ public class TypesUtil {
   }
 
   @NotNull
-  public static PsiType getLeastUpperBound(PsiClass[] classes, PsiManager manager) {
+  public static PsiType getLeastUpperBound(PsiType[] classes, PsiManager manager) {
     PsiElementFactory factory = JavaPsiFacade.getElementFactory(manager.getProject());
 
     if (classes.length == 0) return factory.createTypeByFQClassName(CommonClassNames.JAVA_LANG_OBJECT);
 
-    PsiType type = factory.createType(classes[0]);
+    PsiType type = classes[0];
 
     for (int i = 1; i < classes.length; i++) {
-      PsiType t = getLeastUpperBound(type, factory.createType(classes[i]), manager);
+      PsiType t = getLeastUpperBound(type, classes[i], manager);
       if (t != null) {
         type = t;
       }
@@ -622,13 +634,14 @@ public class TypesUtil {
     return type;
   }
 
+  @Contract("null, _ -> false")
   public static boolean isClassType(@Nullable PsiType type, @NotNull String qName) {
     return qName.equals(getQualifiedName(type));
   }
 
   public static PsiSubstitutor composeSubstitutors(PsiSubstitutor s1, PsiSubstitutor s2) {
     final Map<PsiTypeParameter, PsiType> map = s1.getSubstitutionMap();
-    Map<PsiTypeParameter, PsiType> result = new THashMap<PsiTypeParameter, PsiType>(map.size());
+    Map<PsiTypeParameter, PsiType> result = new THashMap<>(map.size());
     for (PsiTypeParameter parameter : map.keySet()) {
       result.put(parameter, s2.substitute(map.get(parameter)));
     }
@@ -680,27 +693,35 @@ public class TypesUtil {
   }
 
   @NotNull
+  public static PsiClassType createGenericType(@NotNull String fqn, @NotNull PsiElement context, @Nullable PsiType type) {
+    JavaPsiFacade facade = JavaPsiFacade.getInstance(context.getProject());
+    GlobalSearchScope resolveScope = context.getResolveScope();
+    PsiClass clazz = facade.findClass(fqn, resolveScope);
+    if (clazz == null || clazz.getTypeParameters().length != 1) {
+      return facade.getElementFactory().createTypeByFQClassName(fqn, resolveScope);
+    }
+    return type == null ? facade.getElementFactory().createType(clazz) : facade.getElementFactory().createType(clazz, type);
+  }
+
+  @NotNull
+  public static PsiClassType createIterableType(@NotNull PsiElement context, @Nullable PsiType type) {
+    return createGenericType(CommonClassNames.JAVA_LANG_ITERABLE, context, type);
+  }
+
+  @NotNull
+  public static PsiClassType createListType(@NotNull PsiElement context, @Nullable PsiType type) {
+    return createGenericType(CommonClassNames.JAVA_UTIL_LIST, context, type);
+  }
+
+  @NotNull
   public static PsiClassType createListType(@NotNull PsiClass elements) {
     JavaPsiFacade facade = JavaPsiFacade.getInstance(elements.getProject());
-    GlobalSearchScope resolveScope = elements.getResolveScope();
-    PsiClass listClass = facade.findClass(CommonClassNames.JAVA_UTIL_LIST, resolveScope);
-    if (listClass == null) {
-      return facade.getElementFactory().createTypeByFQClassName(CommonClassNames.JAVA_UTIL_LIST, resolveScope);
-    }
-    return facade.getElementFactory().createType(listClass, facade.getElementFactory().createType(elements));
+    return createGenericType(CommonClassNames.JAVA_UTIL_LIST, elements, facade.getElementFactory().createType(elements));
   }
 
   @NotNull
   public static PsiType createSetType(@NotNull PsiElement context, @NotNull PsiType type) {
-    JavaPsiFacade facade = JavaPsiFacade.getInstance(context.getProject());
-    GlobalSearchScope resolveScope = context.getResolveScope();
-
-    PsiClass setClass = facade.findClass(CommonClassNames.JAVA_UTIL_SET, resolveScope);
-    if (setClass != null && setClass.getTypeParameters().length == 1) {
-      return facade.getElementFactory().createType(setClass, type);
-    }
-
-    return facade.getElementFactory().createTypeByFQClassName(CommonClassNames.JAVA_UTIL_SET, resolveScope);
+    return createGenericType(CommonClassNames.JAVA_UTIL_SET, context, type);
   }
 
   public static boolean isAnnotatedCheckHierarchyWithCache(@NotNull PsiClass aClass, @NotNull String annotationFQN) {
@@ -766,12 +787,7 @@ public class TypesUtil {
       @Override
       protected PsiType[] inferComponents() {
         final GrAnnotationMemberValue[] initializers = value.getInitializers();
-        return ContainerUtil.map(initializers, new Function<GrAnnotationMemberValue, PsiType>() {
-          @Override
-          public PsiType fun(GrAnnotationMemberValue value) {
-            return inferAnnotationMemberValueType(value);
-          }
-        }, PsiType.createArray(initializers.length));
+        return ContainerUtil.map(initializers, value1 -> inferAnnotationMemberValueType(value1), PsiType.createArray(initializers.length));
       }
 
       @Override
@@ -804,7 +820,7 @@ public class TypesUtil {
       PsiType parameter = parameters[i];
       if (parameter == null) continue;
 
-      final Ref<PsiType> newParam = new Ref<PsiType>();
+      final Ref<PsiType> newParam = new Ref<>();
       parameter.accept(new PsiTypeVisitorEx<Object>() {
         @Nullable
         @Override

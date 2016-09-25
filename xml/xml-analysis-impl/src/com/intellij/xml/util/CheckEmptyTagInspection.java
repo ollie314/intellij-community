@@ -44,7 +44,8 @@ import java.util.Set;
  */
 public class CheckEmptyTagInspection extends XmlSuppressableInspectionTool {
   private static final Logger LOG = Logger.getInstance("#com.intellij.xml.util.CheckEmptyTagInspection");
-  @NonNls private static final Set<String> ourTagsWithEmptyEndsNotAllowed = new THashSet<String>(Arrays.asList(HtmlUtil.SCRIPT_TAG_NAME, "div", "iframe"));
+  @NonNls private static final Set<String> ourTagsWithEmptyEndsNotAllowed =
+    new THashSet<>(Arrays.asList(HtmlUtil.SCRIPT_TAG_NAME, "div", "iframe"));
 
   @Override
   public boolean isEnabledByDefault() {
@@ -77,7 +78,7 @@ public class CheckEmptyTagInspection extends XmlSuppressableInspectionTool {
     };
   }
 
-  static boolean isTagWithEmptyEndNotAllowed(final XmlTag tag) {
+  public static boolean isTagWithEmptyEndNotAllowed(final XmlTag tag) {
     String tagName = tag.getName();
     if (tag instanceof HtmlTag) tagName = tagName.toLowerCase();
 

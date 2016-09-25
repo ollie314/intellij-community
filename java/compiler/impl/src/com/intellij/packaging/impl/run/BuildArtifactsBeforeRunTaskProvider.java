@@ -29,14 +29,14 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.application.Result;
-import com.intellij.openapi.compiler.*;
+import com.intellij.openapi.compiler.CompilerBundle;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogBuilder;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.Ref;
 import com.intellij.packaging.artifacts.*;
-import com.intellij.packaging.impl.compiler.ArtifactCompileScope;
+import com.intellij.task.*;
 import com.intellij.util.concurrency.Semaphore;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.JBUI;
@@ -128,12 +128,12 @@ public class BuildArtifactsBeforeRunTaskProvider extends BeforeRunTaskProvider<B
 
   public boolean configureTask(RunConfiguration runConfiguration, BuildArtifactsBeforeRunTask task) {
     final Artifact[] artifacts = ArtifactManager.getInstance(myProject).getArtifacts();
-    Set<ArtifactPointer> pointers = new THashSet<ArtifactPointer>();
+    Set<ArtifactPointer> pointers = new THashSet<>();
     for (Artifact artifact : artifacts) {
       pointers.add(ArtifactPointerManager.getInstance(myProject).createPointer(artifact));
     }
     pointers.addAll(task.getArtifactPointers());
-    ArtifactChooser chooser = new ArtifactChooser(new ArrayList<ArtifactPointer>(pointers));
+    ArtifactChooser chooser = new ArtifactChooser(new ArrayList<>(pointers));
     chooser.markElements(task.getArtifactPointers());
     chooser.setPreferredSize(JBUI.size(400, 300));
 
@@ -167,33 +167,33 @@ public class BuildArtifactsBeforeRunTaskProvider extends BeforeRunTaskProvider<B
     final Ref<Boolean> result = Ref.create(false);
     final Semaphore finished = new Semaphore();
 
-    final List<Artifact> artifacts = new ArrayList<Artifact>();
+    final List<Artifact> artifacts = new ArrayList<>();
     new ReadAction() {
       protected void run(@NotNull final Result result) {
         for (ArtifactPointer pointer : task.getArtifactPointers()) {
-          ContainerUtil.addIfNotNull(pointer.getArtifact(), artifacts);
+          ContainerUtil.addIfNotNull(artifacts, pointer.getArtifact());
         }
       }
     }.execute();
-    
-    final CompileStatusNotification callback = new CompileStatusNotification() {
-      public void finished(boolean aborted, int errors, int warnings, CompileContext compileContext) {
-        result.set(!aborted && errors == 0);
+
+    final ProjectTaskNotification callback = new ProjectTaskNotification() {
+      @Override
+      public void finished(@NotNull ProjectTaskResult executionResult) {
+        result.set(!executionResult.isAborted() && executionResult.getErrors() == 0);
         finished.up();
       }
     };
 
-    ApplicationManager.getApplication().invokeAndWait(new Runnable() {
-      public void run() {
-        if (myProject.isDisposed()) {
-          return;
-        }
-        final CompilerManager manager = CompilerManager.getInstance(myProject);
-        final CompileScope scope = ArtifactCompileScope.createArtifactsScope(myProject, artifacts);
-        ExecutionManagerImpl.EXECUTION_SESSION_ID_KEY.set(scope, ExecutionManagerImpl.EXECUTION_SESSION_ID_KEY.get(env));
-        finished.down();
-        manager.make(scope, CompilerFilter.ALL, callback);
+    ApplicationManager.getApplication().invokeAndWait(() -> {
+      if (myProject.isDisposed()) {
+        return;
       }
+      ProjectTaskManager projectTaskManager = ProjectTaskManager.getInstance(myProject);
+      ProjectTask artifactsBuildProjectTask =
+        projectTaskManager.createArtifactsBuildTask(true, artifacts.toArray(new Artifact[artifacts.size()]));
+      finished.down();
+      Object sessionId = ExecutionManagerImpl.EXECUTION_SESSION_ID_KEY.get(env);
+      projectTaskManager.run(new ProjectTaskContext(sessionId), artifactsBuildProjectTask, callback);
     }, ModalityState.NON_MODAL);
 
     finished.waitFor();
@@ -208,7 +208,7 @@ public class BuildArtifactsBeforeRunTaskProvider extends BeforeRunTaskProvider<B
     final ConfigurationSettingsEditorWrapper editor = ConfigurationSettingsEditorWrapper.CONFIGURATION_EDITOR_KEY.getData(dataContext);
     if (editor != null) {
       List<BeforeRunTask> tasks = editor.getStepsBeforeLaunch();
-      List<BuildArtifactsBeforeRunTask> myTasks = new ArrayList<BuildArtifactsBeforeRunTask>();
+      List<BuildArtifactsBeforeRunTask> myTasks = new ArrayList<>();
       for (BeforeRunTask task : tasks) {
         if (task instanceof BuildArtifactsBeforeRunTask) {
           myTasks.add((BuildArtifactsBeforeRunTask)task);

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2013 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,9 +35,7 @@ import com.intellij.psi.javadoc.PsiDocComment;
 import com.intellij.psi.javadoc.PsiDocTag;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.searches.AllClassesSearch;
-import com.intellij.psi.util.PsiElementFilter;
-import com.intellij.psi.util.PsiTreeUtil;
-import com.intellij.psi.util.PsiUtil;
+import com.intellij.psi.util.*;
 import com.intellij.util.PathUtil;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.xml.NanoXmlUtil;
@@ -185,7 +183,8 @@ public class TestNGUtil {
   }
 
   public static boolean hasTest(PsiModifierListOwner element) {
-    return hasTest(element, true);
+    return CachedValuesManager.getCachedValue(element, () ->
+      CachedValueProvider.Result.create(hasTest(element, true), PsiModificationTracker.MODIFICATION_COUNT));
   }
 
   public static boolean hasTest(PsiModifierListOwner element, boolean checkDisabled) {
@@ -273,8 +272,8 @@ public class TestNGUtil {
    * annotations that are in the groups 'foo' or 'bar'.
    */
   public static Map<PsiClass, Collection<PsiMethod>> filterAnnotations(String parameter, Set<String> values, Collection<PsiClass> classes) {
-    Map<PsiClass, Collection<PsiMethod>> results = new HashMap<PsiClass, Collection<PsiMethod>>();
-    Set<String> test = new HashSet<String>(1);
+    Map<PsiClass, Collection<PsiMethod>> results = new HashMap<>();
+    Set<String> test = new HashSet<>(1);
     test.add(TEST_ANNOTATION_FQN);
     ContainerUtil.addAll(test, CONFIG_ANNOTATIONS_FQN);
     for (PsiClass psiClass : classes) {
@@ -290,14 +289,14 @@ public class TestNGUtil {
       }
       if (annotation != null) {
         if (isAnnotatedWithParameter(annotation, parameter, values)) {
-          results.put(psiClass, new LinkedHashSet<PsiMethod>());
+          results.put(psiClass, new LinkedHashSet<>());
         }
       }
       else {
         Collection<String> matches = extractAnnotationValuesFromJavaDoc(getTextJavaDoc(psiClass), parameter);
         for (String s : matches) {
           if (values.contains(s)) {
-            results.put(psiClass, new LinkedHashSet<PsiMethod>());
+            results.put(psiClass, new LinkedHashSet<>());
             break;
           }
         }
@@ -310,8 +309,7 @@ public class TestNGUtil {
           annotation = AnnotationUtil.findAnnotation(method, test);
           if (annotation != null) {
             if (isAnnotatedWithParameter(annotation, parameter, values)) {
-              if (results.get(psiClass) == null) results.put(psiClass, new LinkedHashSet<PsiMethod>());
-              results.get(psiClass).add(method);
+              results.computeIfAbsent(psiClass, c -> new LinkedHashSet<>()).add(method);
             }
           }
           else {
@@ -353,31 +351,25 @@ public class TestNGUtil {
    * @return were javadoc params used
    */
   public static void collectAnnotationValues(final Map<String, Collection<String>> results, PsiMethod[] psiMethods, PsiClass... classes) {
-    final Set<String> test = new HashSet<String>(1);
+    final Set<String> test = new HashSet<>(1);
     test.add(TEST_ANNOTATION_FQN);
     ContainerUtil.addAll(test, CONFIG_ANNOTATIONS_FQN);
     if (psiMethods != null) {
       for (final PsiMethod psiMethod : psiMethods) {
         ApplicationManager.getApplication().runReadAction(
-          new Runnable() {
-            public void run() {
-              appendAnnotationAttributeValues(results, AnnotationUtil.findAnnotation(psiMethod, test), psiMethod);
-            }
-          }
+          () -> appendAnnotationAttributeValues(results, AnnotationUtil.findAnnotation(psiMethod, test), psiMethod)
         );
       }
     }
     else {
       for (final PsiClass psiClass : classes) {
-        ApplicationManager.getApplication().runReadAction(new Runnable() {
-          public void run() {
-            if (psiClass != null && hasTest(psiClass)) {
-              appendAnnotationAttributeValues(results, AnnotationUtil.findAnnotation(psiClass, test), psiClass);
-              PsiMethod[] methods = psiClass.getMethods();
-              for (PsiMethod method : methods) {
-                if (method != null) {
-                  appendAnnotationAttributeValues(results, AnnotationUtil.findAnnotation(method, test), method);
-                }
+        ApplicationManager.getApplication().runReadAction(() -> {
+          if (psiClass != null && hasTest(psiClass)) {
+            appendAnnotationAttributeValues(results, AnnotationUtil.findAnnotation(psiClass, test), psiClass);
+            PsiMethod[] methods = psiClass.getMethods();
+            for (PsiMethod method : methods) {
+              if (method != null) {
+                appendAnnotationAttributeValues(results, AnnotationUtil.findAnnotation(method, test), method);
               }
             }
           }
@@ -404,7 +396,7 @@ public class TestNGUtil {
 
   private static Collection<String> extractAnnotationValuesFromJavaDoc(PsiDocTag tag, String parameter) {
     if (tag == null) return Collections.emptyList();
-    Collection<String> results = new ArrayList<String>();
+    Collection<String> results = new ArrayList<>();
     Matcher matcher = Pattern.compile("\\@testng.test(?:.*)" + parameter + "\\s*=\\s*\"(.*?)\".*").matcher(tag.getText());
     if (matcher.matches()) {
       String[] groups = matcher.group(1).split("[,\\s]");
@@ -419,7 +411,7 @@ public class TestNGUtil {
   }
 
   private static Collection<String> extractValuesFromParameter(PsiAnnotationMemberValue value) {
-    Collection<String> results = new ArrayList<String>();
+    Collection<String> results = new ArrayList<>();
     if (value instanceof PsiArrayInitializerMemberValue) {
       for (PsiElement child : value.getChildren()) {
         if (child instanceof PsiLiteralExpression) {
@@ -437,24 +429,22 @@ public class TestNGUtil {
   @Nullable
   public static PsiClass[] getAllTestClasses(final TestClassFilter filter, boolean sync) {
     final PsiClass[][] holder = new PsiClass[1][];
-    final Runnable process = new Runnable() {
-      public void run() {
-        final ProgressIndicator indicator = ProgressManager.getInstance().getProgressIndicator();
+    final Runnable process = () -> {
+      final ProgressIndicator indicator = ProgressManager.getInstance().getProgressIndicator();
 
-        final Collection<PsiClass> set = new LinkedHashSet<PsiClass>();
-        final PsiManager manager = PsiManager.getInstance(filter.getProject());
-        final GlobalSearchScope projectScope = GlobalSearchScope.projectScope(manager.getProject());
-        final GlobalSearchScope scope = projectScope.intersectWith(filter.getScope());
-        for (final PsiClass psiClass : AllClassesSearch.search(scope, manager.getProject())) {
-          if (filter.isAccepted(psiClass)) {
-            if (indicator != null) {
-              indicator.setText2("Found test class " + ReadAction.compute(psiClass::getQualifiedName));
-            }
-            set.add(psiClass);
+      final Collection<PsiClass> set = new LinkedHashSet<>();
+      final PsiManager manager = PsiManager.getInstance(filter.getProject());
+      final GlobalSearchScope projectScope = GlobalSearchScope.projectScope(manager.getProject());
+      final GlobalSearchScope scope = projectScope.intersectWith(filter.getScope());
+      for (final PsiClass psiClass : AllClassesSearch.search(scope, manager.getProject())) {
+        if (filter.isAccepted(psiClass)) {
+          if (indicator != null) {
+            indicator.setText2("Found test class " + ReadAction.compute(psiClass::getQualifiedName));
           }
+          set.add(psiClass);
         }
-        holder[0] = set.toArray(new PsiClass[set.size()]);
       }
+      holder[0] = set.toArray(new PsiClass[set.size()]);
     };
     if (sync) {
        ProgressManager.getInstance().runProcessWithProgressSynchronously(process, "Searching For Tests...", true, filter.getProject());
@@ -545,7 +535,7 @@ public class TestNGUtil {
   }
 
   public static boolean isTestngXML(final VirtualFile virtualFile) {
-    if ("xml".equalsIgnoreCase(virtualFile.getExtension()) && virtualFile.isValid()) {
+    if ("xml".equalsIgnoreCase(virtualFile.getExtension()) && virtualFile.isInLocalFileSystem() && virtualFile.isValid()) {
       final String result = NanoXmlUtil.parseHeader(virtualFile).getRootTagLocalName();
       if (result != null && result.equals(SUITE_TAG_NAME)) {
         return true;

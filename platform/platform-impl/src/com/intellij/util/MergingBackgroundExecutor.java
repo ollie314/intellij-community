@@ -33,28 +33,18 @@ public class MergingBackgroundExecutor<T> {
   private final Consumer<T> myConsumer;
   private final ExecutorService myExecutorService;
 
-  public MergingBackgroundExecutor(int maxThreads, @NotNull Consumer<T> consumer) {
+  public MergingBackgroundExecutor(@NotNull String name, int maxThreads, @NotNull Consumer<T> consumer) {
     myConsumer = consumer;
-    myExecutorService = AppExecutorUtil.createBoundedApplicationPoolExecutor(maxThreads);
+    myExecutorService = AppExecutorUtil.createBoundedApplicationPoolExecutor(name, maxThreads);
   }
 
 
   public void queue(@NotNull final T t) {
-    myExecutorService.execute(new Runnable() {
-      @Override
-      public void run() {
-        myConsumer.consume(t);
-      }
-    });
+    myExecutorService.execute(() -> myConsumer.consume(t));
   }
 
   @NotNull
-  public static MergingBackgroundExecutor<Runnable> newRunnableExecutor(int maxThreads) {
-    return new MergingBackgroundExecutor<Runnable>(maxThreads, new Consumer<Runnable>() {
-      @Override
-      public void consume(Runnable runnable) {
-        runnable.run();
-      }
-    });
+  public static MergingBackgroundExecutor<Runnable> newRunnableExecutor(@NotNull String name, int maxThreads) {
+    return new MergingBackgroundExecutor<>(name,maxThreads, runnable -> runnable.run());
   }
 }

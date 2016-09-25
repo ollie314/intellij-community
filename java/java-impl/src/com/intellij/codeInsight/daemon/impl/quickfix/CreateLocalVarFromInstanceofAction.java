@@ -222,19 +222,16 @@ public class CreateLocalVarFromInstanceofAction extends BaseIntentionAction {
       CreateFromUsageBaseFix.startTemplate(newEditor, template, project, new TemplateEditingAdapter() {
         @Override
         public void templateFinished(Template template, boolean brokenOff) {
-          ApplicationManager.getApplication().runWriteAction(new Runnable() {
-            @Override
-            public void run() {
-              PsiDocumentManager.getInstance(project).commitDocument(editor.getDocument());
+          ApplicationManager.getApplication().runWriteAction(() -> {
+            PsiDocumentManager.getInstance(project).commitDocument(editor.getDocument());
 
-              CaretModel caretModel = editor.getCaretModel();
-              PsiElement elementAt = file.findElementAt(caretModel.getOffset());
-              PsiDeclarationStatement declarationStatement = PsiTreeUtil.getParentOfType(elementAt, PsiDeclarationStatement.class);
-              if (declarationStatement != null) {
-                caretModel.moveToOffset(declarationStatement.getTextRange().getEndOffset());
-              }
-              new EnterAction().actionPerformed(editor, DataManager.getInstance().getDataContext());
+            CaretModel caretModel = editor.getCaretModel();
+            PsiElement elementAt = file.findElementAt(caretModel.getOffset());
+            PsiDeclarationStatement declarationStatement = PsiTreeUtil.getParentOfType(elementAt, PsiDeclarationStatement.class);
+            if (declarationStatement != null) {
+              caretModel.moveToOffset(declarationStatement.getTextRange().getEndOffset());
             }
+            new EnterAction().actionPerformed(editor, DataManager.getInstance().getDataContext());
           });
         }
       });
@@ -404,7 +401,7 @@ public class CreateLocalVarFromInstanceofAction extends BaseIntentionAction {
 
     final SuggestedNameInfo suggestedNameInfo = IntroduceVariableBase.getSuggestedName(type, initializer, initializer);
 
-    Set<LookupElement> itemSet = new LinkedHashSet<LookupElement>();
+    Set<LookupElement> itemSet = new LinkedHashSet<>();
     for (String name : suggestedNameInfo.names) {
       itemSet.add(LookupElementBuilder.create(name));
     }

@@ -61,6 +61,9 @@ public class AnnotationTargetUtil {
     }
 
     if (owner instanceof PsiModifierList) {
+      if (((PsiModifierList)owner).getNextSibling() instanceof PsiErrorElement) {
+        return TargetType.EMPTY_ARRAY;
+      }
       PsiElement element = ((PsiModifierList)owner).getParent();
       if (element instanceof PsiPackageStatement) {
         return PACKAGE_TARGETS;
@@ -135,6 +138,17 @@ public class AnnotationTargetUtil {
 
   @Nullable
   private static TargetType translateTargetRef(@NotNull PsiReference reference) {
+    if (reference instanceof PsiJavaCodeReferenceElement) {
+      String name = ((PsiJavaCodeReferenceElement)reference).getReferenceName();
+      if (name != null) {
+        try {
+          return TargetType.valueOf(name);
+        }
+        catch (IllegalArgumentException ignore) {
+        }
+      }
+    }
+
     PsiElement field = reference.resolve();
     if (field instanceof PsiEnumConstant) {
       String name = ((PsiEnumConstant)field).getName();

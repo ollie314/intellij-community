@@ -45,7 +45,7 @@ public class StudyEditInputAction extends DumbAwareAction {
 
   private static final Logger LOG = Logger.getInstance(StudyEditInputAction.class.getName());
   private JBEditorTabs tabbedPane;
-  private Map<TabInfo, UserTest> myEditableTabs = new HashMap<TabInfo, UserTest>();
+  private Map<TabInfo, UserTest> myEditableTabs = new HashMap<>();
 
   public StudyEditInputAction() {
     super("Watch Test Input", "Watch test input", InteractiveLearningIcons.WatchInput);
@@ -174,15 +174,12 @@ public class StudyEditInputAction extends DumbAwareAction {
     @Override
     public void onClosed(LightweightWindowEvent event) {
       for (final UserTest userTest : myStudyTaskManager.getUserTests(myTask)) {
-        ApplicationManager.getApplication().runWriteAction(new Runnable() {
-          @Override
-          public void run() {
-            if (userTest.isEditable()) {
-              File inputFile = new File(userTest.getInput());
-              File outputFile = new File(userTest.getOutput());
-              flushBuffer(userTest.getInputBuffer(), inputFile);
-              flushBuffer(userTest.getOutputBuffer(), outputFile);
-            }
+        ApplicationManager.getApplication().runWriteAction(() -> {
+          if (userTest.isEditable()) {
+            File inputFile = new File(userTest.getInput());
+            File outputFile = new File(userTest.getOutput());
+            flushBuffer(userTest.getInputBuffer(), inputFile);
+            flushBuffer(userTest.getOutputBuffer(), outputFile);
           }
         });
       }

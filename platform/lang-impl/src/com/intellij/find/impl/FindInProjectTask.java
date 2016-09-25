@@ -17,12 +17,14 @@ package com.intellij.find.impl;
 
 import com.google.common.collect.HashMultiset;
 import com.google.common.collect.Multiset;
+import com.intellij.concurrency.JobLauncher;
 import com.intellij.find.FindBundle;
 import com.intellij.find.FindModel;
 import com.intellij.find.findInProject.FindInProjectManager;
 import com.intellij.find.ngrams.TrigramIndex;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ApplicationNamesInfo;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.fileTypes.FileTypeManager;
@@ -34,7 +36,7 @@ import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.project.ProjectCoreUtil;
+import com.intellij.openapi.project.ProjectUtil;
 import com.intellij.openapi.roots.*;
 import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.Condition;
@@ -46,7 +48,6 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileFilter;
 import com.intellij.openapi.vfs.VirtualFileVisitor;
 import com.intellij.psi.PsiBinaryFile;
-import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
 import com.intellij.psi.impl.cache.CacheManager;
@@ -67,6 +68,9 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * @author peter
@@ -84,9 +88,10 @@ class FindInProjectTask {
   private final Condition<VirtualFile> myFileMask;
   private final ProgressIndicator myProgress;
   @Nullable private final Module myModule;
-  private final Set<VirtualFile> myLargeFiles = ContainerUtil.newTroveSet();
+  private final Set<VirtualFile> myLargeFiles = Collections.synchronizedSet(ContainerUtil.newTroveSet());
   private final Set<VirtualFile> myFilesToScanInitially;
-  private boolean myWarningShown;
+  private final AtomicBoolean myWarningShown = new AtomicBoolean();
+  private final AtomicLong myTotalFilesSize = new AtomicLong();
   private final String myStringToFindInIndices;
 
   FindInProjectTask(@NotNull final FindModel findModel, @NotNull final Project project, @NotNull Set<VirtualFile> filesToScanInitially) {
@@ -108,12 +113,7 @@ class FindInProjectTask {
 
     final Condition<String> patternCondition = FindInProjectUtil.createFileMaskCondition(findModel.getFileFilter());
 
-    myFileMask = new Condition<VirtualFile>() {
-      @Override
-      public boolean value(VirtualFile file) {
-        return file != null && patternCondition.value(file.getName());
-      }
-    };
+    myFileMask = file -> file != null && patternCondition.value(file.getName());
 
     final ProgressIndicator progress = ProgressManager.getInstance().getProgressIndicator();
     myProgress = progress != null ? progress : new EmptyProgressIndicator();
@@ -186,12 +186,7 @@ class FindInProjectTask {
     }
 
     List<String> extensions = ContainerUtil.newArrayList(stats.elementSet());
-    Collections.sort(extensions, new Comparator<String>() {
-      @Override
-      public int compare(String o1, String o2) {
-        return stats.count(o2) - stats.count(o1);
-      }
-    });
+    Collections.sort(extensions, (o1, o2) -> stats.count(o2) - stats.count(o1));
 
     String message = "Search in " + otherFiles.size() + " files with unknown types took " + time + "ms.\n" +
                      "Mapping their extensions to an existing file type (e.g. Plain Text) might speed up the search.\n" +
@@ -206,23 +201,22 @@ class FindInProjectTask {
   private void searchInFiles(@NotNull Collection<VirtualFile> virtualFiles,
                              @NotNull FindUsagesProcessPresentation processPresentation,
                              @NotNull final Processor<UsageInfo> consumer) {
-    int i = 0;
-    long totalFilesSize = 0;
-    int count = 0;
+    AtomicInteger i = new AtomicInteger();
+    AtomicInteger count = new AtomicInteger();
 
-    for (final VirtualFile virtualFile : virtualFiles) {
-      final int index = i++;
-      if (!virtualFile.isValid()) continue;
+    Processor<VirtualFile> processor = virtualFile -> {
+      final int index = i.incrementAndGet();
+      if (!virtualFile.isValid()) return true;
 
       long fileLength = UsageViewManagerImpl.getFileLength(virtualFile);
-      if (fileLength == -1) continue; // Binary or invalid
+      if (fileLength == -1) return true; // Binary or invalid
 
-      final boolean skipProjectFile = ProjectCoreUtil.isProjectOrWorkspaceFile(virtualFile) && !myFindModel.isSearchInProjectFiles();
-      if (skipProjectFile && !Registry.is("find.search.in.project.files")) continue;
+      final boolean skipProjectFile = ProjectUtil.isProjectOrWorkspaceFile(virtualFile) && !myFindModel.isSearchInProjectFiles();
+      if (skipProjectFile && !Registry.is("find.search.in.project.files")) return true;
 
       if (fileLength > SINGLE_FILE_SIZE_LIMIT) {
         myLargeFiles.add(virtualFile);
-        continue;
+        return true;
       }
 
       myProgress.checkCanceled();
@@ -232,58 +226,47 @@ class FindInProjectTask {
       myProgress.setText(text);
       myProgress.setText2(FindBundle.message("find.searching.for.string.in.file.occurrences.progress", count));
 
-      PsiFile psiFile = ApplicationManager.getApplication().runReadAction(new Computable<PsiFile>() {
-        @Override
-        public PsiFile compute() {
-          return findFile(virtualFile);
-        }
-      });
-      if (psiFile == null) continue;
+      PsiFile psiFile = ReadAction.compute(() -> findFile(virtualFile));
+      if (psiFile == null) return true;
 
-      int countInFile = FindInProjectUtil.processUsagesInFile(psiFile, myFindModel, new Processor<UsageInfo>() {
-        @Override
-        public boolean process(UsageInfo info) {
-          return skipProjectFile || consumer.process(info);
-        }
-      });
+      int countInFile = FindInProjectUtil.processUsagesInFile(psiFile, myFindModel, info -> skipProjectFile || consumer.process(info));
 
       if (countInFile > 0 && skipProjectFile) {
-        processPresentation.projectFileUsagesFound(new Runnable() {
-          @Override
-          public void run() {
-            FindModel model = myFindModel.clone();
-            model.setSearchInProjectFiles(true);
-            FindInProjectManager.getInstance(myProject).startFindInProject(model);
-          }
+        processPresentation.projectFileUsagesFound(() -> {
+          FindModel model = myFindModel.clone();
+          model.setSearchInProjectFiles(true);
+          FindInProjectManager.getInstance(myProject).startFindInProject(model);
         });
-        continue;
+        return true;
       }
 
-      count += countInFile;
+      count.addAndGet(countInFile);
       if (countInFile > 0) {
-        totalFilesSize += fileLength;
-        if (totalFilesSize > FILES_SIZE_LIMIT && !myWarningShown) {
-          myWarningShown = true;
+        if (myTotalFilesSize.addAndGet(fileLength) > FILES_SIZE_LIMIT && myWarningShown.compareAndSet(false, true)) {
           String message = FindBundle.message("find.excessive.total.size.prompt",
-                                              UsageViewManagerImpl.presentableSize(totalFilesSize),
+                                              UsageViewManagerImpl.presentableSize(myTotalFilesSize.longValue()),
                                               ApplicationNamesInfo.getInstance().getProductName());
           UsageLimitUtil.showAndCancelIfAborted(myProject, message, processPresentation.getUsageViewPresentation());
         }
       }
-    }
+      return true;
+    };
+    //virtualFiles.forEach(processor::process);
+    JobLauncher.getInstance().invokeConcurrentlyUnderProgress(new ArrayList<>(virtualFiles), myProgress, false, processor);
   }
 
   // must return non-binary files
   @NotNull
   private Collection<VirtualFile> collectFilesInScope(@NotNull final Set<VirtualFile> alreadySearched, final boolean skipIndexed) {
     SearchScope customScope = myFindModel.isCustomScope() ? myFindModel.getCustomScope() : null;
-    final GlobalSearchScope globalCustomScope = customScope == null ? null : toGlobal(customScope);
+    final GlobalSearchScope globalCustomScope = customScope == null ? null : GlobalSearchScopeUtil.toGlobalSearchScope(customScope,
+                                                                                                                       myProject);
 
     final ProjectFileIndex fileIndex = ProjectFileIndex.SERVICE.getInstance(myProject);
     final boolean hasTrigrams = hasTrigrams(myStringToFindInIndices);
 
     class EnumContentIterator implements ContentIterator {
-      private final Set<VirtualFile> myFiles = new LinkedHashSet<VirtualFile>();
+      private final Set<VirtualFile> myFiles = new LinkedHashSet<>();
 
       @Override
       public boolean processFile(@NotNull final VirtualFile virtualFile) {
@@ -332,7 +315,7 @@ class FindInProjectTask {
     final EnumContentIterator iterator = new EnumContentIterator();
 
     if (customScope instanceof LocalSearchScope) {
-      for (VirtualFile file : getLocalScopeFiles((LocalSearchScope)customScope)) {
+      for (VirtualFile file : GlobalSearchScopeUtil.getLocalScopeFiles((LocalSearchScope)customScope)) {
         iterator.processFile(file);
       }
     }
@@ -385,37 +368,6 @@ class FindInProjectTask {
     return true;
   }
 
-  @NotNull
-  private GlobalSearchScope toGlobal(@NotNull final SearchScope scope) {
-    if (scope instanceof GlobalSearchScope) {
-      return (GlobalSearchScope)scope;
-    }
-    return ApplicationManager.getApplication().runReadAction(new Computable<GlobalSearchScope>() {
-      @Override
-      public GlobalSearchScope compute() {
-        return GlobalSearchScope.filesScope(myProject, getLocalScopeFiles((LocalSearchScope)scope));
-      }
-    });
-  }
-
-  @NotNull
-  private static Set<VirtualFile> getLocalScopeFiles(@NotNull final LocalSearchScope scope) {
-    return ApplicationManager.getApplication().runReadAction(new Computable<Set<VirtualFile>>() {
-      @Override
-      public Set<VirtualFile> compute() {
-        Set<VirtualFile> files = new LinkedHashSet<VirtualFile>();
-        for (PsiElement element : scope.getScope()) {
-          PsiFile file = element.getContainingFile();
-          if (file != null) {
-            ContainerUtil.addIfNotNull(files, file.getVirtualFile());
-            ContainerUtil.addIfNotNull(files, file.getNavigationElement().getContainingFile().getVirtualFile());
-          }
-        }
-        return files;
-      }
-    });
-  }
-
   private boolean canRelyOnIndices() {
     if (DumbService.isDumb(myProject)) return false;
 
@@ -452,14 +404,15 @@ class FindInProjectTask {
       return Collections.emptySet();
     }
 
-    final Set<VirtualFile> resultFiles = new LinkedHashSet<VirtualFile>();
+    final Set<VirtualFile> resultFiles = new LinkedHashSet<>();
     for(VirtualFile file:myFilesToScanInitially) {
       if (myFileMask.value(file)) {
         resultFiles.add(file);
       }
     }
 
-    final GlobalSearchScope scope = toGlobal(FindInProjectUtil.getScopeFromModel(myProject, myFindModel));
+    final GlobalSearchScope scope = GlobalSearchScopeUtil.toGlobalSearchScope(FindInProjectUtil.getScopeFromModel(myProject, myFindModel),
+                                                                              myProject);
 
     if (TrigramIndex.ENABLED) {
       final Set<Integer> keys = ContainerUtil.newTroveSet();
@@ -472,12 +425,9 @@ class FindInProjectTask {
       });
 
       if (!keys.isEmpty()) {
-        final List<VirtualFile> hits = new ArrayList<VirtualFile>();
-        ApplicationManager.getApplication().runReadAction(new Runnable() {
-          @Override
-          public void run() {
-            FileBasedIndex.getInstance().getFilesWithKey(TrigramIndex.INDEX_ID, keys, Processors.cancelableCollectProcessor(hits), scope);
-          }
+        final List<VirtualFile> hits = new ArrayList<>();
+        ApplicationManager.getApplication().runReadAction(() -> {
+          FileBasedIndex.getInstance().getFilesWithKey(TrigramIndex.INDEX_ID, keys, Processors.cancelableCollectProcessor(hits), scope);
         });
 
         for (VirtualFile hit : hits) {
@@ -491,14 +441,11 @@ class FindInProjectTask {
     }
 
     PsiSearchHelperImpl helper = (PsiSearchHelperImpl)PsiSearchHelper.SERVICE.getInstance(myProject);
-    helper.processFilesWithText(scope, UsageSearchContext.ANY, myFindModel.isCaseSensitive(), stringToFind, new Processor<VirtualFile>() {
-      @Override
-      public boolean process(VirtualFile file) {
-        if (myFileMask.value(file)) {
-          ContainerUtil.addIfNotNull(resultFiles, file);
-        }
-        return true;
+    helper.processFilesWithText(scope, UsageSearchContext.ANY, myFindModel.isCaseSensitive(), stringToFind, file -> {
+      if (myFileMask.value(file)) {
+        ContainerUtil.addIfNotNull(resultFiles, file);
       }
+      return true;
     });
 
     // in case our word splitting is incorrect

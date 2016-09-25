@@ -19,6 +19,7 @@ import com.intellij.ide.ui.UISettings;
 import com.intellij.ide.ui.UISettingsListener;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.MnemonicHelper;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.SystemInfo;
@@ -28,6 +29,7 @@ import com.intellij.ui.JBColor;
 import com.intellij.ui.ScreenUtil;
 import com.intellij.util.Alarm;
 import com.intellij.util.ui.UIUtil;
+import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
 import java.awt.*;
@@ -57,7 +59,7 @@ public final class FloatingDecorator extends JDialog {
   private final MyUISettingsListener myUISettingsListener;
   private WindowInfoImpl myInfo;
 
-  private final Disposable myDisposable;
+  private final Disposable myDisposable = Disposer.newDisposable();
   private final Alarm myDelayAlarm; // Determines moment when tool window should become transparent
   private final Alarm myFrameTicker; // Determines moments of rendering of next frame
   private final MyAnimator myAnimator; // Renders alpha ratio
@@ -66,7 +68,7 @@ public final class FloatingDecorator extends JDialog {
   private float myEndRatio; // start and end alpha ratio for transparency animation
 
 
-  FloatingDecorator(final IdeFrameImpl owner,final WindowInfoImpl info,final InternalDecorator internalDecorator){
+  FloatingDecorator(final IdeFrameImpl owner, @NotNull WindowInfoImpl info, @NotNull InternalDecorator internalDecorator){
     super(owner,internalDecorator.getToolWindow().getId());
     MnemonicHelper.init(getContentPane());
     myInternalDecorator=internalDecorator;
@@ -97,7 +99,7 @@ public final class FloatingDecorator extends JDialog {
     //
 
     myDelayAlarm=new Alarm();
-    myFrameTicker=new Alarm(Alarm.ThreadToUse.SHARED_THREAD);
+    myFrameTicker=new Alarm(Alarm.ThreadToUse.POOLED_THREAD,myDisposable);
     myAnimator=new MyAnimator();
     myCurrentFrame=0;
     myStartRatio=0.0f;
@@ -107,16 +109,12 @@ public final class FloatingDecorator extends JDialog {
 
     //
 
-    IdeGlassPaneImpl ideGlassPane = new IdeGlassPaneImpl(getRootPane());
+    IdeGlassPaneImpl ideGlassPane = new IdeGlassPaneImpl(getRootPane(), true);
     getRootPane().setGlassPane(ideGlassPane);
 
     //workaround: we need to add this IdeGlassPane instance as dispatcher in IdeEventQueue
     ideGlassPane.addMousePreprocessor(new MouseAdapter() {
-    }, myDisposable = new Disposable() {
-      @Override
-      public void dispose() {
-      }
-    });
+    }, myDisposable);
 
     apply(info);
   }
@@ -139,7 +137,7 @@ public final class FloatingDecorator extends JDialog {
 
     setFocusableWindowState(true);
 
-    uiSettings.addUISettingsListener(myUISettingsListener, myDelayAlarm);
+    ApplicationManager.getApplication().getMessageBus().connect(myDelayAlarm).subscribe(UISettingsListener.TOPIC, myUISettingsListener);
   }
 
   public final void dispose(){
@@ -148,18 +146,13 @@ public final class FloatingDecorator extends JDialog {
       Disposer.dispose(myDisposable);
     } else {
       if (isShowing()) {
-        SwingUtilities.invokeLater(new Runnable() {
-        @Override
-        public void run() {
-          show();
-        }
-      });
+        SwingUtilities.invokeLater(() -> show());
       }
     }
     super.dispose();
   }
 
-  final void apply(final WindowInfoImpl info){
+  final void apply(@NotNull WindowInfoImpl info){
     LOG.assertTrue(info.isFloating());
     myInfo=info;
     // Set alpha mode
@@ -176,16 +169,14 @@ public final class FloatingDecorator extends JDialog {
         myFrameTicker.addRequest(myAnimator,DELAY);
       }else{ // make window transparent
         myDelayAlarm.addRequest(
-          new Runnable(){
-            public void run(){
-              myFrameTicker.cancelAllRequests();
-              myStartRatio=getCurrentAlphaRatio();
-              if(myCurrentFrame>0){
-                myCurrentFrame=TOTAL_FRAME_COUNT-myCurrentFrame;
-              }
-              myEndRatio=uiSettings.ALPHA_MODE_RATIO;
-              myFrameTicker.addRequest(myAnimator,DELAY);
+          () -> {
+            myFrameTicker.cancelAllRequests();
+            myStartRatio=getCurrentAlphaRatio();
+            if(myCurrentFrame>0){
+              myCurrentFrame=TOTAL_FRAME_COUNT-myCurrentFrame;
             }
+            myEndRatio=uiSettings.ALPHA_MODE_RATIO;
+            myFrameTicker.addRequest(myAnimator,DELAY);
           },
           uiSettings.ALPHA_MODE_DELAY
         );

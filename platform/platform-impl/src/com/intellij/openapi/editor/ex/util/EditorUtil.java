@@ -452,9 +452,9 @@ public final class EditorUtil {
       }
     }
 
-    if (editor == null || useOptimization) {
-      Document document = editor == null ? null : editor.getDocument();
-      if (document != null && start < offset-1 && document.getLineNumber(start) != document.getLineNumber(offset-1)) {
+    if (editor != null && useOptimization) {
+      Document document = editor.getDocument();
+      if (start < offset - 1 && document.getLineNumber(start) != document.getLineNumber(offset - 1)) {
         String editorInfo = editor instanceof EditorImpl ? ". Editor info: " + ((EditorImpl)editor).dumpState() : "";
         String documentInfo;
         if (text instanceof Dumpable) {
@@ -467,20 +467,18 @@ public final class EditorUtil {
           LOG, "detected incorrect offset -> column number calculation",
           "start: " + start + ", given offset: " + offset+", given tab size: " + tabSize + ". "+documentInfo+ editorInfo);
       }
-      int shift = 0;
-      if (hasTabs) {
-        for (int i = start; i < offset; i++) {
-          char c = text.charAt(i);
-          if (c == '\t') {
-            shift += getTabLength(i + shift - start, tabSize) - 1;
-          }
-        }
-      }
-      return offset - start + shift;
     }
 
-    EditorEx editorImpl = (EditorEx) editor;
-    return editorImpl.calcColumnNumber(text, start, offset, tabSize);
+    int shift = 0;
+    if (hasTabs) {
+      for (int i = start; i < offset; i++) {
+        char c = text.charAt(i);
+        if (c == '\t') {
+          shift += getTabLength(i + shift - start, tabSize) - 1;
+        }
+      }
+    }
+    return offset - start + shift;
   }
 
   public static void setHandCursor(@NotNull Editor view) {
@@ -672,6 +670,10 @@ public final class EditorUtil {
     return calcSurroundingRange(editor, editor.getCaretModel().getVisualPosition(), editor.getCaretModel().getVisualPosition());
   }
 
+  public static Pair<LogicalPosition, LogicalPosition> calcCaretLineRange(@NotNull Caret caret) {
+    return calcSurroundingRange(caret.getEditor(), caret.getVisualPosition(), caret.getVisualPosition());
+  }
+
   /**
    * Calculates logical positions that surround given visual positions and conform to the following criteria:
    * <pre>
@@ -860,12 +862,9 @@ public final class EditorUtil {
     if (startFoldRegion != null || endFoldRegion != null) {
       final FoldRegion finalStartFoldRegion = startFoldRegion;
       final FoldRegion finalEndFoldRegion = endFoldRegion;
-      foldingModel.runBatchFoldingOperation(new Runnable() {
-        @Override
-        public void run() {
-          if (finalStartFoldRegion != null) finalStartFoldRegion.setExpanded(true);
-          if (finalEndFoldRegion != null) finalEndFoldRegion.setExpanded(true);
-        }
+      foldingModel.runBatchFoldingOperation(() -> {
+        if (finalStartFoldRegion != null) finalStartFoldRegion.setExpanded(true);
+        if (finalEndFoldRegion != null) finalEndFoldRegion.setExpanded(true);
       });
     }
     editor.getSelectionModel().setSelection(startOffset, endOffset);
@@ -893,8 +892,13 @@ public final class EditorUtil {
     return editor.getSoftWrapModel().getSoftWrapsForRange(startOffset, endOffset).size();
   }
 
-  public static boolean attributesImpactFontStyle(@Nullable TextAttributes attributes) {
-    return attributes == TextAttributes.ERASE_MARKER || (attributes != null && attributes.getFontType() != Font.PLAIN);
+  public static boolean attributesImpactFontStyleOrColor(@Nullable TextAttributes attributes) {
+    return attributes == TextAttributes.ERASE_MARKER ||
+           (attributes != null && (attributes.getFontType() != Font.PLAIN || attributes.getForegroundColor() != null));
+  }
+
+  public static boolean isCurrentCaretPrimary(@NotNull Editor editor) {
+    return editor.getCaretModel().getCurrentCaret() == editor.getCaretModel().getPrimaryCaret();
   }
 }
 

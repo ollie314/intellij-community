@@ -14,10 +14,6 @@
  * limitations under the License.
  */
 
-/**
- * created at Sep 12, 2001
- * @author Jeka
- */
 package com.intellij.refactoring.ui;
 
 import com.intellij.codeInsight.highlighting.ReadWriteAccessDetector;
@@ -76,7 +72,7 @@ public class ConflictsDialog extends DialogWrapper{
     myProject = project;
     myDoRefactoringRunnable = doRefactoringRunnable;
     myCanShowConflictsInView = canShowConflictsInView;
-    final LinkedHashSet<String> conflicts = new LinkedHashSet<String>();
+    final LinkedHashSet<String> conflicts = new LinkedHashSet<>();
 
     for (String conflict : conflictDescriptions.values()) {
       conflicts.add(conflict);
@@ -176,7 +172,7 @@ public class ConflictsDialog extends DialogWrapper{
 
 
     public MyShowConflictsInUsageViewAction() {
-      super("Show conflicts in view");
+      super("Show Conflicts in View");
     }
 
     @Override
@@ -188,7 +184,7 @@ public class ConflictsDialog extends DialogWrapper{
       presentation.setTabText(codeUsagesString);
       presentation.setShowCancelButton(true);
 
-      final ArrayList<Usage> usages = new ArrayList<Usage>(myElementConflictDescription.values().size());
+      final ArrayList<Usage> usages = new ArrayList<>(myElementConflictDescription.values().size());
       for (final PsiElement element : myElementConflictDescription.keySet()) {
         if (element == null) {
           usages.add(new DescriptionOnlyUsage());
@@ -246,7 +242,7 @@ public class ConflictsDialog extends DialogWrapper{
 
       public DescriptionOnlyUsage() {
         myConflictDescription =
-          Pattern.compile("<[^<>]*>").matcher(StringUtil.join(new LinkedHashSet<String>(myElementConflictDescription.get(null)), "\n")).replaceAll("");
+          Pattern.compile("<[^<>]*>").matcher(StringUtil.join(new LinkedHashSet<>(myElementConflictDescription.get(null)), "\n")).replaceAll("");
       }
 
       @Override

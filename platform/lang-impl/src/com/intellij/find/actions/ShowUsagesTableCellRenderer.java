@@ -16,19 +16,16 @@
 
 package com.intellij.find.actions;
 
-import com.intellij.openapi.editor.markup.TextAttributes;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
 import com.intellij.psi.search.SearchScope;
 import com.intellij.ui.FileColorManager;
+import com.intellij.ui.GuiUtils;
 import com.intellij.ui.SimpleColoredComponent;
 import com.intellij.ui.SimpleTextAttributes;
 import com.intellij.ui.speedSearch.SpeedSearchUtil;
-import com.intellij.usageView.UsageTreeColors;
-import com.intellij.usageView.UsageTreeColorsScheme;
 import com.intellij.usages.TextChunk;
 import com.intellij.usages.Usage;
 import com.intellij.usages.UsageGroup;
@@ -42,7 +39,6 @@ import com.intellij.util.ObjectUtils;
 import com.intellij.util.ui.EmptyIcon;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import javax.swing.table.TableCellRenderer;
@@ -86,7 +82,7 @@ class ShowUsagesTableCellRenderer implements TableCellRenderer {
       textChunks.append(">...");
       return textComponentSpanningWholeRow(textChunks, panelBackground, panelForeground, column, list);
     }
-    else if (usage == ShowUsagesAction.USAGES_OUTSIDE_SCOPE_SEPARATOR) {
+    if (usage == ShowUsagesAction.USAGES_OUTSIDE_SCOPE_SEPARATOR) {
       textChunks.append("...<");
       textChunks.append(UsageViewManagerImpl.outOfScopeMessage(myOutOfScopeUsages.get(), mySearchScope), SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES);
       textChunks.append(">...");
@@ -109,51 +105,50 @@ class ShowUsagesTableCellRenderer implements TableCellRenderer {
     panel.setBackground(panelBackground);
     panel.setForeground(panelForeground);
 
-    VirtualFile file = getFile(usage);
-    VirtualFile prevFile = findPrevFile(list, row, column);
-
+    // greying the current usage you originated your "find usages" from is turned off by @nik orders
+    boolean isEnabled = true;//!myUsageView.isOriginUsage(usage);
+    if (!isEnabled) {
+      fg = UIUtil.getLabelDisabledForeground();
+    }
     if (column == 0) {
-      appendGroupText(list, (GroupNode)usageNode.getParent(), panel, fileBgColor, isSelected, Comparing.equal(file, prevFile));
-      return panel;
+      appendGroupText(list, (GroupNode)usageNode.getParent(), panel, fileBgColor, isSelected);
     }
-    else if (usage != ShowUsagesAction.MORE_USAGES_SEPARATOR && usage != ShowUsagesAction.USAGES_OUTSIDE_SCOPE_SEPARATOR) {
-      UsagePresentation presentation = usage.getPresentation();
-      TextChunk[] text = presentation.getText();
+    else {
+      if (usage != ShowUsagesAction.MORE_USAGES_SEPARATOR && usage != ShowUsagesAction.USAGES_OUTSIDE_SCOPE_SEPARATOR) {
+        UsagePresentation presentation = usage.getPresentation();
+        TextChunk[] text = presentation.getText();
 
-      if (lineNumberColumn) { // line number
-        if (text.length != 0) {
-          TextChunk chunk = text[0];
-          textChunks.append(chunk.getText(), getAttributes(isSelected, fileBgColor, bg, fg, chunk));
+        if (lineNumberColumn) { // line number
+          if (text.length != 0) {
+            TextChunk chunk = text[0];
+            textChunks.append(chunk.getText(), getAttributes(isSelected, fileBgColor, bg, fg, chunk));
+          }
+        }
+        else if (column == 2) {
+          Icon icon = presentation.getIcon();
+          textChunks.setIcon(icon == null ? EmptyIcon.ICON_16 : icon);
+          textChunks.append("").appendTextPadding(16 + 5);
+          for (int i = 1; i < text.length; i++) {
+            TextChunk chunk = text[i];
+            textChunks.append(chunk.getText(), getAttributes(isSelected, fileBgColor, bg, fg, chunk));
+          }
+        }
+        else {
+          assert false : column;
         }
       }
-      else if (column == 2) {
-        Icon icon = presentation.getIcon();
-        textChunks.setIcon(icon == null ? EmptyIcon.ICON_16 : icon);
-        textChunks.append("").appendTextPadding(16 + 5);
-        for (int i = 1; i < text.length; i++) {
-          TextChunk chunk = text[i];
-          textChunks.append(chunk.getText(), getAttributes(isSelected, fileBgColor, bg, fg, chunk));
-        }
-      }
-      else {
-        assert false : column;
-      }
+      SpeedSearchUtil.applySpeedSearchHighlighting(list, textChunks, false, isSelected);
+      panel.add(textChunks);
     }
-    SpeedSearchUtil.applySpeedSearchHighlighting(list, textChunks, false, isSelected);
-    panel.add(textChunks);
+
+    if (!isEnabled) {
+      GuiUtils.enableChildren(panel, false);
+    }
     return panel;
   }
 
-  @Nullable
-  private static VirtualFile findPrevFile(@NotNull JTable table, int row, int column) {
-    if (row <= 0) return null;
-    Object prev = table.getValueAt(row - 1, column);
-    UsageNode usageNode = prev instanceof UsageNode ? (UsageNode)prev : null;
-    return getFile(usageNode == null ? null : usageNode.getUsage());
-  }
-  
   @NotNull
-  public static SimpleTextAttributes getAttributes(boolean isSelected, Color fileBgColor, Color bg, Color fg, TextChunk chunk) {
+  private static SimpleTextAttributes getAttributes(boolean isSelected, Color fileBgColor, Color bg, Color fg, @NotNull TextChunk chunk) {
     SimpleTextAttributes background = chunk.getSimpleAttributesIgnoreBackground();
     return isSelected
            ? new SimpleTextAttributes(bg, fg, null, background.getStyle())
@@ -211,8 +206,7 @@ class ShowUsagesTableCellRenderer implements TableCellRenderer {
     return component;
   }
 
-  @NotNull
-  private static SimpleTextAttributes deriveAttributesWithColor(@NotNull SimpleTextAttributes attributes, @Nullable Color fileBgColor) {
+  private static SimpleTextAttributes deriveAttributesWithColor(SimpleTextAttributes attributes, Color fileBgColor) {
     if (fileBgColor != null) {
       attributes = attributes.derive(-1,null, fileBgColor,null);
     }
@@ -225,7 +219,7 @@ class ShowUsagesTableCellRenderer implements TableCellRenderer {
       fileBgColor = UIUtil.getListSelectionBackground();
     }
     else {
-      VirtualFile virtualFile = getFile(usage);
+      VirtualFile virtualFile = usage instanceof UsageInFile ? ((UsageInFile)usage).getFile() : null;
       if (virtualFile != null) {
         Project project = myUsageView.getProject();
         PsiFile psiFile = PsiManager.getInstance(project).findFile(virtualFile);
@@ -238,28 +232,16 @@ class ShowUsagesTableCellRenderer implements TableCellRenderer {
     return fileBgColor;
   }
 
-  private static VirtualFile getFile(@Nullable Usage usage) {
-    return usage instanceof UsageInFile ? ((UsageInFile)usage).getFile() : null;
-  }
-
-  private void appendGroupText(@NotNull JTable table,
-                               @Nullable GroupNode node,
-                               @NotNull JPanel panel,
-                               @Nullable Color fileBgColor,
-                               boolean isSelected,
-                               boolean sameFile) {
+  private void appendGroupText(JTable table, final GroupNode node, JPanel panel, Color fileBgColor, boolean isSelected) {
     UsageGroup group = node == null ? null : node.getGroup();
     if (group == null) return;
     GroupNode parentGroup = (GroupNode)node.getParent();
-    appendGroupText(table, parentGroup, panel, fileBgColor, isSelected, sameFile);
+    appendGroupText(table, parentGroup, panel, fileBgColor, isSelected);
     if (node.canNavigateToSource()) {
       SimpleColoredComponent renderer = new SimpleColoredComponent();
       renderer.setIcon(group.getIcon(false));
-      TextAttributes attributes = UsageTreeColorsScheme.getInstance().getScheme().getAttributes(UsageTreeColors.USAGE_LOCATION);
-      SimpleTextAttributes attr = sameFile && !isSelected
-                                  ? SimpleTextAttributes.fromTextAttributes(attributes)
-                                  : SimpleTextAttributes.REGULAR_ATTRIBUTES;
-      renderer.append(group.getText(myUsageView), deriveAttributesWithColor(attr, fileBgColor));
+      SimpleTextAttributes attributes = deriveAttributesWithColor(SimpleTextAttributes.REGULAR_ATTRIBUTES, fileBgColor);
+      renderer.append(group.getText(myUsageView), attributes);
       renderer.setBorder(null);
       SpeedSearchUtil.applySpeedSearchHighlighting(table, renderer, false, isSelected);
       panel.add(renderer);

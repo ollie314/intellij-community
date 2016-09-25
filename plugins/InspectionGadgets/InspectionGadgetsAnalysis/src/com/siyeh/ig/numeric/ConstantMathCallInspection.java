@@ -36,7 +36,7 @@ public class ConstantMathCallInspection extends BaseInspection {
 
   @SuppressWarnings("StaticCollection")
   @NonNls static final Set<String> constantMathCall =
-    new HashSet<String>(23);
+    new HashSet<>(23);
 
   static {
     constantMathCall.add("abs");
@@ -358,8 +358,8 @@ public class ConstantMathCallInspection extends BaseInspection {
         return;
       }
       final String className = referencedClass.getQualifiedName();
-      if (!"java.lang.Math".equals(className)
-          && !"java.lang.StrictMath".equals(className)) {
+      if (!CommonClassNames.JAVA_LANG_MATH.equals(className)
+          && !CommonClassNames.JAVA_LANG_STRICT_MATH.equals(className)) {
         return;
       }
       registerMethodCallError(expression);

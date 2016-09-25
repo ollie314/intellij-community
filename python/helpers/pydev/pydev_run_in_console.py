@@ -1,7 +1,11 @@
 '''
 Entry point module to run a file in the interactive console.
 '''
-from pydevconsole import *
+import os
+import sys
+from pydevconsole import do_exit, InterpreterInterface, process_exec_queue, start_console_server
+from _pydev_bundle.pydev_console_utils import BaseStdIn
+from _pydev_imps._pydev_saved_modules import threading
 
 from _pydev_bundle import pydev_imports
 from _pydevd_bundle.pydevd_utils import save_main_module
@@ -36,7 +40,7 @@ def run_file(file, globals=None, locals=None):
 # main
 #=======================================================================================================================
 if __name__ == '__main__':
-    sys.stdin = BaseStdIn()
+    sys.stdin = BaseStdIn(sys.stdin)
     port, client_port = sys.argv[1:3]
 
     del sys.argv[1]

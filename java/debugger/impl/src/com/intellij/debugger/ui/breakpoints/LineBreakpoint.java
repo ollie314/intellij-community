@@ -48,7 +48,6 @@ import com.intellij.psi.jsp.JspFile;
 import com.intellij.psi.search.EverythingGlobalScope;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.util.PsiTreeUtil;
-import com.intellij.util.Processor;
 import com.intellij.util.StringBuilderSpinAllocator;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.xdebugger.XDebuggerUtil;
@@ -191,9 +190,10 @@ public class LineBreakpoint<P extends JavaBreakpointProperties> extends Breakpoi
     if (isAnonymousClass(classType)) {
       if ((method.isConstructor() && loc.codeIndex() == 0) || method.isBridge()) return false;
     }
+    SourcePosition position = debugProcess.getPositionManager().getSourcePosition(loc);
+    if (position == null) return false;
+
     return ApplicationManager.getApplication().runReadAction((Computable<Boolean>)() -> {
-      SourcePosition position = debugProcess.getPositionManager().getSourcePosition(loc);
-      if (position == null) return false;
       JavaLineBreakpointType type = getXBreakpointType();
       if (type == null) return true;
       return type.matchesPosition(this, position);
@@ -486,40 +486,37 @@ public class LineBreakpoint<P extends JavaBreakpointProperties> extends Breakpoi
     PsiDocumentManager.getInstance(project).commitDocument(document);
 
     final boolean[] canAdd = new boolean[]{false};
-    XDebuggerUtil.getInstance().iterateLine(project, document, lineIndex, new Processor<PsiElement>() {
-      @Override
-      public boolean process(PsiElement element) {
-        if ((element instanceof PsiWhiteSpace) || (PsiTreeUtil.getParentOfType(element, PsiComment.class, false) != null)) {
-          return true;
-        }
-        PsiElement child = element;
-        while(element != null) {
+    XDebuggerUtil.getInstance().iterateLine(project, document, lineIndex, element -> {
+      if ((element instanceof PsiWhiteSpace) || (PsiTreeUtil.getParentOfType(element, PsiComment.class, false) != null)) {
+        return true;
+      }
+      PsiElement child = element;
+      while(element != null) {
 
-          final int offset = element.getTextOffset();
-          if (offset >= 0) {
-            if (document.getLineNumber(offset) != lineIndex) {
-              break;
-            }
+        final int offset = element.getTextOffset();
+        if (offset >= 0) {
+          if (document.getLineNumber(offset) != lineIndex) {
+            break;
           }
-          child = element;
-          element = element.getParent();
         }
+        child = element;
+        element = element.getParent();
+      }
 
-        if(child instanceof PsiMethod && child.getTextRange().getEndOffset() >= document.getLineEndOffset(lineIndex)) {
-          PsiCodeBlock body = ((PsiMethod)child).getBody();
-          if(body == null) {
-            canAdd[0] = false;
-          }
-          else {
-            PsiStatement[] statements = body.getStatements();
-            canAdd[0] = statements.length > 0 && document.getLineNumber(statements[0].getTextOffset()) == lineIndex;
-          }
+      if(child instanceof PsiMethod && child.getTextRange().getEndOffset() >= document.getLineEndOffset(lineIndex)) {
+        PsiCodeBlock body = ((PsiMethod)child).getBody();
+        if(body == null) {
+          canAdd[0] = false;
         }
         else {
-          canAdd[0] = true;
+          PsiStatement[] statements = body.getStatements();
+          canAdd[0] = statements.length > 0 && document.getLineNumber(statements[0].getTextOffset()) == lineIndex;
         }
-        return false;
       }
+      else {
+        canAdd[0] = true;
+      }
+      return false;
     });
 
     return canAdd[0];

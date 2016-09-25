@@ -41,7 +41,7 @@ import java.util.List;
  * This will significantly simplify code, since we will not need to take the list of possible variants of children and grandchildren;
  * we will be able to iterate variants, not collections of variants
  */
-class JsonSchemaWalker {
+public class JsonSchemaWalker {
   public interface CompletionSchemesConsumer {
     void consume(boolean isName, @NotNull JsonSchemaObject schema);
   }
@@ -65,9 +65,9 @@ class JsonSchemaWalker {
     extractSchemaVariants(consumer, rootSchema, isName, position);
   }
 
-  private static void extractSchemaVariants(@NotNull CompletionSchemesConsumer consumer,
+  public static void extractSchemaVariants(@NotNull CompletionSchemesConsumer consumer,
                                             @NotNull JsonSchemaObject rootSchema, boolean isName, List<Step> position) {
-    final ArrayDeque<Pair<JsonSchemaObject, Integer>> queue = new ArrayDeque<Pair<JsonSchemaObject, Integer>>();
+    final ArrayDeque<Pair<JsonSchemaObject, Integer>> queue = new ArrayDeque<>();
     queue.add(Pair.create(rootSchema, 0));
     while (!queue.isEmpty()) {
       final Pair<JsonSchemaObject, Integer> pair = queue.removeFirst();
@@ -80,12 +80,7 @@ class JsonSchemaWalker {
       }
       if (step.getTransition() != null && !step.getTransition().possibleFromState(step.getType())) continue;
 
-      final Condition<JsonSchemaObject> byTypeFilter = new Condition<JsonSchemaObject>() {
-        @Override
-        public boolean value(JsonSchemaObject object) {
-          return byStateType(step.getType(), object);
-        }
-      };
+      final Condition<JsonSchemaObject> byTypeFilter = object -> byStateType(step.getType(), object);
       // not??
 
       if (schema.getAllOf() != null) {
@@ -103,7 +98,7 @@ class JsonSchemaWalker {
           queue.add(Pair.create(selectedSchema, pair.getSecond() + 1));
         }
       } else {
-        List<JsonSchemaObject> list = new ArrayList<JsonSchemaObject>();
+        List<JsonSchemaObject> list = new ArrayList<>();
         list.add(schema);
         if (schema.getAnyOf() != null) list.addAll(schema.getAnyOf());
         if (schema.getOneOf() != null) list.addAll(schema.getOneOf());
@@ -159,7 +154,7 @@ class JsonSchemaWalker {
   }
 
   public static List<Step> findPosition(@NotNull final PsiElement element, boolean isName) {
-    final List<Step> steps = new ArrayList<Step>();
+    final List<Step> steps = new ArrayList<>();
     if (!(element.getParent() instanceof JsonObject) && !isName) {
       steps.add(new Step(StateType._value, null));
     }
@@ -194,12 +189,12 @@ class JsonSchemaWalker {
     return steps;
   }
 
-  private static class Step {
+  public static class Step {
     private final StateType myType;
     @Nullable
     private final Transition myTransition;
 
-    public Step(StateType type, Transition transition) {
+    public Step(StateType type, @Nullable Transition transition) {
       myType = type;
       myTransition = transition;
     }
@@ -287,7 +282,7 @@ class JsonSchemaWalker {
     @Nullable
     private final JsonSchemaType myCorrespondingJsonType;
 
-    StateType(JsonSchemaType correspondingJsonType) {
+    StateType(@Nullable JsonSchemaType correspondingJsonType) {
       myCorrespondingJsonType = correspondingJsonType;
     }
 

@@ -15,10 +15,17 @@
  */
 package com.intellij.diff;
 
+import com.intellij.diff.comparison.ByLine;
+import com.intellij.diff.comparison.ComparisonPolicy;
+import com.intellij.diff.comparison.DiffTooBigException;
+import com.intellij.diff.comparison.iterables.DiffIterableUtil;
+import com.intellij.diff.comparison.iterables.FairDiffIterable;
+import com.intellij.diff.util.Range;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.progress.DumbProgressIndicator;
+import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.text.LineTokenizer;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.util.diff.Diff;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Arrays;
@@ -35,7 +42,7 @@ public class Block {
   private final int myEnd;
 
   public Block(@NotNull String source, int start, int end) {
-    this(LineTokenizer.tokenize(source, false, false), start, end);
+    this(tokenize(source), start, end);
   }
 
   public Block(@NotNull String[] source, int start, int end) {
@@ -45,8 +52,13 @@ public class Block {
   }
 
   @NotNull
+  public static String[] tokenize(@NotNull String text) {
+    return LineTokenizer.tokenize(text, false, false);
+  }
+
+  @NotNull
   public Block createPreviousBlock(@NotNull String prevContent) {
-    return createPreviousBlock(LineTokenizer.tokenize(prevContent, false, false));
+    return createPreviousBlock(tokenize(prevContent));
   }
 
   @NotNull
@@ -55,34 +67,50 @@ public class Block {
     int end = -1;
     int shift = 0;
 
-    Diff.Change change = Diff.buildChangesSomehow(prevContent, getSource());
-    while (change != null) {
-      int startLine1 = change.line0;
-      int startLine2 = change.line1;
-      int endLine1 = startLine1 + change.deleted;
-      int endLine2 = startLine2 + change.inserted;
+    try {
+      FairDiffIterable iterable = ByLine.compare(Arrays.asList(prevContent), Arrays.asList(mySource),
+                                                 ComparisonPolicy.IGNORE_WHITESPACES, DumbProgressIndicator.INSTANCE);
 
-      if (Math.max(myStart, startLine2) < Math.min(myEnd, endLine2)) {
-        // ranges intersect
-        if (startLine2 <= myStart) start = startLine1;
-        if (endLine2 > myEnd) end = endLine1;
+      for (Pair<Range, Boolean> pair : DiffIterableUtil.iterateAll(iterable)) {
+        Boolean equals = pair.second;
+        Range range = pair.first;
+        if (!equals) {
+          if (Math.max(myStart, range.start2) < Math.min(myEnd, range.end2)) {
+            // ranges intersect
+            if (range.start2 <= myStart) start = range.start1;
+            if (range.end2 > myEnd) end = range.end1;
+          }
+          if (range.start2 > myStart) {
+            if (start == -1) start = myStart - shift;
+            if (end == -1 && range.start2 >= myEnd) end = myEnd - shift;
+          }
+
+          shift += (range.end2 - range.start2) - (range.end1 - range.start1);
+        }
+        else {
+          // intern strings, reducing memory usage
+          int count = range.end1 - range.start1;
+          for (int i = 0; i < count; i++) {
+            int prevIndex = range.start1 + i;
+            int sourceIndex = range.start2 + i;
+            if (prevContent[prevIndex].equals(mySource[sourceIndex])) {
+              prevContent[prevIndex] = mySource[sourceIndex];
+            }
+          }
+        }
       }
-      if (startLine2 > myStart) {
-        if (start == -1) start = myStart - shift;
-        if (end == -1 && startLine2 >= myEnd) end = myEnd - shift;
+      if (start == -1) start = myStart - shift;
+      if (end == -1) end = myEnd - shift;
+
+      if (start < 0 || end > prevContent.length || end < start) {
+        LOG.error("Invalid block range: [" + start + ", " + end + "); length - " + prevContent.length);
       }
 
-      shift += change.inserted - change.deleted;
-      change = change.link;
+      return new Block(prevContent, start, end);
     }
-    if (start == -1) start = myStart - shift;
-    if (end == -1) end = myEnd - shift;
-
-    if (start < 0 || end > prevContent.length || end < start) {
-      LOG.error("Invalid block range: [" + start + ", " + end + "); length - " + prevContent.length);
+    catch (DiffTooBigException e) {
+      return new Block(prevContent, 0, 0);
     }
-
-    return new Block(prevContent, start, end);
   }
 
   @NotNull
@@ -113,11 +141,6 @@ public class Block {
 
   public int getEnd() {
     return myEnd;
-  }
-
-  @NotNull
-  public String[] getSource() {
-    return mySource;
   }
 
   public String toString() {

@@ -29,6 +29,7 @@ import com.intellij.ide.ui.UISettings;
 import com.intellij.injected.editor.DocumentWindow;
 import com.intellij.injected.editor.EditorWindow;
 import com.intellij.lang.LangBundle;
+import com.intellij.lang.injection.InjectedLanguageManager;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.CommandProcessor;
@@ -40,9 +41,9 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.util.Computable;
-import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Pair;
+import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.psi.PsiDocumentManager;
@@ -57,6 +58,7 @@ import com.intellij.ui.popup.AbstractPopup;
 import com.intellij.util.CollectConsumer;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.io.storage.HeavyProcessLatch;
+import com.intellij.util.ui.accessibility.AccessibleContextUtil;
 import com.intellij.util.ui.update.Activatable;
 import com.intellij.util.ui.update.UiNotifyConnector;
 import org.jetbrains.annotations.NotNull;
@@ -70,11 +72,10 @@ import java.awt.*;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class LookupImpl extends LightweightHint implements LookupEx, Disposable, WeighingContext {
+public class LookupImpl extends LightweightHint implements LookupEx, Disposable {
   private static final Logger LOG = Logger.getInstance("#com.intellij.codeInsight.lookup.impl.LookupImpl");
 
   private final LookupOffsets myOffsets;
@@ -86,12 +87,8 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
     protected void processKeyEvent(@NotNull final KeyEvent e) {
       final char keyChar = e.getKeyChar();
       if (keyChar == KeyEvent.VK_ENTER || keyChar == KeyEvent.VK_TAB) {
-        IdeFocusManager.getInstance(myProject).requestFocus(myEditor.getContentComponent(), true).doWhenDone(new Runnable() {
-          @Override
-          public void run() {
-            IdeEventQueue.getInstance().getKeyEventDispatcher().dispatchKeyEvent(e);
-          }
-        });
+        IdeFocusManager.getInstance(myProject).requestFocus(myEditor.getContentComponent(), true).doWhenDone(
+          () -> IdeEventQueue.getInstance().getKeyEventDispatcher().dispatchKeyEvent(e));
         return;
       }
 
@@ -121,8 +118,6 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
   private boolean myChangeGuard;
   private volatile LookupArranger myArranger;
   private LookupArranger myPresentableArranger;
-  private final Map<LookupElement, PrefixMatcher> myMatchers =
-    ContainerUtil.createConcurrentWeakMap(ContainerUtil.identityStrategy());
   private final Map<LookupElement, Font> myCustomFonts = ContainerUtil.createConcurrentWeakMap(10, 0.75f, Runtime.getRuntime().availableProcessors(),
     ContainerUtil.identityStrategy());
   private boolean myStartCompletionWhenNothingMatches;
@@ -150,6 +145,11 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
 
     myList.setFocusable(false);
     myList.setFixedCellWidth(50);
+
+    // a new top level frame just got the focus. This is important to prevent screen readers
+    // from announcing the title of the top level frame when the list is shown (or hidden),
+    // as they usually do when a new top-level frame receives the focus.
+    AccessibleContextUtil.setParent(myList, myEditor.getContentComponent());
 
     myList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
     myList.setBackground(LookupCellRenderer.BACKGROUND_COLOR);
@@ -238,10 +238,10 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
       return false;
     }
 
-    myMatchers.put(item, matcher);
     updateLookupWidth(item, presentation);
     withLock(() -> {
-      myArranger.addElement(this, item, presentation);
+      myArranger.registerMatcher(item, matcher);
+      myArranger.addElement(item, presentation);
       return null;
     });
     return true;
@@ -276,7 +276,7 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
   }
 
   public Collection<LookupElementAction> getActionsFor(LookupElement element) {
-    final CollectConsumer<LookupElementAction> consumer = new CollectConsumer<LookupElementAction>();
+    final CollectConsumer<LookupElementAction> consumer = new CollectConsumer<>();
     for (LookupActionProvider provider : LookupActionProvider.EP_NAME.getExtensions()) {
       provider.fillActions(element, this, consumer);
     }
@@ -423,7 +423,6 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
 
   private void addEmptyItem(CollectionListModel<LookupElement> model) {
     LookupElement item = new EmptyLookupItem(myCalculating ? " " : LangBundle.message("completion.no.suggestions"), false);
-    myMatchers.put(item, new CamelHumpMatcher(""));
     model.add(item);
 
     updateLookupWidth(item);
@@ -439,23 +438,17 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
   @NotNull
   @Override
   public String itemPattern(@NotNull LookupElement element) {
-    String prefix = itemMatcher(element).getPrefix();
-    String additionalPrefix = getAdditionalPrefix();
-    return additionalPrefix.isEmpty() ? prefix : prefix + additionalPrefix;
+    if (element instanceof EmptyLookupItem) return "";
+    return myPresentableArranger.itemPattern(element);
   }
 
   @Override
   @NotNull
   public PrefixMatcher itemMatcher(@NotNull LookupElement item) {
-    PrefixMatcher matcher = itemMatcherNullable(item);
-    if (matcher == null) {
-      throw new AssertionError("Item not in lookup: item=" + item + "; lookup items=" + getItems());
+    if (item instanceof EmptyLookupItem) {
+      return new CamelHumpMatcher("");
     }
-    return matcher;
-  }
-
-  public PrefixMatcher itemMatcherNullable(LookupElement item) {
-    return myMatchers.get(item);
+    return myPresentableArranger.itemMatcher(item);
   }
 
   public void finishLookup(final char completionChar) {
@@ -465,6 +458,7 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
   public void finishLookup(char completionChar, @Nullable final LookupElement item) {
     //noinspection deprecation,unchecked
     if (item == null ||
+        !item.isValid() ||
         item instanceof EmptyLookupItem ||
         item.getObject() instanceof DeferredUserLookupValue &&
         item.as(LookupItem.CLASS_CONDITION_KEY) != null &&
@@ -491,26 +485,19 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
     }
 
     final String prefix = itemPattern(item);
-    boolean plainMatch = ContainerUtil.or(item.getAllLookupStrings(), new Condition<String>() {
-      @Override
-      public boolean value(String s) {
-        return StringUtil.containsIgnoreCase(s, prefix);
-      }
-    });
+    boolean plainMatch = ContainerUtil.or(item.getAllLookupStrings(), s -> StringUtil.containsIgnoreCase(s, prefix));
     if (!plainMatch) {
       FeatureUsageTracker.getInstance().triggerFeatureUsed(CodeCompletionFeatures.EDITING_COMPLETION_CAMEL_HUMPS);
     }
 
     myFinishing = true;
-    ApplicationManager.getApplication().runWriteAction(new Runnable() {
-      public void run() {
-        myEditor.getDocument().startGuardedBlockChecking();
-        try {
-          insertLookupString(item, getPrefixLength(item));
-        }
-        finally {
-          myEditor.getDocument().stopGuardedBlockChecking();
-        }
+    ApplicationManager.getApplication().runWriteAction(() -> {
+      myEditor.getDocument().startGuardedBlockChecking();
+      try {
+        insertLookupString(item, getPrefixLength(item));
+      }
+      finally {
+        myEditor.getDocument().stopGuardedBlockChecking();
       }
     });
 
@@ -536,22 +523,45 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
       public void perform(Caret caret) {
         EditorModificationUtil.deleteSelectedText(hostEditor);
         final int caretOffset = hostEditor.getCaretModel().getOffset();
-        int lookupStart = Math.min(caretOffset, Math.max(caretOffset - prefix, 0));
 
-        int len = hostEditor.getDocument().getTextLength();
-        LOG.assertTrue(lookupStart >= 0 && lookupStart <= len,
-                       "ls: " + lookupStart + " caret: " + caretOffset + " prefix:" + prefix + " doc: " + len);
-        LOG.assertTrue(caretOffset >= 0 && caretOffset <= len, "co: " + caretOffset + " doc: " + len);
-
-        hostEditor.getDocument().replaceString(lookupStart, caretOffset, lookupString);
-
-        int offset = lookupStart + lookupString.length();
+        int offset = insertLookupInDocumentWindowIfNeeded(caretOffset, prefix, lookupString);
         hostEditor.getCaretModel().moveToOffset(offset);
         hostEditor.getSelectionModel().removeSelection();
       }
     });
 
     myEditor.getScrollingModel().scrollToCaret(ScrollType.RELATIVE);
+  }
+
+  private int insertLookupInDocumentWindowIfNeeded(int caretOffset, int prefix, String lookupString) {
+    DocumentWindow document = getInjectedDocument(caretOffset);
+    if (document == null) return insertLookupInDocument(caretOffset, myEditor.getDocument(), prefix, lookupString);
+    PsiFile file = PsiDocumentManager.getInstance(myProject).getPsiFile(document);
+    int offset = document.hostToInjected(caretOffset);
+    int lookupStart = Math.min(offset, Math.max(offset - prefix, 0));
+    int diff = -1;
+    if (file != null) {
+      List<TextRange> ranges = InjectedLanguageManager.getInstance(myProject)
+        .intersectWithAllEditableFragments(file, TextRange.create(lookupStart, offset));
+      if (!ranges.isEmpty()) {
+        diff = ranges.get(0).getStartOffset() - lookupStart;
+        if (ranges.size() == 1 && diff == 0) diff = -1;
+      }
+    }
+    if (diff == -1) return insertLookupInDocument(caretOffset, myEditor.getDocument(), prefix, lookupString);
+    return document.injectedToHost(
+      insertLookupInDocument(offset, document, prefix - diff, diff == 0 ? lookupString : lookupString.substring(diff))
+    );
+  }
+
+  private static int insertLookupInDocument(int caretOffset, Document document, int prefix, String lookupString) {
+    int lookupStart = Math.min(caretOffset, Math.max(caretOffset - prefix, 0));
+    int len = document.getTextLength();
+    LOG.assertTrue(lookupStart >= 0 && lookupStart <= len,
+                   "ls: " + lookupStart + " caret: " + caretOffset + " prefix:" + prefix + " doc: " + len);
+    LOG.assertTrue(caretOffset >= 0 && caretOffset <= len, "co: " + caretOffset + " doc: " + len);
+    document.replaceString(lookupStart, caretOffset, lookupString);
+    return lookupStart + lookupString.length();
   }
 
   private String getCaseCorrectedLookupString(LookupElement item) {
@@ -759,12 +769,7 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
         markSelectionTouched();
 
         if (clickCount == 2){
-          CommandProcessor.getInstance().executeCommand(myProject, new Runnable() {
-            @Override
-            public void run() {
-              finishLookup(NORMAL_SELECT_CHAR);
-            }
-          }, "", null);
+          CommandProcessor.getInstance().executeCommand(myProject, () -> finishLookup(NORMAL_SELECT_CHAR), "", null);
         }
         return true;
       }
@@ -912,35 +917,18 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
   }
 
   public void replacePrefix(final String presentPrefix, final String newPrefix) {
-    if (!performGuardedChange(new Runnable() {
-      @Override
-      public void run() {
-        EditorModificationUtil.deleteSelectedText(myEditor);
-        int offset = myEditor.getCaretModel().getOffset();
-        final int start = offset - presentPrefix.length();
-        myEditor.getDocument().replaceString(start, offset, newPrefix);
-
-        Map<LookupElement, PrefixMatcher> newMatchers = new HashMap<LookupElement, PrefixMatcher>();
-        for (LookupElement item : getItems()) {
-          if (item.isValid()) {
-            PrefixMatcher matcher = itemMatcher(item).cloneWithPrefix(newPrefix);
-            if (matcher.prefixMatches(item)) {
-              newMatchers.put(item, matcher);
-            }
-          }
-        }
-        myMatchers.clear();
-        myMatchers.putAll(newMatchers);
-
-        myOffsets.clearAdditionalPrefix();
-
-        myEditor.getCaretModel().moveToOffset(start + newPrefix.length());
-      }
+    if (!performGuardedChange(() -> {
+      EditorModificationUtil.deleteSelectedText(myEditor);
+      int offset = myEditor.getCaretModel().getOffset();
+      final int start = offset - presentPrefix.length();
+      myEditor.getDocument().replaceString(start, offset, newPrefix);
+      myOffsets.clearAdditionalPrefix();
+      myEditor.getCaretModel().moveToOffset(start + newPrefix.length());
     })) {
       return;
     }
     withLock(() -> {
-      myPresentableArranger.prefixChanged(this);
+      myPresentableArranger.prefixReplaced(this, newPrefix);
       return null;
     });
     refreshUi(true, true);
@@ -972,21 +960,28 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
     return file.findElementAt(0);
   }
 
-  @Override
-  @NotNull 
-  public Editor getEditor() {
+  @Nullable
+  private DocumentWindow getInjectedDocument(int offset) {
     PsiFile hostFile = PsiDocumentManager.getInstance(myProject).getPsiFile(myEditor.getDocument());
     if (hostFile != null) {
-      int offset = myEditor.getCaretModel().getOffset();
       // inspired by com.intellij.codeInsight.editorActions.TypedHandler.injectedEditorIfCharTypedIsSignificant()
       for (DocumentWindow documentWindow : InjectedLanguageUtil.getCachedInjectedDocuments(hostFile)) {
         if (documentWindow.isValid() && documentWindow.containsRange(offset, offset)) {
-          PsiFile injectedFile = PsiDocumentManager.getInstance(myProject).getPsiFile(documentWindow);
-          return InjectedLanguageUtil.getInjectedEditorForInjectedFile(myEditor, injectedFile);
+          return documentWindow;
         }
       }
     }
+    return null;
+  }
 
+  @Override
+  @NotNull 
+  public Editor getEditor() {
+    DocumentWindow documentWindow = getInjectedDocument(myEditor.getCaretModel().getOffset());
+    if (documentWindow != null) {
+      PsiFile injectedFile = PsiDocumentManager.getInstance(myProject).getPsiFile(documentWindow);
+      return InjectedLanguageUtil.getInjectedEditorForInjectedFile(myEditor, injectedFile);
+    }
     return myEditor;
   }
 
@@ -1162,6 +1157,7 @@ public class LookupImpl extends LightweightHint implements LookupEx, Disposable,
     }
   }
 
+  @SuppressWarnings("unused")
   public void setPrefixChangeListener(PrefixChangeListener listener) {
     myPrefixChangeListener = listener;
   }

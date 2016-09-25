@@ -81,13 +81,13 @@ public class ExtractMethodObjectProcessor extends BaseRefactoringProcessor {
   private PsiField[] myOutputFields;
 
   private PsiMethod myInnerMethod;
-  private boolean myMadeStatic = false;
-  private final Set<MethodToMoveUsageInfo> myUsages = new LinkedHashSet<MethodToMoveUsageInfo>();
+  private boolean myMadeStatic;
+  private final Set<MethodToMoveUsageInfo> myUsages = new LinkedHashSet<>();
   private PsiClass myInnerClass;
   private boolean myChangeReturnType;
   private Runnable myCopyMethodToInner;
 
-  private static final Key<Boolean> GENERATED_RETURN = new Key<Boolean>("GENERATED_RETURN");
+  private static final Key<Boolean> GENERATED_RETURN = new Key<>("GENERATED_RETURN");
 
   public ExtractMethodObjectProcessor(Project project, Editor editor, PsiElement[] elements, final String innerClassName) {
     super(project);
@@ -103,7 +103,7 @@ public class ExtractMethodObjectProcessor extends BaseRefactoringProcessor {
 
   @NotNull
   protected UsageInfo[] findUsages() {
-    final ArrayList<UsageInfo> result = new ArrayList<UsageInfo>();
+    final ArrayList<UsageInfo> result = new ArrayList<>();
     final PsiClass containingClass = getMethod().getContainingClass();
     final SearchScope scope = PsiUtilCore.getVirtualFile(containingClass) == null
                               ? new LocalSearchScope(containingClass)
@@ -117,7 +117,7 @@ public class ExtractMethodObjectProcessor extends BaseRefactoringProcessor {
       }
     }
     if (isCreateInnerClass()) {
-      final Set<PsiMethod> usedMethods = new LinkedHashSet<PsiMethod>();
+      final Set<PsiMethod> usedMethods = new LinkedHashSet<>();
       getMethod().accept(new JavaRecursiveElementWalkingVisitor() {
         @Override
         public void visitMethodCallExpression(PsiMethodCallExpression expression) {
@@ -182,11 +182,9 @@ public class ExtractMethodObjectProcessor extends BaseRefactoringProcessor {
         if (myMultipleExitPoints) {
           addOutputVariableFieldsWithGetters();
         }
-        myCopyMethodToInner = new Runnable() {
-          public void run() {
-            copyMethodWithoutParameters();
-            copyMethodTypeParameters();
-          }
+        myCopyMethodToInner = () -> {
+          copyMethodWithoutParameters();
+          copyMethodTypeParameters();
         };
       } else {
         for (UsageInfo usage : usages) {
@@ -213,7 +211,7 @@ public class ExtractMethodObjectProcessor extends BaseRefactoringProcessor {
         }
         return;
       }
-      final List<MemberInfo> memberInfos = new ArrayList<MemberInfo>();
+      final List<MemberInfo> memberInfos = new ArrayList<>();
       for (MethodToMoveUsageInfo usage : myUsages) {
         memberInfos.add(new MemberInfo((PsiMethod)usage.getElement()));
       }
@@ -232,13 +230,11 @@ public class ExtractMethodObjectProcessor extends BaseRefactoringProcessor {
         }
       };
       if (dlg.showAndGet()) {
-        ApplicationManager.getApplication().runWriteAction(new Runnable() {
-          public void run() {
-            for (MemberInfoBase<PsiMember> memberInfo : panel.getTable().getSelectedMemberInfos()) {
-              if (memberInfo.isChecked()) {
-                myInnerClass.add(memberInfo.getMember().copy());
-                memberInfo.getMember().delete();
-              }
+        ApplicationManager.getApplication().runWriteAction(() -> {
+          for (MemberInfoBase<PsiMember> memberInfo : panel.getTable().getSelectedMemberInfos()) {
+            if (memberInfo.isChecked()) {
+              myInnerClass.add(memberInfo.getMember().copy());
+              memberInfo.getMember().delete();
             }
           }
         });
@@ -247,7 +243,7 @@ public class ExtractMethodObjectProcessor extends BaseRefactoringProcessor {
   }
 
   private void addOutputVariableFieldsWithGetters() throws IncorrectOperationException {
-    final Map<String, String> var2FieldNames = new HashMap<String, String>();
+    final Map<String, String> var2FieldNames = new HashMap<>();
     final PsiVariable[] outputVariables = myExtractProcessor.getOutputVariables();
     for (int i = 0; i < outputVariables.length; i++) {
       final PsiVariable var = outputVariables[i];
@@ -268,9 +264,9 @@ public class ExtractMethodObjectProcessor extends BaseRefactoringProcessor {
 
     final PsiCodeBlock body = getMethod().getBody();
     LOG.assertTrue(body != null);
-    final LinkedHashSet<PsiLocalVariable> vars = new LinkedHashSet<PsiLocalVariable>();
-    final Map<PsiElement, PsiElement> replacementMap = new LinkedHashMap<PsiElement, PsiElement>();
-    final List<PsiReturnStatement> returnStatements = new ArrayList<PsiReturnStatement>();
+    final LinkedHashSet<PsiLocalVariable> vars = new LinkedHashSet<>();
+    final Map<PsiElement, PsiElement> replacementMap = new LinkedHashMap<>();
+    final List<PsiReturnStatement> returnStatements = new ArrayList<>();
     body.accept(new JavaRecursiveElementWalkingVisitor() {
       @Override
       public void visitReturnStatement(PsiReturnStatement statement) {
@@ -420,13 +416,11 @@ public class ExtractMethodObjectProcessor extends BaseRefactoringProcessor {
   public  PsiExpression processMethodDeclaration( PsiExpressionList expressionList) throws IncorrectOperationException {
     if (isCreateInnerClass()) {
       final String typeArguments = getMethod().hasTypeParameters() ? "<" + StringUtil.join(Arrays.asList(getMethod().getTypeParameters()),
-                                                                                           new Function<PsiTypeParameter, String>() {
-                                                                                             public String fun(final PsiTypeParameter typeParameter) {
-                                                                                               final String typeParameterName =
-                                                                                                 typeParameter.getName();
-                                                                                               LOG.assertTrue(typeParameterName != null);
-                                                                                               return typeParameterName;
-                                                                                             }
+                                                                                           typeParameter -> {
+                                                                                             final String typeParameterName =
+                                                                                               typeParameter.getName();
+                                                                                             LOG.assertTrue(typeParameterName != null);
+                                                                                             return typeParameterName;
                                                                                            }, ", ") + ">" : "";
       final PsiMethodCallExpression methodCallExpression =
           (PsiMethodCallExpression)myElementFactory.createExpressionFromText("invoke" + expressionList.getText(), null);
@@ -481,7 +475,7 @@ public class ExtractMethodObjectProcessor extends BaseRefactoringProcessor {
     }
     final PsiTypeParameter[] methodTypeParameters = getMethod().getTypeParameters();
     if (methodTypeParameters.length > 0) {
-      List<String> typeSignature = new ArrayList<String>();
+      List<String> typeSignature = new ArrayList<>();
       final PsiSubstitutor substitutor = methodCallExpression.resolveMethodGenerics().getSubstitutor();
       for (final PsiTypeParameter typeParameter : methodTypeParameters) {
         final PsiType type = substitutor.substitute(typeParameter);
@@ -872,11 +866,11 @@ public class ExtractMethodObjectProcessor extends BaseRefactoringProcessor {
       final PsiStatement exitStatementCopy = myExtractProcessor.myFirstExitStatementCopy;
       if (exitStatementCopy != null) {
         myExtractProcessor.getDuplicates().clear();
-        final Map<String, PsiVariable> outVarsNames = new HashMap<String, PsiVariable>();
+        final Map<String, PsiVariable> outVarsNames = new HashMap<>();
         for (PsiVariable variable : myOutputVariables) {
           outVarsNames.put(variable.getName(), variable);
         }
-        final Map<PsiElement, PsiElement> replaceMap = new HashMap<PsiElement, PsiElement>();
+        final Map<PsiElement, PsiElement> replaceMap = new HashMap<>();
         exitStatementCopy.accept(new JavaRecursiveElementWalkingVisitor() {
           @Override
           public void visitReferenceExpression(PsiReferenceExpression expression) {

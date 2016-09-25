@@ -30,6 +30,7 @@ import com.intellij.openapi.editor.RangeMarker;
 import com.intellij.openapi.editor.colors.CodeInsightColors;
 import com.intellij.openapi.editor.colors.EditorColors;
 import com.intellij.openapi.editor.colors.EditorColorsManager;
+import com.intellij.openapi.editor.colors.EditorFontType;
 import com.intellij.openapi.editor.ex.MarkupModelEx;
 import com.intellij.openapi.editor.ex.RangeHighlighterEx;
 import com.intellij.openapi.editor.impl.DocumentMarkupModel;
@@ -46,31 +47,32 @@ import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.pom.Navigatable;
-import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
+import com.intellij.reference.SoftReference;
 import com.intellij.ui.ColorUtil;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.RetrievableIcon;
-import com.intellij.util.NotNullProducer;
 import com.intellij.util.PlatformIcons;
-import com.intellij.util.Processor;
+import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
+import java.lang.ref.Reference;
+import java.lang.ref.WeakReference;
 
 public class Bookmark implements Navigatable, Comparable<Bookmark> {
   public static final Icon DEFAULT_ICON = new MyCheckedIcon();
 
   private final VirtualFile myFile;
-  @NotNull private final OpenFileDescriptor myTarget;
+  @NotNull private OpenFileDescriptor myTarget;
   private final Project myProject;
+  private Reference<RangeHighlighterEx> myHighlighterRef;
 
   private String myDescription;
   private char myMnemonic = 0;
-  public static final Font MNEMONIC_FONT = new Font("Monospaced", Font.PLAIN, 11);
 
   public Bookmark(@NotNull Project project, @NotNull VirtualFile file, int line, @NotNull String description) {
     myFile = file;
@@ -82,6 +84,11 @@ public class Bookmark implements Navigatable, Comparable<Bookmark> {
     addHighlighter();
   }
 
+  @NotNull
+  public static Font getBookmarkFont() {
+    return EditorColorsManager.getInstance().getGlobalScheme().getFont(EditorFontType.PLAIN);
+  }
+
   @Override
   public int compareTo(Bookmark o) {
     int i = myMnemonic != 0 ? o.myMnemonic != 0 ? myMnemonic - o.myMnemonic : -1: o.myMnemonic != 0 ? 1 : 0;
@@ -90,7 +97,7 @@ public class Bookmark implements Navigatable, Comparable<Bookmark> {
     if (i != 0) return i;
     i = myFile.getName().compareTo(o.getFile().getName());
     if (i != 0) return i;
-    return myTarget.compareTo(o.myTarget);
+    return getTarget().compareTo(o.getTarget());
   }
 
   public void updateHighlighter() {
@@ -106,33 +113,34 @@ public class Bookmark implements Navigatable, Comparable<Bookmark> {
   }
 
   public RangeHighlighter createHighlighter(@NotNull MarkupModelEx markup) {
-    final RangeHighlighterEx myHighlighter;
+    final RangeHighlighterEx highlighter;
     int line = getLine();
     if (line >= 0) {
-      myHighlighter = markup.addPersistentLineHighlighter(line, HighlighterLayer.ERROR + 1, null);
-      if (myHighlighter != null) {
-        myHighlighter.setGutterIconRenderer(new MyGutterIconRenderer(this));
+      highlighter = markup.addPersistentLineHighlighter(line, HighlighterLayer.ERROR + 1, null);
+      if (highlighter != null) {
+        highlighter.setGutterIconRenderer(new MyGutterIconRenderer(this));
 
         TextAttributes textAttributes =
           EditorColorsManager.getInstance().getGlobalScheme().getAttributes(CodeInsightColors.BOOKMARKS_ATTRIBUTES);
 
         Color stripeColor = textAttributes.getErrorStripeColor();
-        myHighlighter.setErrorStripeMarkColor(stripeColor != null ? stripeColor : Color.black);
-        myHighlighter.setErrorStripeTooltip(getBookmarkTooltip());
+        highlighter.setErrorStripeMarkColor(stripeColor != null ? stripeColor : Color.black);
+        highlighter.setErrorStripeTooltip(getBookmarkTooltip());
 
-        TextAttributes attributes = myHighlighter.getTextAttributes();
+        TextAttributes attributes = highlighter.getTextAttributes();
         if (attributes == null) {
           attributes = new TextAttributes();
         }
         attributes.setBackgroundColor(textAttributes.getBackgroundColor());
         attributes.setForegroundColor(textAttributes.getForegroundColor());
-        myHighlighter.setTextAttributes(attributes);
+        highlighter.setTextAttributes(attributes);
       }
     }
     else {
-      myHighlighter = null;
+      highlighter = null;
     }
-    return myHighlighter;
+    myHighlighterRef = highlighter == null ? null : new WeakReference<>(highlighter);
+    return highlighter;
   }
 
   @Nullable
@@ -141,31 +149,46 @@ public class Bookmark implements Navigatable, Comparable<Bookmark> {
   }
 
   public void release() {
-    int line = getLine();
-    if (line < 0) {
-      return;
-    }
+      int line = getLine();
+      if (line < 0) {
+        return;
+      }
+      final Document document = getDocument();
+      if (document == null) return;
+      MarkupModelEx markup = (MarkupModelEx)DocumentMarkupModel.forDocument(document, myProject, true);
+      final Document markupDocument = markup.getDocument();
+      if (markupDocument.getLineCount() <= line) return;
+      RangeHighlighterEx highlighter = findMyHighlighter();
+      if (highlighter != null) {
+        myHighlighterRef = null;
+        highlighter.dispose();
+      }
+  }
+
+  private RangeHighlighterEx findMyHighlighter() {
     final Document document = getDocument();
-    if (document == null) return;
+    if (document == null) return null;
+    RangeHighlighterEx result = SoftReference.dereference(myHighlighterRef);
+    if (result != null) {
+      return result;
+    }
     MarkupModelEx markup = (MarkupModelEx)DocumentMarkupModel.forDocument(document, myProject, true);
     final Document markupDocument = markup.getDocument();
-    if (markupDocument.getLineCount() <= line) return;
-    final int startOffset = markupDocument.getLineStartOffset(line);
-    final int endOffset = markupDocument.getLineEndOffset(line);
+    final int startOffset = 0;
+    final int endOffset = markupDocument.getTextLength();
 
-    final Ref<RangeHighlighterEx> found = new Ref<RangeHighlighterEx>();
-    markup.processRangeHighlightersOverlappingWith(startOffset, endOffset, new Processor<RangeHighlighterEx>() {
-      @Override
-      public boolean process(RangeHighlighterEx highlighter) {
-        GutterMark renderer = highlighter.getGutterIconRenderer();
-        if (renderer instanceof MyGutterIconRenderer && ((MyGutterIconRenderer)renderer).myBookmark == Bookmark.this) {
-          found.set(highlighter);
-          return false;
-        }
-        return true;
+    final Ref<RangeHighlighterEx> found = new Ref<>();
+    markup.processRangeHighlightersOverlappingWith(startOffset, endOffset, highlighter -> {
+      GutterMark renderer = highlighter.getGutterIconRenderer();
+      if (renderer instanceof MyGutterIconRenderer && ((MyGutterIconRenderer)renderer).myBookmark == this) {
+        found.set(highlighter);
+        return false;
       }
+      return true;
     });
-    if (!found.isNull()) found.get().dispose();
+    result = found.get();
+    myHighlighterRef = result == null ? null : new WeakReference<>(result);
+    return result;
   }
 
   public Icon getIcon() {
@@ -202,35 +225,53 @@ public class Bookmark implements Navigatable, Comparable<Bookmark> {
     if (!getFile().isValid()) {
       return false;
     }
-
-    // There is a possible case that target document line that is referenced by the current bookmark is removed. We assume
-    // that corresponding range marker becomes invalid then.
-    RangeMarker rangeMarker = myTarget.getRangeMarker();
-    return rangeMarker == null || rangeMarker.isValid();
+    if (getLine() ==-1) {
+      return true;
+    }
+    RangeHighlighterEx highlighter = findMyHighlighter();
+    return highlighter != null && highlighter.isValid();
   }
 
   @Override
   public boolean canNavigate() {
-    return myTarget.canNavigate();
+    return getTarget().canNavigate();
   }
 
   @Override
   public boolean canNavigateToSource() {
-    return myTarget.canNavigateToSource();
+    return getTarget().canNavigateToSource();
   }
 
   @Override
   public void navigate(boolean requestFocus) {
-    myTarget.navigate(requestFocus);
+    getTarget().navigate(requestFocus);
   }
 
   public int getLine() {
+    int targetLine = myTarget.getLine();
+    if (targetLine == -1) return targetLine;
+    //What user sees in gutter
+    RangeHighlighterEx highlighter = findMyHighlighter();
+    if (highlighter != null && highlighter.isValid()) {
+      Document document = getDocument();
+      if (document != null) {
+        return document.getLineNumber(highlighter.getStartOffset());
+      }
+    }
     RangeMarker marker = myTarget.getRangeMarker();
     if (marker != null && marker.isValid()) {
       Document document = marker.getDocument();
       return document.getLineNumber(marker.getStartOffset());
     }
-    return myTarget.getLine();
+    return targetLine;
+  }
+
+  private OpenFileDescriptor getTarget() {
+    int line = getLine();
+    if (line != myTarget.getLine()) {
+      myTarget = new OpenFileDescriptor(myProject, myFile, line, -1, true);
+    }
+    return myTarget;
   }
 
   @Override
@@ -247,7 +288,6 @@ public class Bookmark implements Navigatable, Comparable<Bookmark> {
     String presentableUrl = myFile.getPresentableUrl();
     if (myFile.isDirectory()) return presentableUrl;
 
-    PsiDocumentManager.getInstance(myProject).commitAllDocuments();
     final PsiFile psiFile = PsiManager.getInstance(myProject).findFile(myFile);
 
     if (psiFile == null) return presentableUrl;
@@ -307,24 +347,23 @@ public class Bookmark implements Navigatable, Comparable<Bookmark> {
 
     @Override
     public void paintIcon(Component c, Graphics g, int x, int y) {
-      g.setColor(new JBColor(new NotNullProducer<Color>() {
-        @NotNull
-        @Override
-        public Color produce() {
-          //noinspection UseJBColor
-          return !darkBackground() ? new Color(0xffffcc) : new Color(0x675133);
-        }
+      int width = getIconWidth();
+      int height = getIconHeight();
+
+      g.setColor(new JBColor(() -> {
+        //noinspection UseJBColor
+        return !darkBackground() ? new Color(0xffffcc) : new Color(0x675133);
       }));
-      g.fillRect(x, y, getIconWidth(), getIconHeight());
+      g.fillRect(x, y, width, height);
 
       g.setColor(JBColor.GRAY);
-      g.drawRect(x, y, getIconWidth(), getIconHeight());
+      g.drawRect(x, y, width, height);
 
       g.setColor(EditorColorsManager.getInstance().getGlobalScheme().getDefaultForeground());
       final Font oldFont = g.getFont();
-      g.setFont(MNEMONIC_FONT);
+      g.setFont(getBookmarkFont());
 
-      ((Graphics2D)g).drawString(Character.toString(myMnemonic), x + 3, y + getIconHeight() - 1.5F);
+      UIUtil.drawCenteredString((Graphics2D)g, new Rectangle(x, y, width, height), Character.toString(myMnemonic));
       g.setFont(oldFont);
     }
 

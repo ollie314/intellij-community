@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2013 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,7 +38,7 @@ public class EditConfigurationsDialog extends SingleConfigurableEditor implement
   }
 
   public EditConfigurationsDialog(final Project project, @Nullable final ConfigurationFactory factory) {
-    super(project, new RunConfigurable(project).selectConfigurableOnShow(factory == null), "#com.intellij.execution.impl.EditConfigurationsDialog", IdeModalityType.PROJECT);
+    super(project, new RunConfigurable(project).selectConfigurableOnShow(factory == null), "#com.intellij.execution.impl.EditConfigurationsDialog", IdeModalityType.IDE);
     ((RunConfigurable)getConfigurable()).setRunDialog(this);
     setTitle(ExecutionBundle.message("run.debug.dialog.title"));
     setHorizontalStretch(1.3F);
@@ -51,12 +51,7 @@ public class EditConfigurationsDialog extends SingleConfigurableEditor implement
   public void show() {
     // run configurations don't support dumb mode yet, but some code inside them may trigger root change and start it
     // so let it be modal to prevent IndexNotReadyException from the configuration editors
-    DumbService.allowStartingDumbModeInside(DumbModePermission.MAY_START_MODAL, new Runnable() {
-      @Override
-      public void run() {
-        EditConfigurationsDialog.super.show();
-      }
-    });
+    DumbService.allowStartingDumbModeInside(DumbModePermission.MAY_START_MODAL, () -> super.show());
   }
 
   public void addRunConfiguration(@NotNull final ConfigurationFactory factory) {
@@ -90,10 +85,5 @@ public class EditConfigurationsDialog extends SingleConfigurableEditor implement
   @Override
   public Executor getExecutor() {
     return myExecutor;
-  }
-
-  @Override
-  public void setOKActionEnabled(boolean isEnabled) {
-    super.setOKActionEnabled(isEnabled);
   }
 }

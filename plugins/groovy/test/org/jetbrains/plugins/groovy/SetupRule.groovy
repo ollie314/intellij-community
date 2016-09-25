@@ -16,6 +16,7 @@
 package org.jetbrains.plugins.groovy
 
 import com.intellij.testFramework.EdtTestUtil
+import com.intellij.testFramework.LightProjectDescriptor
 import groovy.transform.CompileStatic
 import org.junit.rules.TestRule
 import org.junit.runner.Description
@@ -25,7 +26,7 @@ import org.junit.runners.model.Statement
 class SetupRule implements TestRule {
 
   final LightGroovyTestCase testCase = new LightGroovyTestCase() {
-    String basePath = ""
+    LightProjectDescriptor projectDescriptor = GroovyLightProjectDescriptor.GROOVY_LATEST_REAL_JDK
   }
 
   @Override

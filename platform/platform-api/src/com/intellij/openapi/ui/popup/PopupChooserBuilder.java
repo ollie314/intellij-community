@@ -49,7 +49,7 @@ public class PopupChooserBuilder {
 
   private JComponent myChooserComponent;
   private String myTitle;
-  private final ArrayList<KeyStroke> myAdditionalKeystrokes = new ArrayList<KeyStroke>();
+  private final ArrayList<KeyStroke> myAdditionalKeystrokes = new ArrayList<>();
   private Runnable myItemChosenRunnable;
   private JComponent mySouthComponent;
   private JComponent myEastComponent;
@@ -70,7 +70,7 @@ public class PopupChooserBuilder {
   private String myAd;
   private Dimension myMinSize;
   private ActiveComponent myCommandButton;
-  private final List<Pair<ActionListener,KeyStroke>> myKeyboardActions = new ArrayList<Pair<ActionListener, KeyStroke>>();
+  private final List<Pair<ActionListener,KeyStroke>> myKeyboardActions = new ArrayList<>();
   private Component mySettingsButtons;
   private boolean myAutoselectOnMouseMove = true;
 
@@ -212,12 +212,7 @@ public class PopupChooserBuilder {
     if (myChooserComponent instanceof JList) {
       list = (JList)myChooserComponent;
       myChooserComponent = ListWithFilter.wrap(list, new MyListWrapper(list), myItemsNamer);
-      keyEventHandler = new BooleanFunction<KeyEvent>() {
-        @Override
-        public boolean fun(KeyEvent keyEvent) {
-          return keyEvent.isConsumed();
-        }
-      };
+      keyEventHandler = keyEvent -> keyEvent.isConsumed();
     }
     else {
       list = null;
@@ -536,6 +531,7 @@ public class PopupChooserBuilder {
         return super.getPreferredSize();
       }
       Dimension size = myList.getPreferredSize();
+      size.height = Math.min(size.height, myList.getPreferredScrollableViewportSize().height);
       JScrollBar bar = getVerticalScrollBar();
       if (bar != null) size.width += bar.getPreferredSize().width;
       return size;

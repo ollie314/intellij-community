@@ -37,6 +37,7 @@ import com.intellij.openapi.actionSystem.ActionPlaces;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.MessageDialogBuilder;
@@ -66,7 +67,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-public class PopFrameAction extends DebuggerAction {
+public class PopFrameAction extends DebuggerAction implements DumbAware {
   public void actionPerformed(@NotNull AnActionEvent e) {
     final Project project = e.getData(CommonDataKeys.PROJECT);
     final JavaStackFrame stackFrame = getStackFrame(e);
@@ -92,15 +93,10 @@ public class PopFrameAction extends DebuggerAction {
 
                                   @Override
                                   public void errorOccurred(@NotNull final String errorMessage) {
-                                    ApplicationManager.getApplication().invokeLater(new Runnable() {
-                                      @Override
-                                      public void run() {
-                                        Messages
-                                          .showMessageDialog(project, DebuggerBundle.message("error.executing.finally", errorMessage),
-                                                             UIUtil.removeMnemonic(ActionsBundle.actionText(DebuggerActions.POP_FRAME)),
-                                                             Messages.getErrorIcon());
-                                      }
-                                    });
+                                    ApplicationManager.getApplication().invokeLater(() -> Messages
+                                      .showMessageDialog(project, DebuggerBundle.message("error.executing.finally", errorMessage),
+                                                         UIUtil.removeMnemonic(ActionsBundle.actionText(DebuggerActions.POP_FRAME)),
+                                                         Messages.getErrorIcon()));
                                   }
                                 })) return;
       popFrame(debugProcess, debuggerContext, stackFrame);

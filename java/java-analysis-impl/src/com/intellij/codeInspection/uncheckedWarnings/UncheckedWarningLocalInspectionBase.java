@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2013 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,11 +50,11 @@ public class UncheckedWarningLocalInspectionBase extends BaseJavaBatchLocalInspe
   public static final String DISPLAY_NAME = InspectionsBundle.message("unchecked.warning");
   @NonNls private static final String ID = "unchecked";
   private static final Logger LOG = Logger.getInstance("#" + UncheckedWarningLocalInspectionBase.class);
-  public boolean IGNORE_UNCHECKED_ASSIGNMENT = false;
-  public boolean IGNORE_UNCHECKED_GENERICS_ARRAY_CREATION = false;
-  public boolean IGNORE_UNCHECKED_CALL = false;
-  public boolean IGNORE_UNCHECKED_CAST = false;
-  public boolean IGNORE_UNCHECKED_OVERRIDING = false;
+  public boolean IGNORE_UNCHECKED_ASSIGNMENT;
+  public boolean IGNORE_UNCHECKED_GENERICS_ARRAY_CREATION;
+  public boolean IGNORE_UNCHECKED_CALL;
+  public boolean IGNORE_UNCHECKED_CAST;
+  public boolean IGNORE_UNCHECKED_OVERRIDING;
 
   protected static JCheckBox createSetting(final String cbText,
                                            final boolean option,
@@ -71,7 +71,7 @@ public class UncheckedWarningLocalInspectionBase extends BaseJavaBatchLocalInspe
 
   public static LocalQuickFix[] getChangeVariableTypeFixes(@NotNull PsiVariable parameter, PsiType itemType, LocalQuickFix[] generifyFixes) {
     if (itemType instanceof PsiMethodReferenceType) return generifyFixes;
-    final List<LocalQuickFix> result = new ArrayList<LocalQuickFix>();
+    final List<LocalQuickFix> result = new ArrayList<>();
     LOG.assertTrue(parameter.isValid());
     if (itemType != null) {
       for (ChangeVariableTypeQuickFixProvider fixProvider : Extensions.getExtensions(ChangeVariableTypeQuickFixProvider.EP_NAME)) {

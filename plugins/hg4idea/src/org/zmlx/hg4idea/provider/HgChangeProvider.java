@@ -20,7 +20,6 @@ import com.intellij.openapi.vcs.changes.*;
 import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.JBColor;
-import com.intellij.util.Function;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.vcsUtil.VcsUtil;
 import org.jetbrains.annotations.NotNull;
@@ -46,7 +45,7 @@ public class HgChangeProvider implements ChangeProvider {
                                                                                             JBColor.CYAN.darker().darker());
 
   private static final EnumMap<HgFileStatusEnum, HgChangeProcessor> PROCESSORS =
-    new EnumMap<HgFileStatusEnum, HgChangeProcessor>(HgFileStatusEnum.class);
+    new EnumMap<>(HgFileStatusEnum.class);
 
   static {
     PROCESSORS.put(HgFileStatusEnum.ADDED, HgChangeProcessor.ADDED);
@@ -74,14 +73,14 @@ public class HgChangeProvider implements ChangeProvider {
   public void getChanges(@NotNull VcsDirtyScope dirtyScope, @NotNull ChangelistBuilder builder,
                          @NotNull ProgressIndicator progress, @NotNull ChangeListManagerGate addGate) throws VcsException {
     if (myProject.isDisposed()) return;
-    final Collection<HgChange> changes = new HashSet<HgChange>();
+    final Collection<HgChange> changes = new HashSet<>();
     changes.addAll(process(builder, dirtyScope.getRecursivelyDirtyDirectories()));
     changes.addAll(process(builder, dirtyScope.getDirtyFiles()));
     processUnsavedChanges(builder, dirtyScope.getDirtyFilesNoExpand(), changes);
   }
 
   private Collection<HgChange> process(ChangelistBuilder builder, Collection<FilePath> files) {
-    final Set<HgChange> hgChanges = new HashSet<HgChange>();
+    final Set<HgChange> hgChanges = new HashSet<>();
     for (Map.Entry<VirtualFile, Collection<FilePath>> entry : HgUtil.groupFilePathsByHgRoots(myProject, files).entrySet()) {
       VirtualFile repo = entry.getKey();
 
@@ -92,12 +91,7 @@ public class HgChangeProvider implements ChangeProvider {
       hgChanges.addAll(new HgStatusCommand.Builder(true).build(myProject).executeInCurrentThread(repo, entry.getValue()));
       final HgRepository hgRepo = HgUtil.getRepositoryForFile(myProject, repo);
       if (hgRepo != null && hgRepo.hasSubrepos()) {
-        hgChanges.addAll(ContainerUtil.mapNotNull(hgRepo.getSubrepos(), new Function<HgNameWithHashInfo, HgChange>() {
-          @Override
-          public HgChange fun(HgNameWithHashInfo info) {
-            return findChange(hgRepo, info);
-          }
-        }));
+        hgChanges.addAll(ContainerUtil.mapNotNull(hgRepo.getSubrepos(), info -> findChange(hgRepo, info)));
       }
 
       sendChanges(builder, hgChanges, list, workingRevision, parentRevision);
@@ -180,7 +174,7 @@ public class HgChangeProvider implements ChangeProvider {
       if (vf != null &&  fileDocumentManager.isFileModified(vf)) {
         final VirtualFile root = vcsManager.getVcsRootFor(vf);
         if (root != null && HgUtil.isHgRoot(root)) {
-          final HgRevisionNumber beforeRevisionNumber = new HgWorkingCopyRevisionsCommand(myProject).tip(root);
+          final HgRevisionNumber beforeRevisionNumber = new HgWorkingCopyRevisionsCommand(myProject).firstParent(root);
           final ContentRevision beforeRevision = (beforeRevisionNumber == null ? null :
                                                   HgContentRevision.create(myProject, new HgFile(myProject, vf), beforeRevisionNumber));
           builder.processChange(new Change(beforeRevision, CurrentContentRevision.create(filePath), FileStatus.MODIFIED), myVcsKey);

@@ -81,8 +81,8 @@ public class AddSupportForFrameworksPanel implements Disposable {
   private final FrameworkSupportModelBase myModel;
   private final JPanel myOptionsPanel;
   private final FrameworksTree myFrameworksTree;
-  private final Map<FrameworkSupportNode, FrameworkSupportOptionsComponent> myInitializedOptionsComponents = new HashMap<FrameworkSupportNode, FrameworkSupportOptionsComponent>();
-  private final Map<FrameworkGroup<?>, JPanel> myInitializedGroupPanels = new HashMap<FrameworkGroup<?>, JPanel>();
+  private final Map<FrameworkSupportNode, FrameworkSupportOptionsComponent> myInitializedOptionsComponents = new HashMap<>();
+  private final Map<FrameworkGroup<?>, JPanel> myInitializedGroupPanels = new HashMap<>();
   private FrameworkSupportNodeBase myLastSelectedNode;
 
   private Collection<FrameworkSupportNodeBase> myAssociatedFrameworks;
@@ -286,7 +286,7 @@ public class AddSupportForFrameworksPanel implements Disposable {
   }
 
   private List<LibraryCompositionSettings> getLibrariesCompositionSettingsList() {
-    List<LibraryCompositionSettings> list = new ArrayList<LibraryCompositionSettings>();
+    List<LibraryCompositionSettings> list = new ArrayList<>();
     List<FrameworkSupportNode> selected = getSelectedNodes();
     for (FrameworkSupportNode node : selected) {
       ContainerUtil.addIfNotNull(list, getLibraryCompositionSettings(node));
@@ -303,20 +303,16 @@ public class AddSupportForFrameworksPanel implements Disposable {
   private Collection<FrameworkSupportNodeBase> createNodes(List<FrameworkSupportInModuleProvider> providers,
                                                            Set<String> associated,
                                                            final Set<String> preselected) {
-    Map<String, FrameworkSupportNode> nodes = new HashMap<String, FrameworkSupportNode>();
-    Map<FrameworkGroup<?>, FrameworkGroupNode> groups = new HashMap<FrameworkGroup<?>, FrameworkGroupNode>();
-    List<FrameworkSupportNodeBase> roots = new ArrayList<FrameworkSupportNodeBase>();
-    Map<String, FrameworkSupportNodeBase> associatedNodes = new LinkedHashMap<String, FrameworkSupportNodeBase>();
+    Map<String, FrameworkSupportNode> nodes = new HashMap<>();
+    Map<FrameworkGroup<?>, FrameworkGroupNode> groups = new HashMap<>();
+    List<FrameworkSupportNodeBase> roots = new ArrayList<>();
+    Map<String, FrameworkSupportNodeBase> associatedNodes = new LinkedHashMap<>();
     for (FrameworkSupportInModuleProvider provider : providers) {
       createNode(provider, nodes, groups, roots, providers, associated, associatedNodes);
     }
 
-    FrameworkSupportNodeBase.sortByName(roots, new Comparator<FrameworkSupportNodeBase>() {
-      @Override
-      public int compare(FrameworkSupportNodeBase o1, FrameworkSupportNodeBase o2) {
-        return Comparing.compare(preselected.contains(o2.getId()), preselected.contains(o1.getId()));
-      }
-    });
+    FrameworkSupportNodeBase.sortByName(roots,
+                                        (o1, o2) -> Comparing.compare(preselected.contains(o2.getId()), preselected.contains(o1.getId())));
     myRoots = roots;
     return associatedNodes.values();
   }
@@ -385,11 +381,11 @@ public class AddSupportForFrameworksPanel implements Disposable {
   }
 
   public List<FrameworkSupportNode> getSelectedNodes() {
-    List<FrameworkSupportNode> list = new ArrayList<FrameworkSupportNode>();
+    List<FrameworkSupportNode> list = new ArrayList<>();
     if (myRoots != null) {
       addChildFrameworks(myRoots, list);
     }
-    list.addAll(ContainerUtil.mapNotNull(myAssociatedFrameworks, new Function.InstanceOf<FrameworkSupportNodeBase, FrameworkSupportNode>(FrameworkSupportNode.class)));
+    list.addAll(ContainerUtil.mapNotNull(myAssociatedFrameworks, new Function.InstanceOf<>(FrameworkSupportNode.class)));
     return list;
   }
 
@@ -407,16 +403,13 @@ public class AddSupportForFrameworksPanel implements Disposable {
 
   public boolean downloadLibraries(@NotNull final JComponent parentComponent) {
     final Ref<Boolean> result = Ref.create(true);
-    DumbService.allowStartingDumbModeInside(DumbModePermission.MAY_START_BACKGROUND, new Runnable() {
-      @Override
-      public void run() {
-        applyLibraryOptionsForSelected();
-        List<LibraryCompositionSettings> list = getLibrariesCompositionSettingsList();
-        for (LibraryCompositionSettings compositionSettings : list) {
-          if (!compositionSettings.downloadFiles(parentComponent)) {
-            result.set(false);
-            return;
-          }
+    DumbService.allowStartingDumbModeInside(DumbModePermission.MAY_START_BACKGROUND, () -> {
+      applyLibraryOptionsForSelected();
+      List<LibraryCompositionSettings> list = getLibrariesCompositionSettingsList();
+      for (LibraryCompositionSettings compositionSettings : list) {
+        if (!compositionSettings.downloadFiles(parentComponent)) {
+          result.set(false);
+          return;
         }
       }
     });
@@ -434,7 +427,7 @@ public class AddSupportForFrameworksPanel implements Disposable {
 
   public boolean validate() {
     applyLibraryOptionsForSelected();
-    List<String> frameworksWithoutRequiredLibraries = new ArrayList<String>();
+    List<String> frameworksWithoutRequiredLibraries = new ArrayList<>();
     for (FrameworkSupportNode node : getSelectedNodes()) {
       if (node.getConfigurable().isOnlyLibraryAdded()) {
         LibraryCompositionSettings librarySettings = getLibraryCompositionSettings(node);
@@ -454,10 +447,10 @@ public class AddSupportForFrameworksPanel implements Disposable {
   }
 
   public void addSupport(final @NotNull Module module, final @NotNull ModifiableRootModel rootModel) {
-    List<Library> addedLibraries = new ArrayList<Library>();
+    List<Library> addedLibraries = new ArrayList<>();
     List<FrameworkSupportNode> selectedFrameworks = getSelectedNodes();
     sortFrameworks(selectedFrameworks);
-    List<FrameworkSupportConfigurable> selectedConfigurables = new ArrayList<FrameworkSupportConfigurable>();
+    List<FrameworkSupportConfigurable> selectedConfigurables = new ArrayList<>();
     final IdeaModifiableModelsProvider modifiableModelsProvider = new IdeaModifiableModelsProvider();
     for (FrameworkSupportNode node : selectedFrameworks) {
       FrameworkSupportInModuleConfigurable configurable = node.getConfigurable();
@@ -490,10 +483,6 @@ public class AddSupportForFrameworksPanel implements Disposable {
 
   private void sortFrameworks(final List<FrameworkSupportNode> nodes) {
     final Comparator<FrameworkSupportInModuleProvider> comparator = FrameworkSupportUtil.getFrameworkSupportProvidersComparator(myProviders);
-    Collections.sort(nodes, new Comparator<FrameworkSupportNode>() {
-      public int compare(final FrameworkSupportNode o1, final FrameworkSupportNode o2) {
-        return comparator.compare(o1.getUserObject(), o2.getUserObject());
-      }
-    });
+    Collections.sort(nodes, (o1, o2) -> comparator.compare(o1.getUserObject(), o2.getUserObject()));
   }
 }

@@ -1,3 +1,18 @@
+/*
+ * Copyright 2000-2016 JetBrains s.r.o.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.intellij.util.net.ssl;
 
 import com.intellij.openapi.fileChooser.FileChooser;
@@ -54,7 +69,7 @@ public class CertificateConfigurable implements SearchableConfigurable, Configur
 
   private Tree myTree;
   private CertificateTreeBuilder myTreeBuilder;
-  private Set<X509Certificate> myCertificates = new HashSet<X509Certificate>();
+  private Set<X509Certificate> myCertificates = new HashSet<>();
 
   private void initializeUI() {
     myTree = new Tree();
@@ -78,23 +93,20 @@ public class CertificateConfigurable implements SearchableConfigurable, Configur
       @Override
       public void run(AnActionButton button) {
         // show choose file dialog, add certificate
-        FileChooser.chooseFile(CERTIFICATE_DESCRIPTOR, null, null, new Consumer<VirtualFile>() {
-          @Override
-          public void consume(VirtualFile file) {
-            String path = file.getPath();
-            X509Certificate certificate = CertificateUtil.loadX509Certificate(path);
-            if (certificate == null) {
-              Messages.showErrorDialog(myRootPanel, "Malformed X509 server certificate", "Not Imported");
-            }
-            else if (myCertificates.contains(certificate)) {
-              Messages.showWarningDialog(myRootPanel, "Certificate already exists", "Not Imported");
-            }
-            else {
-              myCertificates.add(certificate);
-              myTreeBuilder.addCertificate(certificate);
-              addCertificatePanel(certificate);
-              myTreeBuilder.selectCertificate(certificate);
-            }
+        FileChooser.chooseFile(CERTIFICATE_DESCRIPTOR, null, null, file -> {
+          String path = file.getPath();
+          X509Certificate certificate = CertificateUtil.loadX509Certificate(path);
+          if (certificate == null) {
+            Messages.showErrorDialog(myRootPanel, "Malformed X509 server certificate", "Not Imported");
+          }
+          else if (myCertificates.contains(certificate)) {
+            Messages.showWarningDialog(myRootPanel, "Certificate already exists", "Not Imported");
+          }
+          else {
+            myCertificates.add(certificate);
+            myTreeBuilder.addCertificate(certificate);
+            addCertificatePanel(certificate);
+            myTreeBuilder.selectCertificate(certificate);
           }
         });
       }
@@ -150,12 +162,6 @@ public class CertificateConfigurable implements SearchableConfigurable, Configur
     return "http.certificates";
   }
 
-  @Nullable
-  @Override
-  public Runnable enableSearch(String option) {
-    return null;
-  }
-
   @Nls
   @Override
   public String getDisplayName() {
@@ -183,17 +189,17 @@ public class CertificateConfigurable implements SearchableConfigurable, Configur
     return myAcceptAutomatically.isSelected() != state.ACCEPT_AUTOMATICALLY ||
            myCheckHostname.isSelected() != state.CHECK_HOSTNAME ||
            myCheckValidityPeriod.isSelected() != state.CHECK_VALIDITY ||
-           !myCertificates.equals(new HashSet<X509Certificate>(myTrustManager.getCertificates()));
+           !myCertificates.equals(new HashSet<>(myTrustManager.getCertificates()));
   }
 
   @Override
   public void apply() throws ConfigurationException {
     List<X509Certificate> existing = myTrustManager.getCertificates();
 
-    Set<X509Certificate> added = new HashSet<X509Certificate>(myCertificates);
+    Set<X509Certificate> added = new HashSet<>(myCertificates);
     added.removeAll(existing);
 
-    Set<X509Certificate> removed = new HashSet<X509Certificate>(existing);
+    Set<X509Certificate> removed = new HashSet<>(existing);
     removed.removeAll(myCertificates);
 
     for (X509Certificate certificate : added) {
@@ -248,26 +254,21 @@ public class CertificateConfigurable implements SearchableConfigurable, Configur
 
   @Override
   public void certificateAdded(final X509Certificate certificate) {
-    UIUtil.invokeLaterIfNeeded(new Runnable() {
-      @Override
-      public void run() {
-        if (myTreeBuilder != null && !myCertificates.contains(certificate)) {
-          myCertificates.add(certificate);
-          myTreeBuilder.addCertificate(certificate);
-          addCertificatePanel(certificate);
-        }
+    UIUtil.invokeLaterIfNeeded(() -> {
+      if (myTreeBuilder != null && !myCertificates.contains(certificate)) {
+        myCertificates.add(certificate);
+        myTreeBuilder.addCertificate(certificate);
+        addCertificatePanel(certificate);
       }
     });
   }
 
   @Override
   public void certificateRemoved(final X509Certificate certificate) {
-    UIUtil.invokeLaterIfNeeded(new Runnable() {
-      public void run() {
-        if (myTreeBuilder != null && myCertificates.contains(certificate)) {
-          myCertificates.remove(certificate);
-          myTreeBuilder.removeCertificate(certificate);
-        }
+    UIUtil.invokeLaterIfNeeded(() -> {
+      if (myTreeBuilder != null && myCertificates.contains(certificate)) {
+        myCertificates.remove(certificate);
+        myTreeBuilder.removeCertificate(certificate);
       }
     });
   }

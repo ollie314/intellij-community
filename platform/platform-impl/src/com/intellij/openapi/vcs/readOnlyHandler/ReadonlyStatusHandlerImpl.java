@@ -24,7 +24,6 @@ import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.components.StoragePathMacros;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.MultiValuesMap;
 import com.intellij.openapi.vfs.ReadonlyStatusHandler;
 import com.intellij.openapi.vfs.VfsUtilCore;
@@ -34,6 +33,7 @@ import com.intellij.util.containers.ContainerUtil;
 import gnu.trove.THashSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.TestOnly;
 
 import java.util.*;
 
@@ -41,6 +41,7 @@ import java.util.*;
 public class ReadonlyStatusHandlerImpl extends ReadonlyStatusHandler implements PersistentStateComponent<ReadonlyStatusHandlerImpl.State> {
   private final Project myProject;
   private final WritingAccessProvider[] myAccessProviders;
+  protected boolean myClearReadOnlyInTests;
 
   public static class State {
     public boolean SHOW_DIALOG = true;
@@ -70,7 +71,7 @@ public class ReadonlyStatusHandlerImpl extends ReadonlyStatusHandler implements 
     }
     ApplicationManager.getApplication().assertIsDispatchThread();
 
-    Set<VirtualFile> realFiles = new THashSet<VirtualFile>(files.length);
+    Set<VirtualFile> realFiles = new THashSet<>(files.length);
     for (VirtualFile file : files) {
       if (file instanceof VirtualFileWindow) file = ((VirtualFileWindow)file).getDelegate();
       if (file != null) {
@@ -80,12 +81,7 @@ public class ReadonlyStatusHandlerImpl extends ReadonlyStatusHandler implements 
     files = VfsUtilCore.toVirtualFileArray(realFiles);
 
     for (final WritingAccessProvider accessProvider : myAccessProviders) {
-      Collection<VirtualFile> denied = ContainerUtil.filter(files, new Condition<VirtualFile>() {
-        @Override
-        public boolean value(final VirtualFile virtualFile) {
-          return !accessProvider.isPotentiallyWritable(virtualFile);
-        }
-      });
+      Collection<VirtualFile> denied = ContainerUtil.filter(files, virtualFile -> !accessProvider.isPotentiallyWritable(virtualFile));
 
       if (denied.isEmpty()) {
         denied = accessProvider.requestWriting(files);
@@ -101,6 +97,9 @@ public class ReadonlyStatusHandlerImpl extends ReadonlyStatusHandler implements 
     }
     
     if (ApplicationManager.getApplication().isUnitTestMode()) {
+      if (myClearReadOnlyInTests) {
+        processFiles(new ArrayList<>(Arrays.asList(fileInfos)), null);
+      }
       return createResultStatus(files);
     }
 
@@ -112,14 +111,14 @@ public class ReadonlyStatusHandlerImpl extends ReadonlyStatusHandler implements 
       new ReadOnlyStatusDialog(myProject, fileInfos).show();
     }
     else {
-      processFiles(new ArrayList<FileInfo>(Arrays.asList(fileInfos)), null); // the collection passed is modified
+      processFiles(new ArrayList<>(Arrays.asList(fileInfos)), null); // the collection passed is modified
     }
     IdeEventQueue.getInstance().setEventCount(savedEventCount);
     return createResultStatus(files);
   }
 
   private static OperationStatus createResultStatus(final VirtualFile[] files) {
-    List<VirtualFile> readOnlyFiles = new ArrayList<VirtualFile>();
+    List<VirtualFile> readOnlyFiles = new ArrayList<>();
     for (VirtualFile file : files) {
       if (file.exists()) {
         if (!file.isWritable()) {
@@ -132,7 +131,7 @@ public class ReadonlyStatusHandlerImpl extends ReadonlyStatusHandler implements 
   }
 
   private FileInfo[] createFileInfos(VirtualFile[] files) {
-    List<FileInfo> fileInfos = new ArrayList<FileInfo>();
+    List<FileInfo> fileInfos = new ArrayList<>();
     for (final VirtualFile file : files) {
       if (file != null && !file.isWritable() && file.isInLocalFileSystem()) {
         fileInfos.add(new FileInfo(file, myProject));
@@ -143,7 +142,7 @@ public class ReadonlyStatusHandlerImpl extends ReadonlyStatusHandler implements 
 
   public static void processFiles(final List<FileInfo> fileInfos, @Nullable String changelist) {
     FileInfo[] copy = fileInfos.toArray(new FileInfo[fileInfos.size()]);
-    MultiValuesMap<HandleType, VirtualFile> handleTypeToFile = new MultiValuesMap<HandleType, VirtualFile>();
+    MultiValuesMap<HandleType, VirtualFile> handleTypeToFile = new MultiValuesMap<>();
     for (FileInfo fileInfo : copy) {
       handleTypeToFile.put(fileInfo.getSelectedHandleType(), fileInfo.getFile());
     }
@@ -157,6 +156,19 @@ public class ReadonlyStatusHandlerImpl extends ReadonlyStatusHandler implements 
         fileInfos.remove(fileInfo);
       }
     }
+  }
+
+  /**
+   * Normally when file is read-only and ensureFilesWritable is called, a dialog box appears which allows user to decide
+   * whether to clear read-only flag or not. This method allows to control what will happen in unit-test mode.
+   *
+   * @param clearReadOnlyInTests if true, ensureFilesWritable will try to clear read-only status from passed files.
+   *                         Otherwise, read-only status is not modified (as if user refused to modify it).
+   */
+  @TestOnly
+  public void setClearReadOnlyInTests(boolean clearReadOnlyInTests) {
+    assert ApplicationManager.getApplication().isUnitTestMode();
+    myClearReadOnlyInTests = clearReadOnlyInTests;
   }
 
   private static class OperationStatusImpl extends OperationStatus {

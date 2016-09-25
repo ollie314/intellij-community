@@ -106,7 +106,7 @@ public class Replacer {
       CollectingMatchResultSink sink = new CollectingMatchResultSink();
       matcher.testFindMatches(sink, matchOptions);
 
-      final List<ReplacementInfo> resultPtrList = new ArrayList<ReplacementInfo>();
+      final List<ReplacementInfo> resultPtrList = new ArrayList<>();
 
       for (final MatchResult result : sink.getMatches()) {
         resultPtrList.add(buildReplacement(result));
@@ -190,17 +190,11 @@ public class Replacer {
     //noinspection HardCodedStringLiteral
     CommandProcessor.getInstance().executeCommand(
       project,
-      new Runnable() {
-        public void run() {
-          ApplicationManager.getApplication().runWriteAction(
-            new Runnable() {
-              public void run() {
-                doReplace(element, replacementInfo);
-              }
-            }
-          );
-          PsiDocumentManager.getInstance(project).commitAllDocuments();
-        }
+      () -> {
+        ApplicationManager.getApplication().runWriteAction(
+          () -> doReplace(element, replacementInfo)
+        );
+        PsiDocumentManager.getInstance(project).commitAllDocuments();
       },
       "ssreplace",
       "test"
@@ -215,33 +209,27 @@ public class Replacer {
 
   private void reformatAndPostProcess(final PsiElement elementParent) {
     if (elementParent == null) return;
-    final Runnable action = new Runnable() {
-      public void run() {
-        final PsiFile containingFile = elementParent.getContainingFile();
+    final Runnable action = () -> {
+      final PsiFile containingFile = elementParent.getContainingFile();
 
-        if (containingFile != null && options.isToReformatAccordingToStyle()) {
-          if (containingFile.getVirtualFile() != null) {
-            PsiDocumentManager.getInstance(project)
-              .commitDocument(FileDocumentManager.getInstance().getDocument(containingFile.getVirtualFile()));
-          }
+      if (containingFile != null && options.isToReformatAccordingToStyle()) {
+        if (containingFile.getVirtualFile() != null) {
+          PsiDocumentManager.getInstance(project)
+            .commitDocument(FileDocumentManager.getInstance().getDocument(containingFile.getVirtualFile()));
+        }
 
-          final int parentOffset = elementParent.getTextRange().getStartOffset();
-          CodeStyleManager.getInstance(project)
-            .reformatRange(containingFile, parentOffset, parentOffset + elementParent.getTextLength(), true);
-        }
-        if (replaceHandler != null) {
-          replaceHandler.postProcess(elementParent, options);
-        }
+        final int parentOffset = elementParent.getTextRange().getStartOffset();
+        CodeStyleManager.getInstance(project)
+          .reformatRange(containingFile, parentOffset, parentOffset + elementParent.getTextLength(), true);
+      }
+      if (replaceHandler != null) {
+        replaceHandler.postProcess(elementParent, options);
       }
     };
 
     CommandProcessor.getInstance().executeCommand(
       project,
-      new Runnable() {
-        public void run() {
-          ApplicationManager.getApplication().runWriteAction(action);
-        }
-      },
+      () -> ApplicationManager.getApplication().runWriteAction(action),
       "reformat and shorten refs after ssr",
       "test"
     );
@@ -278,7 +266,7 @@ public class Replacer {
   public static void handleComments(final PsiElement el, final PsiElement replacement, ReplacementContext context) throws IncorrectOperationException {
     ReplacementInfoImpl replacementInfo = context.replacementInfo;
     if (replacementInfo.elementToVariableNameMap == null) {
-      replacementInfo.elementToVariableNameMap = new HashMap<PsiElement, String>(1);
+      replacementInfo.elementToVariableNameMap = new HashMap<>(1);
       Map<String, MatchResult> variableMap = replacementInfo.variableMap;
       if (variableMap != null) {
         for(String name:variableMap.keySet()) {
@@ -384,7 +372,7 @@ public class Replacer {
   }
 
   public ReplacementInfo buildReplacement(MatchResult result) {
-    List<SmartPsiElementPointer> l = new ArrayList<SmartPsiElementPointer>();
+    List<SmartPsiElementPointer> l = new ArrayList<>();
     SmartPointerManager manager = SmartPointerManager.getInstance(project);
 
     if (MatchResult.MULTI_LINE_MATCH.equals(result.getName())) {

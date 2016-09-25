@@ -17,12 +17,12 @@ package com.intellij.ui.switcher;
 
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.ui.AbstractPainter;
+import com.intellij.openapi.ui.GraphicsConfig;
 import com.intellij.openapi.util.AsyncResult;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.wm.IdeGlassPane;
 import com.intellij.openapi.wm.IdeGlassPaneUtil;
-import com.intellij.openapi.ui.GraphicsConfig;
 import com.intellij.ui.ColorUtil;
 import com.intellij.ui.awt.RelativeRectangle;
 import com.intellij.util.Alarm;
@@ -44,7 +44,7 @@ public class SwitchingSession implements KeyEventDispatcher, Disposable {
   private SwitchProvider myProvider;
   private KeyEvent myInitialEvent;
   private boolean myFinished;
-  private LinkedHashSet<SwitchTarget> myTargets = new LinkedHashSet<SwitchTarget>();
+  private LinkedHashSet<SwitchTarget> myTargets = new LinkedHashSet<>();
   private IdeGlassPane myGlassPane;
 
   private Component myRootComponent;
@@ -156,7 +156,7 @@ public class SwitchingSession implements KeyEventDispatcher, Disposable {
       int inset = -1;
       int selectedInset = -8;
 
-      Set<Area> shapes = new HashSet<Area>();
+      Set<Area> shapes = new HashSet<>();
       Area selected = null;
 
       boolean hasIntersections = false;
@@ -298,11 +298,13 @@ public class SwitchingSession implements KeyEventDispatcher, Disposable {
       return getSelection();
     }
 
-    List<Point> points = new ArrayList<Point>();
+    List<Point> points = new ArrayList<>();
     Point selected = null;
-    Map<SwitchTarget, Point> target2Point = new HashMap<SwitchTarget, Point>();
+    Map<SwitchTarget, Point> target2Point = new HashMap<>();
     for (SwitchTarget each : myTargets) {
-      Rectangle eachRec = each.getRectangle().getRectangleOn(myRootComponent);
+      RelativeRectangle rectangle = each.getRectangle();
+      if (rectangle == null) continue;
+      Rectangle eachRec = rectangle.getRectangleOn(myRootComponent);
       Point eachPoint = null;
       switch (direction) {
         case up:
@@ -336,15 +338,17 @@ public class SwitchingSession implements KeyEventDispatcher, Disposable {
         }
         points.add(selected);
         target2Point.put(each, selected);
-      } else {
+      }
+      else {
         points.add(eachPoint);
         target2Point.put(each, eachPoint);
       }
     }
 
-    TreeMap<Integer, SwitchTarget> distance = new TreeMap<Integer, SwitchTarget>();
+    TreeMap<Integer, SwitchTarget> distance = new TreeMap<>();
     for (SwitchTarget eachTarget : myTargets) {
       Point eachPoint = target2Point.get(eachTarget);
+      if (eachPoint == null || selected == null) continue;
       if (selected == eachPoint) continue;
 
       double eachDistance = sqrt(abs(eachPoint.getX() - selected.getX())) + sqrt(abs(eachPoint.getY() - selected.getY()));
@@ -356,6 +360,7 @@ public class SwitchingSession implements KeyEventDispatcher, Disposable {
     for (Integer eachDistance : distancesArray) {
       SwitchTarget eachTarget = distance.get(eachDistance);
       Point eachPoint = target2Point.get(eachTarget);
+      if (eachPoint == null || selected == null) continue;
       switch (direction) {
         case up:
           if (eachPoint.y <= selected.y) {
@@ -383,7 +388,7 @@ public class SwitchingSession implements KeyEventDispatcher, Disposable {
     for (int i = distancesArray.length - 1; i >= 0; i--) {
       SwitchTarget eachTarget = distance.get(distancesArray[i]);
       Point eachPoint = target2Point.get(eachTarget);
-
+      if (eachPoint == null || selected == null) continue;
       switch (direction) {
         case up:
           if (eachPoint.y >= selected.y) {
@@ -415,7 +420,8 @@ public class SwitchingSession implements KeyEventDispatcher, Disposable {
     int index = all.indexOf(getSelection());
     if (index + 1 < myTargets.size()) {
       return all.get(index + 1);
-    } else {
+    }
+    else {
       return all.get(0);
     }
   }
@@ -425,12 +431,7 @@ public class SwitchingSession implements KeyEventDispatcher, Disposable {
 
     if (myFadingAway) {
       myManager.addFadingAway(this);
-      myAlarm.addRequest(new Runnable() {
-        @Override
-        public void run() {
-          _dispose();
-        }
-      }, Registry.intValue("actionSystem.keyGestureDblClickTime"));
+      myAlarm.addRequest(() -> _dispose(), Registry.intValue("actionSystem.keyGestureDblClickTime"));
     } else {
       _dispose();
     }
@@ -446,14 +447,12 @@ public class SwitchingSession implements KeyEventDispatcher, Disposable {
   public AsyncResult<SwitchTarget> finish(final boolean fadeAway) {
     myAlarm.cancelAllRequests();
 
-    final AsyncResult<SwitchTarget> result = new AsyncResult<SwitchTarget>();
+    final AsyncResult<SwitchTarget> result = new AsyncResult<>();
     final SwitchTarget selection = getSelection();
     if (selection != null) {
-      selection.switchTo(true).doWhenDone(new Runnable() {
-        public void run() {
-          myManager.disposeCurrentSession(fadeAway);
-          result.setDone(selection);
-        }
+      selection.switchTo(true).doWhenDone(() -> {
+        myManager.disposeCurrentSession(fadeAway);
+        result.setDone(selection);
       }).notifyWhenRejected(result);
     } else {
       Disposer.dispose(this);

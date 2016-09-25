@@ -210,7 +210,7 @@ public class GenerateToStringActionHandlerImpl implements GenerateToStringAction
                   Disposable disposable = Disposer.newDisposable();
                   Configurable composite = new TabbedConfigurable(disposable) {
                         protected List<Configurable> createConfigurables() {
-                            List<Configurable> res = new ArrayList<Configurable>();
+                            List<Configurable> res = new ArrayList<>();
                             res.add(new GenerateToStringConfigurable(clazz.getProject()));
                             res.add(ui);
                             return res;
@@ -237,11 +237,7 @@ public class GenerateToStringActionHandlerImpl implements GenerateToStringAction
                         }
                     };
 
-                    ShowSettingsUtil.getInstance().editConfigurable(MemberChooserHeaderPanel.this, composite, new Runnable() {
-                        public void run() {
-                            ui.selectItem(ToStringTemplatesManager.getInstance().getDefaultTemplate());
-                        }
-                    });
+                    ShowSettingsUtil.getInstance().editConfigurable(MemberChooserHeaderPanel.this, composite, () -> ui.selectItem(ToStringTemplatesManager.getInstance().getDefaultTemplate()));
                   Disposer.dispose(disposable);
                 }
             });

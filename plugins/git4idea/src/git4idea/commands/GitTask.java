@@ -18,7 +18,6 @@ package git4idea.commands;
 import com.intellij.concurrency.JobScheduler;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
@@ -39,11 +38,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * @deprecated All Git commands are cancellable when called via {@link GitHandler}. <br/>
+ * All Git commands are cancellable when called via {@link GitHandler}. <br/>
  * To execute the command synchronously, call {@link GitHandler#runInCurrentThread(Runnable)}
  * or better {@link Git#runCommand(Computable)}.<br/>
  * To execute in the background or under a modal progress, use the standard {@link Task}. <br/>
  * To watch the progress, call {@link GitStandardProgressAnalyzer#createListener(ProgressIndicator)}.
+ *
+ * @deprecated To remove in IDEA 2017.
  */
 @Deprecated
 public class GitTask {
@@ -66,16 +67,9 @@ public class GitTask {
    * Executes this task synchronously, with a modal progress dialog.
    * @return Result of the task execution.
    */
+  @SuppressWarnings("unused")
   public GitTaskResult executeModal() {
     return execute(true);
-  }
-
-  /**
-   * Executes the task synchronously, with a modal progress dialog.
-   * @param resultHandler callback which will be called after task execution.
-   */
-  public void executeModal(GitTaskResultHandler resultHandler) {
-    execute(true, true, resultHandler);
   }
 
   /**
@@ -93,7 +87,7 @@ public class GitTask {
   // this is always sync
   @NotNull
   public GitTaskResult execute(boolean modal) {
-    final AtomicReference<GitTaskResult> result = new AtomicReference<GitTaskResult>(GitTaskResult.INITIAL);
+    final AtomicReference<GitTaskResult> result = new AtomicReference<>(GitTaskResult.INITIAL);
     execute(true, modal, new GitTaskResultHandlerAdapter() {
       @Override
       protected void run(GitTaskResult res) {
@@ -125,13 +119,13 @@ public class GitTask {
           commonOnCancel(LOCK, resultHandler);
           completed.set(true);
         }
-      };
-      ApplicationManager.getApplication().invokeAndWait(new Runnable() {
-        @Override
-        public void run() {
-          ProgressManager.getInstance().run(task);
+        @Override public void onError(@NotNull Exception error) {
+          super.onError(error);
+          commonOnCancel(LOCK, resultHandler);
+          completed.set(true);
         }
-      }, ModalityState.defaultModalityState());
+      };
+      ApplicationManager.getApplication().invokeAndWait(() -> ProgressManager.getInstance().run(task));
     } else {
       final BackgroundableTask task = new BackgroundableTask(myProject, myHandler, myTitle) {
         @Override public void onSuccess() {

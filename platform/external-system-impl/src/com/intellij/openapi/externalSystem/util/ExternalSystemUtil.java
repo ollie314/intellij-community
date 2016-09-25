@@ -390,12 +390,8 @@ public class ExternalSystemUtil {
             public void cancel() {
               super.cancel();
 
-              ApplicationManager.getApplication().executeOnPooledThread(new Runnable() {
-                @Override
-                public void run() {
-                  myTask.cancel(ExternalSystemTaskNotificationListener.EP_NAME.getExtensions());
-                }
-              });
+              ApplicationManager.getApplication().executeOnPooledThread(
+                (Runnable)() -> myTask.cancel(ExternalSystemTaskNotificationListener.EP_NAME.getExtensions()));
             }
           });
         }
@@ -478,38 +474,35 @@ public class ExternalSystemUtil {
       }
     };
 
-    ExternalSystemApiUtil.executeOnEdt(true, new Runnable() {
-      @Override
-      public void run() {
-        final String title;
-        switch (progressExecutionMode) {
-          case MODAL_SYNC:
-            title = ExternalSystemBundle.message("progress.import.text", projectName, externalSystemId.getReadableName());
-            new Task.Modal(project, title, true) {
-              @Override
-              public void run(@NotNull ProgressIndicator indicator) {
-                refreshProjectStructureTask.execute(indicator);
-              }
-            }.queue();
-            break;
-          case IN_BACKGROUND_ASYNC:
-            title = ExternalSystemBundle.message("progress.refresh.text", projectName, externalSystemId.getReadableName());
-            new Task.Backgroundable(project, title) {
-              @Override
-              public void run(@NotNull ProgressIndicator indicator) {
-                refreshProjectStructureTask.execute(indicator);
-              }
-            }.queue();
-            break;
-          case START_IN_FOREGROUND_ASYNC:
-            title = ExternalSystemBundle.message("progress.refresh.text", projectName, externalSystemId.getReadableName());
-            new Task.Backgroundable(project, title, true, PerformInBackgroundOption.DEAF) {
-              @Override
-              public void run(@NotNull ProgressIndicator indicator) {
-                refreshProjectStructureTask.execute(indicator);
-              }
-            }.queue();
-        }
+    ExternalSystemApiUtil.executeOnEdt(true, () -> {
+      final String title;
+      switch (progressExecutionMode) {
+        case MODAL_SYNC:
+          title = ExternalSystemBundle.message("progress.import.text", projectName, externalSystemId.getReadableName());
+          new Task.Modal(project, title, true) {
+            @Override
+            public void run(@NotNull ProgressIndicator indicator) {
+              refreshProjectStructureTask.execute(indicator);
+            }
+          }.queue();
+          break;
+        case IN_BACKGROUND_ASYNC:
+          title = ExternalSystemBundle.message("progress.refresh.text", projectName, externalSystemId.getReadableName());
+          new Task.Backgroundable(project, title) {
+            @Override
+            public void run(@NotNull ProgressIndicator indicator) {
+              refreshProjectStructureTask.execute(indicator);
+            }
+          }.queue();
+          break;
+        case START_IN_FOREGROUND_ASYNC:
+          title = ExternalSystemBundle.message("progress.refresh.text", projectName, externalSystemId.getReadableName());
+          new Task.Backgroundable(project, title, true, PerformInBackgroundOption.DEAF) {
+            @Override
+            public void run(@NotNull ProgressIndicator indicator) {
+              refreshProjectStructureTask.execute(indicator);
+            }
+          }.queue();
       }
     });
   }
@@ -527,33 +520,45 @@ public class ExternalSystemUtil {
                              @NotNull final ProjectSystemId externalSystemId,
                              @Nullable final TaskCallback callback,
                              @NotNull final ProgressExecutionMode progressExecutionMode) {
-    final Pair<ProgramRunner, ExecutionEnvironment> pair = createRunner(taskSettings, executorId, project, externalSystemId);
-    if (pair == null) return;
+    runTask(taskSettings, executorId, project, externalSystemId, callback, progressExecutionMode, true);
+  }
 
-    final ProgramRunner runner = pair.first;
-    final ExecutionEnvironment environment = pair.second;
+  public static void runTask(@NotNull final ExternalSystemTaskExecutionSettings taskSettings,
+                             @NotNull final String executorId,
+                             @NotNull final Project project,
+                             @NotNull final ProjectSystemId externalSystemId,
+                             @Nullable final TaskCallback callback,
+                             @NotNull final ProgressExecutionMode progressExecutionMode,
+                             boolean activateToolWindowBeforeRun) {
+
+    ExecutionEnvironment environment = createExecutionEnvironment(project, externalSystemId, taskSettings, executorId);
+    if (environment == null) return;
+
+    RunnerAndConfigurationSettings runnerAndConfigurationSettings = environment.getRunnerAndConfigurationSettings();
+    assert runnerAndConfigurationSettings != null;
+    runnerAndConfigurationSettings.setActivateToolWindowBeforeRun(activateToolWindowBeforeRun);
 
     final TaskUnderProgress task = new TaskUnderProgress() {
       @Override
       public void execute(@NotNull ProgressIndicator indicator) {
         final Semaphore targetDone = new Semaphore();
-        final Ref<Boolean> result = new Ref<Boolean>(false);
+        final Ref<Boolean> result = new Ref<>(false);
         final Disposable disposable = Disposer.newDisposable();
 
-        project.getMessageBus().connect(disposable).subscribe(ExecutionManager.EXECUTION_TOPIC, new ExecutionAdapter() {
-          public void processStartScheduled(final String executorIdLocal, final ExecutionEnvironment environmentLocal) {
+        project.getMessageBus().connect(disposable).subscribe(ExecutionManager.EXECUTION_TOPIC, new ExecutionListener() {
+          public void processStartScheduled(@NotNull final String executorIdLocal, @NotNull final ExecutionEnvironment environmentLocal) {
             if (executorId.equals(executorIdLocal) && environment.equals(environmentLocal)) {
               targetDone.down();
             }
           }
 
-          public void processNotStarted(final String executorIdLocal, @NotNull final ExecutionEnvironment environmentLocal) {
+          public void processNotStarted(@NotNull final String executorIdLocal, @NotNull final ExecutionEnvironment environmentLocal) {
             if (executorId.equals(executorIdLocal) && environment.equals(environmentLocal)) {
               targetDone.up();
             }
           }
 
-          public void processStarted(final String executorIdLocal,
+          public void processStarted(@NotNull final String executorIdLocal,
                                      @NotNull final ExecutionEnvironment environmentLocal,
                                      @NotNull final ProcessHandler handler) {
             if (executorId.equals(executorIdLocal) && environment.equals(environmentLocal)) {
@@ -568,16 +573,13 @@ public class ExternalSystemUtil {
         });
 
         try {
-          ApplicationManager.getApplication().invokeAndWait(new Runnable() {
-            @Override
-            public void run() {
-              try {
-                runner.execute(environment);
-              }
-              catch (ExecutionException e) {
-                targetDone.up();
-                LOG.error(e);
-              }
+          ApplicationManager.getApplication().invokeAndWait(() -> {
+            try {
+              environment.getRunner().execute(environment);
+            }
+            catch (ExecutionException e) {
+              targetDone.up();
+              LOG.error(e);
             }
           }, ModalityState.NON_MODAL);
         }
@@ -635,10 +637,10 @@ public class ExternalSystemUtil {
   }
 
   @Nullable
-  public static Pair<ProgramRunner, ExecutionEnvironment> createRunner(@NotNull ExternalSystemTaskExecutionSettings taskSettings,
-                                                                       @NotNull String executorId,
-                                                                       @NotNull Project project,
-                                                                       @NotNull ProjectSystemId externalSystemId) {
+  public static ExecutionEnvironment createExecutionEnvironment(@NotNull Project project,
+                                                                @NotNull ProjectSystemId externalSystemId,
+                                                                @NotNull ExternalSystemTaskExecutionSettings taskSettings,
+                                                                @NotNull String executorId) {
     Executor executor = ExecutorRegistry.getInstance().getExecutorById(executorId);
     if (executor == null) return null;
 
@@ -651,7 +653,19 @@ public class ExternalSystemUtil {
     RunnerAndConfigurationSettings settings = createExternalSystemRunnerAndConfigurationSettings(taskSettings, project, externalSystemId);
     if (settings == null) return null;
 
-    return Pair.create(runner, new ExecutionEnvironment(executor, runner, settings, project));
+    return new ExecutionEnvironment(executor, runner, settings, project);
+  }
+
+  /**
+   * @deprecated to be removed in IDEA 2017, use {@link #createExecutionEnvironment}
+   */
+  @Nullable
+  public static Pair<ProgramRunner, ExecutionEnvironment> createRunner(@NotNull ExternalSystemTaskExecutionSettings taskSettings,
+                                                                       @NotNull String executorId,
+                                                                       @NotNull Project project,
+                                                                       @NotNull ProjectSystemId externalSystemId) {
+    ExecutionEnvironment executionEnvironment = createExecutionEnvironment(project, externalSystemId, taskSettings, executorId);
+    return executionEnvironment == null ? null : Pair.create(executionEnvironment.getRunner(), executionEnvironment);
   }
 
   @Nullable
@@ -768,12 +782,7 @@ public class ExternalSystemUtil {
 
   @Nullable
   private static VirtualFile findLocalFileByPathUnderWriteAction(final String path) {
-    return doWriteAction(new Computable<VirtualFile>() {
-      @Override
-      public VirtualFile compute() {
-        return StandardFileSystems.local().refreshAndFindFileByPath(path);
-      }
-    });
+    return doWriteAction(() -> StandardFileSystems.local().refreshAndFindFileByPath(path));
   }
 
   @Nullable

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,6 @@ import com.intellij.openapi.extensions.Extensions;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.util.PsiTreeUtil;
-import com.intellij.util.Function;
 import com.jetbrains.python.PyBundle;
 import com.jetbrains.python.PyNames;
 import com.jetbrains.python.codeInsight.controlflow.ControlFlowCache;
@@ -67,8 +66,8 @@ public class PyUnusedLocalInspectionVisitor extends PyInspectionVisitor {
     myIgnoreTupleUnpacking = ignoreTupleUnpacking;
     myIgnoreLambdaParameters = ignoreLambdaParameters;
     myIgnoreRangeIterationVariables = ignoreRangeIterationVariables;
-    myUnusedElements = new HashSet<PsiElement>();
-    myUsedElements = new HashSet<PsiElement>();
+    myUnusedElements = new HashSet<>();
+    myUsedElements = new HashSet<>();
   }
 
   @Override
@@ -131,11 +130,27 @@ public class PyUnusedLocalInspectionVisitor extends PyInspectionVisitor {
         if (PyAugAssignmentStatementNavigator.getStatementByTarget(element) != null) {
           continue;
         }
+        if (parameterInMethodWithFixedSignature(owner, element)) {
+          continue;
+        }
         if (!myUsedElements.contains(element)) {
           myUnusedElements.add(element);
         }
       }
     }
+  }
+
+  private static boolean parameterInMethodWithFixedSignature(@NotNull ScopeOwner owner, @NotNull PsiElement element) {
+    if (owner instanceof PyFunction && element instanceof PyParameter) {
+      final PyFunction function = (PyFunction)owner;
+      final String functionName = function.getName();
+
+      return !PyNames.INIT.equals(functionName) &&
+             function.getContainingClass() != null &&
+             PyNames.getBuiltinMethods(LanguageLevel.forElement(function)).containsKey(functionName);
+    }
+
+    return false;
   }
 
   private void collectUsedReads(final ScopeOwner owner) {
@@ -177,31 +192,29 @@ public class PyUnusedLocalInspectionVisitor extends PyInspectionVisitor {
             }
           }
         }
-        ControlFlowUtil.iteratePrev(startInstruction, instructions, new Function<Instruction, ControlFlowUtil.Operation>() {
-          public ControlFlowUtil.Operation fun(final Instruction inst) {
-            final PsiElement element = inst.getElement();
-            // Mark function as used
-            if (element instanceof PyFunction) {
-              if (name.equals(((PyFunction)element).getName())){
-                myUsedElements.add(element);
-                myUnusedElements.remove(element);
-                return ControlFlowUtil.Operation.CONTINUE;
-              }
+        ControlFlowUtil.iteratePrev(startInstruction, instructions, inst -> {
+          final PsiElement element1 = inst.getElement();
+          // Mark function as used
+          if (element1 instanceof PyFunction) {
+            if (name.equals(((PyFunction)element1).getName())){
+              myUsedElements.add(element1);
+              myUnusedElements.remove(element1);
+              return ControlFlowUtil.Operation.CONTINUE;
             }
-            // Mark write access as used
-            else if (inst instanceof ReadWriteInstruction) {
-              final ReadWriteInstruction rwInstruction = (ReadWriteInstruction)inst;
-              if (rwInstruction.getAccess().isWriteAccess() && name.equals(rwInstruction.getName())) {
-                // For elements in scope
-                if (element != null && PsiTreeUtil.isAncestor(owner, element, false)) {
-                  myUsedElements.add(element);
-                  myUnusedElements.remove(element);
-                }
-                return ControlFlowUtil.Operation.CONTINUE;
-              }
-            }
-            return ControlFlowUtil.Operation.NEXT;
           }
+          // Mark write access as used
+          else if (inst instanceof ReadWriteInstruction) {
+            final ReadWriteInstruction rwInstruction = (ReadWriteInstruction)inst;
+            if (rwInstruction.getAccess().isWriteAccess() && name.equals(rwInstruction.getName())) {
+              // For elements in scope
+              if (element1 != null && PsiTreeUtil.isAncestor(owner, element1, false)) {
+                myUsedElements.add(element1);
+                myUnusedElements.remove(element1);
+              }
+              return ControlFlowUtil.Operation.CONTINUE;
+            }
+          }
+          return ControlFlowUtil.Operation.NEXT;
         });
       }
     }
@@ -237,8 +250,8 @@ public class PyUnusedLocalInspectionVisitor extends PyInspectionVisitor {
     final PyInspectionExtension[] filters = Extensions.getExtensions(PyInspectionExtension.EP_NAME);
     // Register problems
 
-    final Set<PyFunction> functionsWithInheritors = new HashSet<PyFunction>();
-    final Map<PyFunction, Boolean> emptyFunctions = new HashMap<PyFunction, Boolean>();
+    final Set<PyFunction> functionsWithInheritors = new HashSet<>();
+    final Map<PyFunction, Boolean> emptyFunctions = new HashMap<>();
 
     for (PsiElement element : myUnusedElements) {
       boolean ignoreUnused = false;
@@ -295,7 +308,7 @@ public class PyUnusedLocalInspectionVisitor extends PyInspectionVisitor {
             if (func.asMethod() != null) {
               Boolean isEmpty = emptyFunctions.get(func);
               if (isEmpty == null) {
-                isEmpty = isEmptyFunction(func);
+                isEmpty = PyUtil.isEmptyFunction(func);
                 emptyFunctions.put(func, isEmpty);
               }
               if (isEmpty && !mayBeField) {
@@ -306,7 +319,7 @@ public class PyUnusedLocalInspectionVisitor extends PyInspectionVisitor {
           boolean canRemove = !(PsiTreeUtil.getPrevSiblingOfType(element, PyParameter.class) instanceof PySingleStarParameter) ||
             PsiTreeUtil.getNextSiblingOfType(element, PyParameter.class) != null;
 
-          final List<LocalQuickFix> fixes = new ArrayList<LocalQuickFix>();
+          final List<LocalQuickFix> fixes = new ArrayList<>();
           if (mayBeField) {
             fixes.add(new AddFieldQuickFix(name, name, containingClass.getName(), false));
           }
@@ -409,61 +422,16 @@ public class PyUnusedLocalInspectionVisitor extends PyInspectionVisitor {
                                                                                                              "for _ in tuples:\n  pass"
       );
       final PyExpression target = ((PyForStatement)pyFile.getStatements().get(0)).getForPart().getTarget();
-      CommandProcessor.getInstance().executeCommand(psiElement.getProject(), new Runnable() {
-        public void run() {
-          ApplicationManager.getApplication().runWriteAction(new Runnable() {
-            public void run() {
-              if (target != null) {
-                psiElement.replace(target);
-              }
-            }
-          });
+      CommandProcessor.getInstance().executeCommand(psiElement.getProject(), () -> ApplicationManager.getApplication().runWriteAction(() -> {
+        if (target != null) {
+          psiElement.replace(target);
         }
-      }, getName(), null);
+      }), getName(), null);
     }
 
     @NotNull
     public String getFamilyName() {
       return getName();
     }
-  }
-
-  private static boolean isEmptyFunction(@NotNull PyFunction f) {
-    final PyStatementList statementList = f.getStatementList();
-    final PyStatement[] statements = statementList.getStatements();
-    if (statements.length == 0) {
-      return true;
-    }
-    else if (statements.length == 1) {
-      if (isStringLiteral(statements[0]) || isPassOrRaiseOrEmptyReturn(statements[0])) {
-        return true;
-      }
-    }
-    else if (statements.length == 2) {
-      if (isStringLiteral(statements[0]) && (isPassOrRaiseOrEmptyReturn(statements[1]))) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private static boolean isPassOrRaiseOrEmptyReturn(PyStatement stmt) {
-    if (stmt instanceof PyPassStatement || stmt instanceof PyRaiseStatement) {
-      return true;
-    }
-    if (stmt instanceof PyReturnStatement && ((PyReturnStatement)stmt).getExpression() == null) {
-      return true;
-    }
-    return false;
-  }
-
-  private static boolean isStringLiteral(PyStatement stmt) {
-    if (stmt instanceof PyExpressionStatement) {
-      final PyExpression expr = ((PyExpressionStatement)stmt).getExpression();
-      if (expr instanceof PyStringLiteralExpression) {
-        return true;
-      }
-    }
-    return false;
   }
 }

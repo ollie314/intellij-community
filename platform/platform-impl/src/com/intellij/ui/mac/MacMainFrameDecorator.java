@@ -39,7 +39,6 @@ import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
 import java.awt.*;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.EventListener;
 import java.util.LinkedList;
@@ -53,7 +52,7 @@ import static com.intellij.ui.mac.foundation.Foundation.invoke;
 public class MacMainFrameDecorator extends IdeFrameDecorator implements UISettingsListener {
   private static final Logger LOG = Logger.getInstance("#com.intellij.ui.mac.MacMainFrameDecorator");
 
-  private final FullscreenQueue<Runnable> myFullscreenQueue = new FullscreenQueue<Runnable>();
+  private final FullscreenQueue<Runnable> myFullscreenQueue = new FullscreenQueue<>();
 
   private final EventDispatcher<FSListener> myDispatcher = EventDispatcher.create(FSListener.class);
 
@@ -62,7 +61,7 @@ public class MacMainFrameDecorator extends IdeFrameDecorator implements UISettin
 
   private static class FullscreenQueue <T extends Runnable> {
     private boolean waitingForAppKit = false;
-    private LinkedList<Runnable> queueModel = new LinkedList<Runnable>();
+    private LinkedList<Runnable> queueModel = new LinkedList<>();
 
     synchronized void runOrEnqueue (final T runnable) {
       if (waitingForAppKit) {
@@ -157,24 +156,19 @@ public class MacMainFrameDecorator extends IdeFrameDecorator implements UISettin
 
   private static AtomicInteger UNIQUE_COUNTER = new AtomicInteger(0);
 
-  public static final Runnable TOOLBAR_SETTER = new Runnable() {
-    @Override
-    public void run() {
-      final UISettings settings = UISettings.getInstance();
-      settings.SHOW_MAIN_TOOLBAR = SHOWN;
-      settings.fireUISettingsChanged();
-    }
+  public static final Runnable TOOLBAR_SETTER = () -> {
+    final UISettings settings = UISettings.getInstance();
+    settings.SHOW_MAIN_TOOLBAR = SHOWN;
+    settings.fireUISettingsChanged();
   };
 
-  public static final Runnable NAVBAR_SETTER = new Runnable() {
-    @Override
-    public void run() {
-      final UISettings settings = UISettings.getInstance();
-      settings.SHOW_NAVIGATION_BAR = SHOWN;
-      settings.fireUISettingsChanged();
-    }
+  public static final Runnable NAVBAR_SETTER = () -> {
+    final UISettings settings = UISettings.getInstance();
+    settings.SHOW_NAVIGATION_BAR = SHOWN;
+    settings.fireUISettingsChanged();
   };
 
+  @SuppressWarnings("Convert2Lambda")
   public static final Function<Object, Boolean> NAVBAR_GETTER = new Function<Object, Boolean>() {
     @Override
     public Boolean fun(Object o) {
@@ -182,6 +176,7 @@ public class MacMainFrameDecorator extends IdeFrameDecorator implements UISettin
     }
   };
 
+  @SuppressWarnings("Convert2Lambda")
   public static final Function<Object, Boolean> TOOLBAR_GETTER = new Function<Object, Boolean>() {
     @Override
     public Boolean fun(Object o) {
@@ -204,7 +199,7 @@ public class MacMainFrameDecorator extends IdeFrameDecorator implements UISettin
       SHOWN = CURRENT_GETTER.fun(null);
     }
 
-    UISettings.getInstance().addUISettingsListener(this, this);
+    ApplicationManager.getApplication().getMessageBus().connect(this).subscribe(UISettingsListener.TOPIC, this);
 
     final ID pool = invoke("NSAutoreleasePool", "new");
 
@@ -273,19 +268,21 @@ public class MacMainFrameDecorator extends IdeFrameDecorator implements UISettin
         Foundation.addMethod(ownToolbar, Foundation.createSelector("setVisible:"), SET_VISIBLE_CALLBACK, "v*");
         Foundation.addMethod(ownToolbar, Foundation.createSelector("isVisible"), IS_VISIBLE, "B*");
 
-        Foundation.executeOnMainThread(new Runnable() {
-          @Override
-          public void run() {
-            invoke(window, "setToolbar:", toolbar);
-            invoke(window, "setShowsToolbarButton:", 1);
-          }
-        }, true, true);
+        Foundation.executeOnMainThread(true, true, () -> {
+          invoke(window, "setToolbar:", toolbar);
+          invoke(window, "setShowsToolbarButton:", 1);
+        });
       }
     }
     finally {
       invoke(pool, "release");
     }
 
+    // extract to static method for exclude this from OpenURIHandler() {} anonymous class
+    createProtocolHandler();
+  }
+
+  private static void createProtocolHandler() {
     if (ourProtocolHandler == null) {
       // install uri handler
       final ID mainBundle = invoke("NSBundle", "mainBundle");
@@ -327,7 +324,7 @@ public class MacMainFrameDecorator extends IdeFrameDecorator implements UISettin
   }
 
   @Override
-  public void uiSettingsChanged(final UISettings source) {
+  public void uiSettingsChanged(final UISettings uiSettings) {
     if (CURRENT_GETTER != null) {
       SHOWN = CURRENT_GETTER.fun(null);
     }
@@ -356,48 +353,16 @@ public class MacMainFrameDecorator extends IdeFrameDecorator implements UISettin
       }
     });
 
-    myFullscreenQueue.runOrEnqueue( new Runnable() {
-      @Override
-      public void run() {
-        try {
-          requestToggleFullScreenMethod.invoke(Application.getApplication(),myFrame);
-        }
-        catch (IllegalAccessException e) {
-          LOG.error(e);
-        }
-        catch (InvocationTargetException e) {
-          LOG.error(e);
-        }
-      }
-    });
+    myFullscreenQueue.runOrEnqueue(() -> toggleFullScreenNow());
     return callback;
   }
 
-  @Override
-  public void dispose() {
-    UISettings.getInstance().removeUISettingsListener(this);
-    super.dispose();
-  }
-
-  public void exitFullScreenAndDispose() {
-
-    LOG.assertTrue(isInFullScreen());
+  public void toggleFullScreenNow() {
     try {
       requestToggleFullScreenMethod.invoke(Application.getApplication(), myFrame);
     }
-    catch (IllegalAccessException e) {
+    catch (Exception e) {
       LOG.error(e);
     }
-    catch (InvocationTargetException e) {
-      LOG.error(e);
-    }
-
-    myDispatcher.addListener(new FSAdapter() {
-      @Override
-      public void windowExitedFullScreen(AppEvent.FullScreenEvent event) {
-        myFrame.disposeImpl();
-        myDispatcher.removeListener(this);
-      }
-    });
   }
 }

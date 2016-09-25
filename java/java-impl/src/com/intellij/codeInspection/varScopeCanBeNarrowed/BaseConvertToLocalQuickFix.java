@@ -109,7 +109,7 @@ public abstract class BaseConvertToLocalQuickFix<V extends PsiVariable> implemen
 
     final PsiAssignmentExpression anchorAssignmentExpression = searchAssignmentExpression(anchor);
     if (anchorAssignmentExpression != null && isVariableAssignment(anchorAssignmentExpression, variable)) {
-      final Set<PsiReference> refsSet = new HashSet<PsiReference>(references);
+      final Set<PsiReference> refsSet = new HashSet<>(references);
       refsSet.remove(anchorAssignmentExpression.getLExpression());
       return applyChanges(
         project,
@@ -118,15 +118,11 @@ public abstract class BaseConvertToLocalQuickFix<V extends PsiVariable> implemen
         variable,
         refsSet,
         delete,
-        new NotNullFunction<PsiDeclarationStatement, PsiElement>() {
-          @NotNull
-          @Override
-          public PsiElement fun(PsiDeclarationStatement declaration) {
-            if (!mayBeFinal(firstElement, references)) {
-              PsiUtil.setModifierProperty((PsiModifierListOwner)declaration.getDeclaredElements()[0], PsiModifier.FINAL, false);
-            }
-            return anchor.replace(declaration);
+        declaration -> {
+          if (!mayBeFinal(firstElement, references)) {
+            PsiUtil.setModifierProperty((PsiModifierListOwner)declaration.getDeclaredElements()[0], PsiModifier.FINAL, false);
           }
+          return anchor.replace(declaration);
         }
       );
     }
@@ -138,13 +134,7 @@ public abstract class BaseConvertToLocalQuickFix<V extends PsiVariable> implemen
       variable,
       references,
       delete,
-      new NotNullFunction<PsiDeclarationStatement, PsiElement>() {
-        @NotNull
-        @Override
-        public PsiElement fun(PsiDeclarationStatement declaration) {
-          return anchorBlock.addBefore(declaration, anchor);
-        }
-      }
+      declaration -> anchorBlock.addBefore(declaration, anchor)
     );
   }
 

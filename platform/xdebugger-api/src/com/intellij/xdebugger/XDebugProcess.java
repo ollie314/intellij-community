@@ -31,6 +31,7 @@ import com.intellij.xdebugger.ui.XDebugTabLayouter;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.concurrency.Promise;
+import org.jetbrains.concurrency.Promises;
 
 import javax.swing.event.HyperlinkListener;
 
@@ -88,10 +89,10 @@ public abstract class XDebugProcess {
   public void startPausing() {
   }
 
-  @Deprecated
   /**
    * @deprecated Use {@link #startStepOver(XSuspendContext)} instead
    */
+  @Deprecated
   public void startStepOver() {
     throw new AbstractMethodError();
   }
@@ -106,10 +107,10 @@ public abstract class XDebugProcess {
     startStepOver();
   }
 
-  @Deprecated
   /**
    * @deprecated Use {@link #startForceStepInto(XSuspendContext)} instead
    */
+  @Deprecated
   public void startForceStepInto(){
     //noinspection deprecation
     startStepInto();
@@ -123,14 +124,13 @@ public abstract class XDebugProcess {
    * Do not call this method directly. Use {@link XDebugSession#forceStepInto} instead
    */
   public void startForceStepInto(@Nullable XSuspendContext context) {
-    //noinspection deprecation
-    startForceStepInto();
+    startStepInto(context);
   }
 
-  @Deprecated
   /**
    * @deprecated Use {@link #startStepInto(XSuspendContext)} instead
    */
+  @Deprecated
   public void startStepInto() {
     throw new AbstractMethodError();
   }
@@ -145,10 +145,10 @@ public abstract class XDebugProcess {
     startStepInto();
   }
 
-  @Deprecated
   /**
    * @deprecated Use {@link #startStepOut(XSuspendContext)} instead
    */
+  @Deprecated
   public void startStepOut() {
     throw new AbstractMethodError();
   }
@@ -183,13 +183,13 @@ public abstract class XDebugProcess {
   @NotNull
   public Promise stopAsync() {
     stop();
-    return Promise.DONE;
+    return Promises.resolvedPromise();
   }
 
-  @Deprecated
   /**
    * @deprecated Use {@link #resume(XSuspendContext)} instead
    */
+  @Deprecated
   public void resume() {
     throw new AbstractMethodError();
   }
@@ -203,10 +203,10 @@ public abstract class XDebugProcess {
     resume();
   }
 
-  @Deprecated
   /**
    * @deprecated Use {@link #runToPosition(XSuspendContext)} instead
    */
+  @Deprecated
   public void runToPosition(@NotNull XSourcePosition position) {
     throw new AbstractMethodError();
   }

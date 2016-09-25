@@ -31,39 +31,41 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.ListCellRendererWrapper;
 import com.intellij.ui.components.JBLabel;
-import com.intellij.util.Consumer;
 import com.intellij.util.JdkBundle;
 import com.intellij.util.JdkBundleList;
-import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
-import javax.swing.event.ListDataEvent;
-import javax.swing.event.ListDataListener;
-import java.io.*;
-import java.util.List;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.Locale;
 
 /**
  * @author denis
  */
 public class SwitchBootJdkAction extends AnAction implements DumbAware {
-  @NonNls private static final Logger LOG = Logger.getInstance("#com.intellij.ide.actions.SwitchBootJdkAction");
-  @NonNls private static final String productJdkConfigFileName =
+  @NotNull private static final Logger LOG = Logger.getInstance("#com.intellij.ide.actions.SwitchBootJdkAction");
+  @NotNull private static final String productJdkConfigFileName =
     getExecutable() + (SystemInfo.isWindows ? ((SystemInfo.is64Bit) ? "64.exe.jdk" : ".exe.jdk") : ".jdk");
-  @NonNls private static final File productJdkConfigFile = new File(PathManager.getConfigPath(), productJdkConfigFileName);
-  @NonNls private static final File bundledJdkFile = getBundledJDKFile();
+
+  @Nullable private static final String pathsSelector = PathManager.getPathsSelector();
+  @NotNull private static final File productJdkConfigDir = new File(pathsSelector != null ?
+                                                                    PathManager.getDefaultConfigPathFor(pathsSelector) :
+                                                                    PathManager.getConfigPath());
+
+  @NotNull private static final File productJdkConfigFile = new File(productJdkConfigDir, productJdkConfigFileName);
+
+  @NotNull private static final File bundledJdkFile = getBundledJDKFile();
 
 
 
   @NotNull
   private static File getBundledJDKFile() {
-    StringBuilder bundledJDKPath = new StringBuilder("jre");
-    if (SystemInfo.isMac) {
-      bundledJDKPath.append(File.separator).append("jdk");
-    }
-    return new File(bundledJDKPath.toString());
+    return new File(SystemInfo.isMac ? "jdk" : "jre");
   }
 
   @Override
@@ -74,11 +76,17 @@ public class SwitchBootJdkAction extends AnAction implements DumbAware {
   @Override
   public void actionPerformed(AnActionEvent event) {
 
-    if (!productJdkConfigFile.exists()) {
+    if (!productJdkConfigDir.exists()) {
       try {
-        if (!productJdkConfigFile.createNewFile()){
-          LOG.error("Could not create " + productJdkConfigFileName + " productJdkConfigFile");
+        if (!productJdkConfigDir.mkdirs()) {
+          LOG.error("Could not create " + productJdkConfigDir + " productJdkConfigDir");
           return;
+        }
+        if (!productJdkConfigFile.exists()) {
+          if (!productJdkConfigFile.createNewFile()) {
+            LOG.error("Could not create " + productJdkConfigFileName + " productJdkConfigFile");
+            return;
+          }
         }
       }
       catch (IOException e) {
@@ -90,6 +98,11 @@ public class SwitchBootJdkAction extends AnAction implements DumbAware {
     SwitchBootJdkDialog dialog = new SwitchBootJdkDialog();
     if (dialog.showAndGet()) {
       File selectedJdkBundleFile = dialog.getSelectedFile();
+      if (selectedJdkBundleFile == null) {
+        LOG.error("SwitchBootJdkDialog returns null selection");
+        return;
+      }
+
       FileWriter fooWriter = null;
       try {
         //noinspection IOResourceOpenedButNotSafelyClosed
@@ -115,6 +128,18 @@ public class SwitchBootJdkAction extends AnAction implements DumbAware {
 
   private static class SwitchBootJdkDialog extends DialogWrapper {
 
+    static class JdkBundleItem {
+      @Nullable private JdkBundle myBundle;
+
+      public JdkBundleItem(@Nullable JdkBundle bundle) {
+        myBundle = bundle;
+      }
+
+      @Nullable public JdkBundle getBundle() {
+        return myBundle;
+      }
+    }
+
     @NotNull private final ComboBox myComboBox;
 
     private SwitchBootJdkDialog() {
@@ -124,79 +149,24 @@ public class SwitchBootJdkAction extends AnAction implements DumbAware {
 
       myComboBox = new ComboBox();
 
-      final DefaultComboBoxModel<JdkBundle> model = new DefaultComboBoxModel<JdkBundle>();
+      final DefaultComboBoxModel<JdkBundleItem> model = new DefaultComboBoxModel<>();
 
       for (JdkBundle jdkBundlePath : pathsList.toArrayList()) {
         //noinspection unchecked
-        model.addElement(jdkBundlePath);
+        model.addElement(new JdkBundleItem(jdkBundlePath));
       }
 
-      model.addElement(null);
-
-      model.addListDataListener(new ListDataListener() {
-        @Override
-        public void intervalAdded(ListDataEvent e) { }
-
-        @Override
-        public void intervalRemoved(ListDataEvent e) { }
-
-        @Override
-        public void contentsChanged(ListDataEvent e) {
-          if (myComboBox.getSelectedItem() == null) {
-            FileChooserDescriptor descriptor = new FileChooserDescriptor(false, true, false, false, false, false) {
-              @Override
-              public boolean isFileSelectable(final VirtualFile file) {
-                if (!super.isFileSelectable(file)) return false;
-                JdkBundle bundle = JdkBundle.createBundle(new File(file.getPath()), false, false);
-                if (bundle == null) return false;
-                Version version =  bundle.getVersion();
-
-                return version != null && !version.lessThan(JDK8_VERSION.major, JDK8_VERSION.minor, JDK8_VERSION.bugfix);
-              }
-            };
-
-            FileChooser.chooseFiles(descriptor, null, null, new Consumer<List<VirtualFile>>() {
-              @Override
-              public void consume(final List<VirtualFile> files) {
-                if (files.size() > 0) {
-                  final File jdkFile = new File(files.get(0).getPath());
-                  JdkBundle selectedJdk = pathsList.getBundle(jdkFile.getPath());
-                  if (selectedJdk == null) {
-                    selectedJdk = JdkBundle.createBundle(jdkFile, false, false);
-                    if (selectedJdk != null) {
-                      pathsList.addBundle(selectedJdk, true);
-                      if (model.getSize() > 0) {
-                        model.insertElementAt(selectedJdk, model.getSize() - 1);
-                      }
-                      else {
-                        model.addElement(selectedJdk);
-                      }
-                    }
-                    else {
-                      LOG.error("Cannot create bundle for path: " + jdkFile.getPath());
-                      return;
-                    }
-                  }
-                  myComboBox.setSelectedItem(selectedJdk);
-                }
-              }
-            });
-          }
-          if (myComboBox.getSelectedItem() == null) {
-            myComboBox.setSelectedItem(model.getElementAt(0));
-          }
-          setOKActionEnabled(myComboBox.getSelectedItem() != null && !((JdkBundle)myComboBox.getSelectedItem()).isBoot());
-        }
-      });
+      model.addElement(new JdkBundleItem(null));
 
       //noinspection unchecked
       myComboBox.setModel(model);
 
+      //noinspection unchecked
       myComboBox.setRenderer(new ListCellRendererWrapper() {
         @Override
         public void customize(JList list, Object value, int index, boolean selected, boolean hasFocus) {
-          if (value != null) {
-            JdkBundle jdkBundleDescriptor = ((JdkBundle)value);
+          JdkBundle jdkBundleDescriptor = ((JdkBundleItem)value).getBundle();
+          if (jdkBundleDescriptor != null) {
             if (jdkBundleDescriptor.isBoot()) {
               setForeground(JBColor.DARK_GRAY);
             }
@@ -207,6 +177,88 @@ public class SwitchBootJdkAction extends AnAction implements DumbAware {
           }
         }
       });
+
+      myComboBox.addActionListener(new ActionListener() {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+          if (myComboBox.getSelectedItem() == null) {
+            LOG.error("Unexpected nullable selection");
+            return;
+          }
+
+          JdkBundleItem item = (JdkBundleItem)myComboBox.getSelectedItem();
+
+          if (item.getBundle() == null) {
+            FileChooserDescriptor descriptor = new FileChooserDescriptor(false, true, false, false, false, false) {
+              JdkBundle selectedBundle;
+
+              @Override
+              public boolean isFileSelectable(final VirtualFile file) {
+                selectedBundle = null;
+                if (!super.isFileSelectable(file)) return false;
+                // allow selection of JDK of any arch, so that to warn about possible arch mismatch during validation
+                JdkBundle bundle = JdkBundle.createBundle(new File(file.getPath()), false, false, false);
+                if (bundle == null) return false;
+                Version version = bundle.getVersion();
+                selectedBundle = bundle;
+                return version != null && !version.lessThan(JDK8_VERSION.major, JDK8_VERSION.minor, JDK8_VERSION.bugfix);
+              }
+
+              @Override
+              public void validateSelectedFiles(VirtualFile[] files) throws Exception {
+                super.validateSelectedFiles(files);
+                assert files.length == 1;
+                if (selectedBundle == null) {
+                  throw new Exception("Invalid JDK bundle!");
+                }
+                if (selectedBundle.getBitness() != JdkBundle.runtimeBitness) {
+                  //noinspection SpellCheckingInspection
+                  throw new Exception("JDK arch mismatch! Your IDE's arch is " + JdkBundle.runtimeBitness);
+                }
+              }
+            };
+
+            FileChooser.chooseFiles(descriptor, null, null, files -> {
+              if (files.size() > 0) {
+                final File jdkFile = new File(files.get(0).getPath());
+                JdkBundle selectedJdk = pathsList.getBundle(jdkFile.getPath());
+                JdkBundleItem jdkBundleItem;
+                if (selectedJdk == null) {
+                  selectedJdk = JdkBundle.createBundle(jdkFile, false, false);
+                  if (selectedJdk != null) {
+                    pathsList.addBundle(selectedJdk, true);
+                    if (model.getSize() > 0) {
+                      jdkBundleItem = new JdkBundleItem(selectedJdk);
+                      model.insertElementAt(jdkBundleItem, model.getSize() - 1);
+                    }
+                    else {
+                      jdkBundleItem = new JdkBundleItem(selectedJdk);
+                      model.addElement(jdkBundleItem);
+                    }
+                  }
+                  else {
+                    LOG.error("Cannot create bundle for path: " + jdkFile.getPath());
+                    return;
+                  }
+                } else {
+                  jdkBundleItem = new JdkBundleItem(selectedJdk);
+                }
+                myComboBox.setSelectedItem(jdkBundleItem);
+              }
+            });
+          }
+
+          item = (JdkBundleItem)myComboBox.getSelectedItem();
+
+          if (item == null || item.getBundle() == null) {
+            item = model.getElementAt(0);
+            myComboBox.setSelectedItem(item);
+          }
+
+          setOKActionEnabled(item.getBundle() != null && !item.getBundle().isBoot());
+        }
+      });
+      myComboBox.putClientProperty("JComboBox.isTableCellEditor", Boolean.TRUE);
 
       setTitle("Switch IDE Boot JDK");
       setOKActionEnabled(false); // First item is a boot jdk
@@ -231,8 +283,14 @@ public class SwitchBootJdkAction extends AnAction implements DumbAware {
       return myComboBox;
     }
 
+    @Nullable
     public File getSelectedFile() {
-      return ((JdkBundle)myComboBox.getSelectedItem()).getLocation();
+      final JdkBundleItem item = (JdkBundleItem)myComboBox.getSelectedItem();
+      if (item == null) return null;
+
+      final JdkBundle bundle = item.getBundle();
+
+      return bundle != null ? bundle.getLocation() : null;
     }
   }
 

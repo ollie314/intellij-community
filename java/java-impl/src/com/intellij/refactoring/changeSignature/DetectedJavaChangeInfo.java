@@ -50,7 +50,7 @@ class DetectedJavaChangeInfo extends JavaChangeInfoImpl {
                          @NotNull ParameterInfoImpl[] newParms,
                          ThrownExceptionInfo[] newExceptions,
                          String newName, String oldName) {
-    super(newVisibility, method, newName, newType, newParms, newExceptions, false, new HashSet<PsiMethod>(), new HashSet<PsiMethod>(), oldName);
+    super(newVisibility, method, newName, newType, newParms, newExceptions, false, new HashSet<>(), new HashSet<>(), oldName);
     final PsiParameter[] parameters = method.getParameterList().getParameters();
     myModifiers = new String[parameters.length];
     for (int i = 0; i < parameters.length; i++) {
@@ -216,7 +216,7 @@ class DetectedJavaChangeInfo extends JavaChangeInfoImpl {
     final JavaParameterInfo[] oldParameters = getNewParameters();
     final String[] oldParameterNames = getOldParameterNames();
     final String[] oldParameterTypes = getOldParameterTypes();
-    final Map<JavaParameterInfo, Integer> untouchedParams = new HashMap<JavaParameterInfo, Integer>();
+    final Map<JavaParameterInfo, Integer> untouchedParams = new HashMap<>();
     for (int i = 0; i < parameterInfos.length; i++) {
       ParameterInfoImpl parameterInfo = parameterInfos[i];
       JavaParameterInfo oldParameter = null;
@@ -287,12 +287,9 @@ class DetectedJavaChangeInfo extends JavaChangeInfoImpl {
 
         @Override
         protected void invokeRefactoring(final BaseRefactoringProcessor processor) {
-          CommandProcessor.getInstance().executeCommand(myProject, new Runnable() {
-            @Override
-            public void run() {
-              temporallyRevertChanges(method, oldText);
-              doRefactor(processor);
-            }
+          CommandProcessor.getInstance().executeCommand(myProject, () -> {
+            temporallyRevertChanges(method, oldText);
+            doRefactor(processor);
           }, RefactoringBundle.message("changing.signature.of.0", DescriptiveNameUtil.getDescriptiveName(currentMethod)), null);
         }
 
@@ -310,16 +307,13 @@ class DetectedJavaChangeInfo extends JavaChangeInfoImpl {
   private static void temporallyRevertChanges(final PsiElement psiElement,
                                               final String oldText,
                                               final TextRange textRange) {
-    ApplicationManager.getApplication().runWriteAction(new Runnable() {
-      @Override
-      public void run() {
-        final PsiFile file = psiElement.getContainingFile();
-        final PsiDocumentManager documentManager = PsiDocumentManager.getInstance(psiElement.getProject());
-        final Document document = documentManager.getDocument(file);
-        if (document != null) {
-          document.replaceString(textRange.getStartOffset(), textRange.getEndOffset(), oldText);
-          documentManager.commitDocument(document);
-        }
+    ApplicationManager.getApplication().runWriteAction(() -> {
+      final PsiFile file = psiElement.getContainingFile();
+      final PsiDocumentManager documentManager = PsiDocumentManager.getInstance(psiElement.getProject());
+      final Document document = documentManager.getDocument(file);
+      if (document != null) {
+        document.replaceString(textRange.getStartOffset(), textRange.getEndOffset(), oldText);
+        documentManager.commitDocument(document);
       }
     });
   }

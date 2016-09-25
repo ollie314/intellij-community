@@ -80,7 +80,8 @@ public class ImportFromToImportIntention implements IntentionAction {
       InfoHolder ret = new InfoHolder();
       ret.myModuleReference = null;
       ret.myFromImportStatement = PsiTreeUtil.getParentOfType(position, PyFromImportStatement.class);
-      if (ret.myFromImportStatement != null && ret.myFromImportStatement.isValid() && !ret.myFromImportStatement.isFromFuture()) {
+      PyPsiUtils.assertValid(ret.myFromImportStatement);
+      if (ret.myFromImportStatement != null && !ret.myFromImportStatement.isFromFuture()) {
         ret.myRelativeLevel = ret.myFromImportStatement.getRelativeLevel();
         ret.myModuleReference = ret.myFromImportStatement.getImportSource();
       }
@@ -152,14 +153,16 @@ public class ImportFromToImportIntention implements IntentionAction {
     info.myModuleReference = null;
     final PsiElement position = file.findElementAt(editor.getCaretModel().getOffset());
     info.myFromImportStatement = PsiTreeUtil.getParentOfType(position, PyFromImportStatement.class);
-    if (info.myFromImportStatement != null && info.myFromImportStatement.isValid() && !info.myFromImportStatement.isFromFuture()) {
+    PyPsiUtils.assertValid(info.myFromImportStatement);
+    if (info.myFromImportStatement != null && !info.myFromImportStatement.isFromFuture()) {
       info.myRelativeLevel = info.myFromImportStatement.getRelativeLevel();
       info.myModuleReference = info.myFromImportStatement.getImportSource();
       if (info.myRelativeLevel > 0) {
         // make sure we aren't importing a module from the relative path
         for (PyImportElement import_element : info.myFromImportStatement.getImportElements()) {
           PyReferenceExpression ref = import_element.getImportReferenceExpression();
-          if (ref != null && ref.isValid()) {
+          PyPsiUtils.assertValid(ref);
+          if (ref != null) {
             PsiElement target = ref.getReference().resolve();
             final TypeEvalContext context = TypeEvalContext.codeAnalysis(file.getProject(), file);
             if (target instanceof PyExpression && context.getType((PyExpression)target) instanceof PyModuleType) {
@@ -206,11 +209,12 @@ public class ImportFromToImportIntention implements IntentionAction {
       // find all unqualified references that lead to one of our import elements
       final PyImportElement[] ielts = info.myFromImportStatement.getImportElements();
       final PyStarImportElement star_ielt = info.myFromImportStatement.getStarImportElement();
-      final Map<PsiReference, PyImportElement> references = new HashMap<PsiReference, PyImportElement>();
-      final List<PsiReference> star_references = new ArrayList<PsiReference>();
+      final Map<PsiReference, PyImportElement> references = new HashMap<>();
+      final List<PsiReference> star_references = new ArrayList<>();
       PsiTreeUtil.processElements(file, new PsiElementProcessor() {
         public boolean execute(@NotNull PsiElement element) {
-          if (element instanceof PyReferenceExpression && PsiTreeUtil.getParentOfType(element, PyImportElement.class) == null && element.isValid()) {
+          PyPsiUtils.assertValid(element);
+          if (element instanceof PyReferenceExpression && PsiTreeUtil.getParentOfType(element, PyImportElement.class) == null) {
             PyReferenceExpression ref = (PyReferenceExpression)element;
             if (!ref.isQualified()) {
               ResolveResult[] resolved = ref.getReference().multiResolve(false);
@@ -239,7 +243,7 @@ public class ImportFromToImportIntention implements IntentionAction {
       String top_name = top_qualifier.getName();
       Collection<PsiReference> possible_targets = references.keySet();
       if (star_references.size() > 0) {
-        possible_targets = new ArrayList<PsiReference>(references.keySet().size() + star_references.size());
+        possible_targets = new ArrayList<>(references.keySet().size() + star_references.size());
         possible_targets.addAll(references.keySet());
         possible_targets.addAll(star_references);
       }

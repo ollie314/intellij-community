@@ -55,8 +55,8 @@ import java.util.Set;
 public class GridCellImpl implements GridCell {
   private final GridImpl myContainer;
 
-  private final MutualMap<Content, TabInfo> myContents = new MutualMap<Content, TabInfo>(true);
-  private final Set<Content> myMinimizedContents = new HashSet<Content>();
+  private final MutualMap<Content, TabInfo> myContents = new MutualMap<>(true);
+  private final Set<Content> myMinimizedContents = new HashSet<>();
 
   private final JBTabs myTabs;
   private final GridImpl.Placeholder myPlaceholder;
@@ -197,12 +197,7 @@ public class GridCellImpl implements GridCell {
     if (myContents.containsKey(content)) return;
     myContents.put(content, null);
 
-    revalidateCell(new Runnable() {
-      @Override
-      public void run() {
-        myTabs.addTab(createTabInfoFor(content));
-      }
-    });
+    revalidateCell(() -> myTabs.addTab(createTabInfoFor(content)));
 
     updateSelection(myTabs.getComponent().getRootPane() != null);
   }
@@ -213,12 +208,7 @@ public class GridCellImpl implements GridCell {
     final TabInfo info = getTabFor(content);
     myContents.remove(content);
 
-    revalidateCell(new Runnable() {
-      @Override
-      public void run() {
-        myTabs.removeTab(info);
-      }
-    });
+    revalidateCell(() -> myTabs.removeTab(info));
 
     updateSelection(myTabs.getComponent().getRootPane() != null);
   }
@@ -309,7 +299,7 @@ public class GridCellImpl implements GridCell {
   }
 
   public List<SwitchTarget> getTargets(boolean onlyVisible) {
-    if (myTabs.getPresentation().isHideTabs()) return new ArrayList<SwitchTarget>();
+    if (myTabs.getPresentation().isHideTabs()) return new ArrayList<>();
 
     return myTabs.getTargets(onlyVisible, false);
   }

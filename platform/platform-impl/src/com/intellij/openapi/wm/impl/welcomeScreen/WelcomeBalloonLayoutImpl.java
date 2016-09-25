@@ -54,7 +54,6 @@ public class WelcomeBalloonLayoutImpl extends BalloonLayoutImpl {
   private BalloonImpl myPopupBalloon;
   private final BalloonPanel myBalloonPanel = new BalloonPanel();
   private boolean myVisible;
-  private List<Disposable> myDisposableList = new ArrayList<>();
 
   public WelcomeBalloonLayoutImpl(@NotNull JRootPane parent,
                                   @NotNull Insets insets,
@@ -65,11 +64,10 @@ public class WelcomeBalloonLayoutImpl extends BalloonLayoutImpl {
     myButtonLocation = buttonLocation;
   }
 
+  @Override
   public void dispose() {
+    super.dispose();
     if (myPopupBalloon != null) {
-      for (Disposable disposable : new ArrayList<>(myDisposableList)) {
-        Disposer.dispose(disposable);
-      }
       Disposer.dispose(myPopupBalloon);
       myPopupBalloon = null;
     }
@@ -107,17 +105,12 @@ public class WelcomeBalloonLayoutImpl extends BalloonLayoutImpl {
       });
 
       myPopupBalloon =
-        new BalloonImpl(pane, BORDER_COLOR, new Insets(0, 0, 0, 0), FILL_COLOR, true, false, false, false, true, 0, false, false, null,
-                        false, 0, 0, 0, 0, false, null, null, false, false, false, null, false);
+        new BalloonImpl(pane, BORDER_COLOR, new Insets(0, 0, 0, 0), FILL_COLOR, true, false, false, true, false, true, 0, false, false,
+                        null, false, 0, 0, 0, 0, false, null, null, false, false, false, null, false);
       myPopupBalloon.setAnimationEnabled(false);
       myPopupBalloon.setShadowBorderProvider(
         new NotificationBalloonShadowBorderProvider(FILL_COLOR, BORDER_COLOR));
-      myPopupBalloon.setHideListener(new Runnable() {
-        @Override
-        public void run() {
-          myPopupBalloon.getComponent().setVisible(false);
-        }
-      });
+      myPopupBalloon.setHideListener(() -> myPopupBalloon.getComponent().setVisible(false));
       myPopupBalloon.setActionProvider(new BalloonImpl.ActionProvider() {
         private BalloonImpl.ActionButton myAction;
 
@@ -137,16 +130,15 @@ public class WelcomeBalloonLayoutImpl extends BalloonLayoutImpl {
 
     myBalloonPanel.add(balloon.getContent());
     balloon.getContent().putClientProperty(TYPE_KEY, layoutData.type);
-    Disposable disposable = new Disposable() {
+    Disposer.register(balloon, new Disposable() {
       @Override
       public void dispose() {
-        myDisposableList.remove(this);
+        myBalloons.remove(balloon);
         myBalloonPanel.remove(balloon.getContent());
         updatePopup();
       }
-    };
-    myDisposableList.add(disposable);
-    Disposer.register(balloon, disposable);
+    });
+    myBalloons.add(balloon);
 
     updatePopup();
   }
@@ -159,6 +151,13 @@ public class WelcomeBalloonLayoutImpl extends BalloonLayoutImpl {
     else {
       myPopupBalloon.show(myLayeredPane);
       myVisible = true;
+    }
+  }
+
+  @Override
+  public void queueRelayout() {
+    if (myVisible) {
+      layoutPopup();
     }
   }
 
@@ -188,7 +187,12 @@ public class WelcomeBalloonLayoutImpl extends BalloonLayoutImpl {
     myListener.run(types);
 
     if (myVisible) {
-      layoutPopup();
+      if (count == 0) {
+        myPopupBalloon.getComponent().setVisible(false);
+      }
+      else {
+        layoutPopup();
+      }
     }
   }
 

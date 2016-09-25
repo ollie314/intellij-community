@@ -77,6 +77,10 @@ public class IntroduceParameterTest extends LightRefactoringTestCase  {
            "Value for introduced parameter in that method call will be incorrect.");
   }
 
+  public void testRemoveOverrideFromDelegated() throws Exception {
+    doTest(IntroduceParameterRefactoring.REPLACE_FIELDS_WITH_GETTERS_NONE, false, false, false, true);
+  }
+
   public void testFieldAccess() {
     doTest(IntroduceParameterRefactoring.REPLACE_FIELDS_WITH_GETTERS_NONE, false, false, false, false);
   }
@@ -299,6 +303,10 @@ public class IntroduceParameterTest extends LightRefactoringTestCase  {
   }
 
   public void testSubstituteTypeParams() {
+    doTest(IntroduceParameterRefactoring.REPLACE_FIELDS_WITH_GETTERS_ALL, true, false, true, false);
+  }
+
+  public void testSubstituteTypeParamsInInheritor() {
     doTest(IntroduceParameterRefactoring.REPLACE_FIELDS_WITH_GETTERS_ALL, true, false, true, false);
   }
 

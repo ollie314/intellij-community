@@ -293,12 +293,9 @@ public abstract class MavenArtifactCoordinatesConverter extends ResolvingConvert
         MavenDomDependency managedDependency = MavenDomProjectProcessorUtils.searchManagingDependency((MavenDomDependency)parent);
         if (managedDependency != null) {
           final GenericDomValue<String> managedDependencyArtifactId = managedDependency.getArtifactId();
-          return RecursionManager.doPreventingRecursion(managedDependencyArtifactId, false, new Computable<PsiFile>() {
-            @Override
-            public PsiFile compute() {
-              PsiElement res = new GenericDomValueReference(managedDependencyArtifactId).resolve();
-              return res instanceof PsiFile ? (PsiFile)res : null;
-            }
+          return RecursionManager.doPreventingRecursion(managedDependencyArtifactId, false, () -> {
+            PsiElement res1 = new GenericDomValueReference(managedDependencyArtifactId).resolve();
+            return res1 instanceof PsiFile ? (PsiFile)res1 : null;
           });
         }
       }
@@ -314,7 +311,7 @@ public abstract class MavenArtifactCoordinatesConverter extends ResolvingConvert
     @Override
     public Set<String> getVariants(MavenId id, MavenProjectIndicesManager manager, MavenDomShortArtifactCoordinates coordinates) {
       if (StringUtil.isEmpty(id.getGroupId())) {
-        Set<String> result = new THashSet<String>();
+        Set<String> result = new THashSet<>();
 
         for (String each : manager.getGroupIds()) {
           id = new MavenId(each, id.getArtifactId(), id.getVersion());
@@ -365,7 +362,7 @@ public abstract class MavenArtifactCoordinatesConverter extends ResolvingConvert
     @Override
     public Set<String> getVariants(MavenId id, MavenProjectIndicesManager manager, MavenDomShortArtifactCoordinates coordinates) {
       if (StringUtil.isEmpty(id.getGroupId())) {
-        Set<String> result = new THashSet<String>();
+        Set<String> result = new THashSet<>();
 
         for (String each : getGroupIdVariants(manager, coordinates)) {
           id = new MavenId(each, id.getArtifactId(), id.getVersion());

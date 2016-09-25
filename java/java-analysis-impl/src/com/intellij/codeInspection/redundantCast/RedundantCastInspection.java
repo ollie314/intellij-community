@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2013 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,8 +46,8 @@ public class RedundantCastInspection extends GenericsInspectionToolBase {
   private static final String DISPLAY_NAME = InspectionsBundle.message("inspection.redundant.cast.display.name");
   @NonNls private static final String SHORT_NAME = "RedundantCast";
 
-  public boolean IGNORE_ANNOTATED_METHODS = false;
-  public boolean IGNORE_SUSPICIOUS_METHOD_CALLS = false;
+  public boolean IGNORE_ANNOTATED_METHODS;
+  public boolean IGNORE_SUSPICIOUS_METHOD_CALLS;
 
 
   public RedundantCastInspection() {
@@ -59,7 +59,7 @@ public class RedundantCastInspection extends GenericsInspectionToolBase {
   public ProblemDescriptor[] getDescriptions(@NotNull PsiElement where, @NotNull InspectionManager manager, boolean isOnTheFly) {
     List<PsiTypeCastExpression> redundantCasts = RedundantCastUtil.getRedundantCastsInside(where);
     if (redundantCasts.isEmpty()) return null;
-    List<ProblemDescriptor> descriptions = new ArrayList<ProblemDescriptor>(redundantCasts.size());
+    List<ProblemDescriptor> descriptions = new ArrayList<>(redundantCasts.size());
     for (PsiTypeCastExpression redundantCast : redundantCasts) {
       ProblemDescriptor descriptor = createDescription(redundantCast, manager, isOnTheFly);
       if (descriptor != null) {
@@ -116,7 +116,7 @@ public class RedundantCastInspection extends GenericsInspectionToolBase {
       final PsiElement gParent = parent.getParent();
       if (gParent instanceof PsiMethodCallExpression && IGNORE_SUSPICIOUS_METHOD_CALLS) {
         final String message = SuspiciousMethodCallUtil
-          .getSuspiciousMethodCallMessage((PsiMethodCallExpression)gParent, operand.getType(), true, new ArrayList<PsiMethod>(),
+          .getSuspiciousMethodCallMessage((PsiMethodCallExpression)gParent, operand, operand.getType(), true, new ArrayList<>(),
                                           new IntArrayList());
         if (message != null) {
           return null;

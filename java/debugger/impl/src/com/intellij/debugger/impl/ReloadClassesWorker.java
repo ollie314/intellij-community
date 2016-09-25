@@ -17,10 +17,7 @@ package com.intellij.debugger.impl;
 
 import com.intellij.debugger.DebuggerBundle;
 import com.intellij.debugger.DebuggerManagerEx;
-import com.intellij.debugger.engine.DebugProcessImpl;
-import com.intellij.debugger.engine.DebuggerManagerThreadImpl;
-import com.intellij.debugger.engine.JavaExecutionStack;
-import com.intellij.debugger.engine.SuspendContextImpl;
+import com.intellij.debugger.engine.*;
 import com.intellij.debugger.jdi.VirtualMachineProxyImpl;
 import com.intellij.debugger.ui.breakpoints.BreakpointManager;
 import com.intellij.openapi.diagnostic.Logger;
@@ -168,6 +165,8 @@ class ReloadClassesWorker {
       processException(e);
     }
 
+    debugProcess.getPositionManager().clearCache();
+
     DebuggerContextImpl context = myDebuggerSession.getContextManager().getContext();
     SuspendContextImpl suspendContext = context.getSuspendContext();
     if (suspendContext != null) {
@@ -180,31 +179,29 @@ class ReloadClassesWorker {
     final Semaphore waitSemaphore = new Semaphore();
     waitSemaphore.down();
     //noinspection SSBasedInspection
-    SwingUtilities.invokeLater(new Runnable() {
-      public void run() {
-        try {
-          if (!project.isDisposed()) {
-            final BreakpointManager breakpointManager = (DebuggerManagerEx.getInstanceEx(project)).getBreakpointManager();
-            breakpointManager.reloadBreakpoints();
-            debugProcess.getRequestsManager().clearWarnings();
-            if (LOG.isDebugEnabled()) {
-              LOG.debug("requests updated");
-              LOG.debug("time stamp set");
-            }
-            myDebuggerSession.refresh(false);
+    SwingUtilities.invokeLater(() -> {
+      try {
+        if (!project.isDisposed()) {
+          final BreakpointManager breakpointManager1 = (DebuggerManagerEx.getInstanceEx(project)).getBreakpointManager();
+          breakpointManager1.reloadBreakpoints();
+          debugProcess.getRequestsManager().clearWarnings();
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("requests updated");
+            LOG.debug("time stamp set");
+          }
+          myDebuggerSession.refresh(false);
 
-            XDebugSession session = myDebuggerSession.getXDebugSession();
-            if (session != null) {
-              session.rebuildViews();
-            }
+          XDebugSession session = myDebuggerSession.getXDebugSession();
+          if (session != null) {
+            session.rebuildViews();
           }
         }
-        catch (Throwable e) {
-          LOG.error(e);
-        }
-        finally {
-          waitSemaphore.up();
-        }
+      }
+      catch (Throwable e) {
+        LOG.error(e);
+      }
+      finally {
+        waitSemaphore.up();
       }
     });
 

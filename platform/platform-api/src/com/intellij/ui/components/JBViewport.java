@@ -21,6 +21,8 @@ import com.intellij.openapi.util.registry.Registry;
 import com.intellij.ui.components.JBScrollPane.Alignment;
 import com.intellij.ui.table.JBTable;
 import com.intellij.util.ui.ComponentWithEmptyText;
+import com.intellij.util.ui.JBInsets;
+import com.intellij.util.ui.JBSwingUtilities;
 import com.intellij.util.ui.StatusText;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.Nullable;
@@ -35,12 +37,14 @@ import java.awt.*;
 import java.awt.event.ContainerEvent;
 import java.awt.event.ContainerListener;
 
+import static com.intellij.util.ui.JBUI.emptyInsets;
+
 public class JBViewport extends JViewport implements ZoomableViewport {
   private static final ViewportLayout ourLayoutManager = new ViewportLayout() {
 
     @Override
     public void layoutContainer(Container parent) {
-      if (parent instanceof JViewport && Registry.is("ide.scroll.new.layout")) {
+      if (parent instanceof JViewport) {
         JViewport viewport = (JViewport)parent;
         Component view = viewport.getView();
         if (view != null) {
@@ -52,38 +56,7 @@ public class JBViewport extends JViewport implements ZoomableViewport {
             super.layoutContainer(parent);
           }
         }
-        return;
       }
-      JBViewport viewport = (JBViewport)parent;
-      Component view = viewport.getView();
-      JBScrollPane scrollPane = UIUtil.getParentOfType(JBScrollPane.class, parent);
-      // do not force viewport size on editor component, e.g. EditorTextField and LanguageConsole
-      if (view == null || scrollPane == null || view instanceof TypingTarget) {
-        super.layoutContainer(parent);
-        return;
-      }
-
-      Dimension size = doSuperLayoutContainer(viewport);
-
-      Dimension visible = viewport.getExtentSize();
-      if (scrollPane.getHorizontalScrollBarPolicy() == ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER) {
-        size.width = visible.width;
-      }
-      if (scrollPane.getVerticalScrollBarPolicy() == ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER) {
-        size.height = visible.height;
-      }
-      viewport.setViewSize(size);
-    }
-
-    private Dimension doSuperLayoutContainer(JBViewport viewport) {
-      try {
-        viewport.mySaveTempViewSize = true;
-        super.layoutContainer(viewport);
-      }
-      finally {
-        viewport.mySaveTempViewSize = false;
-      }
-      return viewport.myTempViewSize;
     }
   };
 
@@ -92,8 +65,6 @@ public class JBViewport extends JViewport implements ZoomableViewport {
 
   private ZoomingDelegate myZoomer;
 
-  private Dimension myTempViewSize;
-  private boolean mySaveTempViewSize;
   private volatile boolean myBackgroundRequested; // avoid cyclic references
 
   public JBViewport() {
@@ -124,7 +95,7 @@ public class JBViewport extends JViewport implements ZoomableViewport {
     if (!myBackgroundRequested && EventQueue.isDispatchThread() && Registry.is("ide.scroll.background.auto")) {
       if (!isBackgroundSet() || color instanceof UIResource) {
         Component child = getView();
-        if (child != null && child.isOpaque()) {
+        if (child != null) {
           try {
             myBackgroundRequested = true;
             return child.getBackground();
@@ -144,15 +115,8 @@ public class JBViewport extends JViewport implements ZoomableViewport {
   }
 
   @Override
-  public void setViewSize(Dimension newSize) {
-    // only store newSize from ViewportLayout.layoutContainer
-    // if we're going to fix it the next moment in our layoutContainer code
-    if (mySaveTempViewSize) {
-      myTempViewSize = newSize;
-    }
-    else {
-      super.setViewSize(newSize);
-    }
+  protected Graphics getComponentGraphics(Graphics graphics) {
+    return JBSwingUtilities.runGlobalCGTransform(this, super.getComponentGraphics(graphics));
   }
 
   @Override
@@ -198,6 +162,15 @@ public class JBViewport extends JViewport implements ZoomableViewport {
     return myPaintingNow;
   }
 
+  @Override
+  public void scrollRectToVisible(Rectangle bounds) {
+    Component view = getView();
+    if (view instanceof JComponent) {
+      JBInsets.addTo(bounds, getViewInsets((JComponent)view));
+    }
+    super.scrollRectToVisible(bounds);
+  }
+
   /**
    * Returns the alignment of the specified scroll bar
    * if and only if the specified scroll bar
@@ -209,6 +182,22 @@ public class JBViewport extends JViewport implements ZoomableViewport {
   private static Alignment getAlignment(JScrollBar bar) {
     if (bar != null && bar.isVisible() && !bar.isOpaque()) {
       return UIUtil.getClientProperty(bar, Alignment.class);
+    }
+    return null;
+  }
+
+  private static boolean isAlignmentNeeded(JComponent view, boolean horizontal) {
+    return (!SystemInfo.isMac || horizontal && Registry.is("mac.scroll.horizontal.gap")) &&
+           (view instanceof JList || view instanceof JTree || (!SystemInfo.isMac && Registry.is("ide.scroll.align.component")));
+  }
+
+  static Insets getViewInsets(JComponent view) {
+    Border border = view.getBorder();
+    if (border instanceof ViewBorder) {
+      ViewBorder vb = (ViewBorder)border;
+      Insets insets = emptyInsets();
+      vb.addViewInsets(view, insets);
+      return insets;
     }
     return null;
   }
@@ -296,7 +285,7 @@ public class JBViewport extends JViewport implements ZoomableViewport {
    * This border is used to add additional space for a view.
    */
   private static class ViewBorder extends AbstractBorder {
-    private final Insets myInsets = new Insets(0, 0, 0, 0);
+    private final Insets myInsets = emptyInsets();
     private final Border myBorder;
 
     ViewBorder(Border border) {
@@ -306,7 +295,7 @@ public class JBViewport extends JViewport implements ZoomableViewport {
     @Override
     public Insets getBorderInsets(Component view, Insets insets) {
       if (insets == null) {
-        insets = new Insets(0, 0, 0, 0);
+        insets = emptyInsets();
       }
       else {
         insets.set(0, 0, 0, 0);
@@ -364,7 +353,7 @@ public class JBViewport extends JViewport implements ZoomableViewport {
               if (va == Alignment.LEFT) {
                 insets.left += vsb.getWidth();
               }
-              else if (va == Alignment.RIGHT && isAlignmentNeeded(view)) {
+              else if (va == Alignment.RIGHT && isAlignmentNeeded(view, false)) {
                 insets.right += vsb.getWidth();
               }
             }
@@ -375,17 +364,13 @@ public class JBViewport extends JViewport implements ZoomableViewport {
               if (ha == Alignment.TOP) {
                 insets.top += hsb.getHeight();
               }
-              else if (ha == Alignment.BOTTOM && isAlignmentNeeded(view)) {
+              else if (ha == Alignment.BOTTOM && isAlignmentNeeded(view, true)) {
                 insets.bottom += hsb.getHeight();
               }
             }
           }
         }
       }
-    }
-
-    private boolean isAlignmentNeeded(JComponent view) {
-      return !SystemInfo.isMac && (view instanceof JList || view instanceof JTree || Registry.is("ide.scroll.align.component"));
     }
   }
 }

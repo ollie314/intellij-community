@@ -160,7 +160,7 @@ public abstract class AnAction implements PossiblyDumbAware {
     if (component == null) return;
     List<AnAction> actionList = UIUtil.getClientProperty(component, ACTIONS_KEY);
     if (actionList == null) {
-      UIUtil.putClientProperty(component, ACTIONS_KEY, actionList = new SmartList<AnAction>());
+      UIUtil.putClientProperty(component, ACTIONS_KEY, actionList = new SmartList<>());
     }
     if (!actionList.contains(this)) {
       actionList.add(this);
@@ -317,6 +317,16 @@ public abstract class AnAction implements PossiblyDumbAware {
   @Override
   public boolean isDumbAware() {
     return this instanceof DumbAware;
+  }
+
+  /**
+   * @return whether this action should be wrapped into a single transaction. PSI/VFS-related actions
+   * that can show progresses or modal dialogs should return true. The default value is false, to prevent
+   * transaction-related assertions from actions in harmless dialogs like "Enter password" shown inside invokeLater.
+   * @see com.intellij.openapi.application.TransactionGuard
+   */
+  public boolean startInTransaction() {
+    return false;
   }
 
   public interface TransparentUpdate {

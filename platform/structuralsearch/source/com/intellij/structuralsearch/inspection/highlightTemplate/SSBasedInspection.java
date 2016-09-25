@@ -56,8 +56,8 @@ public class SSBasedInspection extends LocalInspectionTool {
   private static final Object LOCK = new Object(); // hack to avoid race conditions in SSR
 
   static final String SHORT_NAME = "SSBasedInspection";
-  private final List<Configuration> myConfigurations = new ArrayList<Configuration>();
-  private final Set<String> myProblemsReported = new HashSet<String>(1);
+  private final List<Configuration> myConfigurations = new ArrayList<>();
+  private final Set<String> myProblemsReported = new HashSet<>(1);
 
   @Override
   public void writeSettings(@NotNull Element node) throws WriteExternalException {
@@ -68,7 +68,7 @@ public class SSBasedInspection extends LocalInspectionTool {
   public void readSettings(@NotNull Element node) throws InvalidDataException {
     myProblemsReported.clear();
     myConfigurations.clear();
-    ConfigurationManager.readConfigurations(node, myConfigurations, new ArrayList<Configuration>());
+    ConfigurationManager.readConfigurations(node, myConfigurations, new ArrayList<>());
   }
 
   @Override
@@ -100,17 +100,14 @@ public class SSBasedInspection extends LocalInspectionTool {
 
     return new PsiElementVisitor() {
       final Matcher matcher = new Matcher(holder.getManager().getProject());
-      final PairProcessor<MatchResult, Configuration> processor = new PairProcessor<MatchResult, Configuration>() {
-        @Override
-        public boolean process(MatchResult matchResult, Configuration configuration) {
-          PsiElement element = matchResult.getMatch();
-          String name = configuration.getName();
-          LocalQuickFix fix = createQuickFix(holder.getManager().getProject(), matchResult, configuration);
-          holder.registerProblem(
-            holder.getManager().createProblemDescriptor(element, name, fix, ProblemHighlightType.GENERIC_ERROR_OR_WARNING, isOnTheFly)
-          );
-          return true;
-        }
+      final PairProcessor<MatchResult, Configuration> processor = (matchResult, configuration) -> {
+        PsiElement element = matchResult.getMatch();
+        String name = configuration.getName();
+        LocalQuickFix fix = createQuickFix(holder.getManager().getProject(), matchResult, configuration);
+        holder.registerProblem(
+          holder.getManager().createProblemDescriptor(element, name, fix, ProblemHighlightType.GENERIC_ERROR_OR_WARNING, isOnTheFly)
+        );
+        return true;
       };
 
       @Override
@@ -118,8 +115,9 @@ public class SSBasedInspection extends LocalInspectionTool {
         synchronized (LOCK) {
           if (LexicalNodesFilter.getInstance().accepts(element)) return;
           final SsrFilteringNodeIterator matchedNodes = new SsrFilteringNodeIterator(element);
-          for (Configuration configuration : myConfigurations) {
-            final MatchContext context = compiledOptions.get(configuration);
+          for (Map.Entry<Configuration, MatchContext> entry : compiledOptions.entrySet()) {
+            Configuration configuration = entry.getKey();
+            MatchContext context = entry.getValue();
 
             if (MatcherImpl.checkIfShouldAttemptToMatch(context, matchedNodes)) {
               final int nodeCount = context.getPattern().getNodeCount();

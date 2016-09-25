@@ -96,7 +96,7 @@ public abstract class InplaceRefactoring {
   protected static final Logger LOG = Logger.getInstance("#com.intellij.refactoring.rename.inplace.VariableInplaceRenamer");
   @NonNls protected static final String PRIMARY_VARIABLE_NAME = "PrimaryVariable";
   @NonNls protected static final String OTHER_VARIABLE_NAME = "OtherVariable";
-  protected static final Stack<InplaceRefactoring> ourRenamersStack = new Stack<InplaceRefactoring>();
+  protected static final Stack<InplaceRefactoring> ourRenamersStack = new Stack<>();
   public static final Key<InplaceRefactoring> INPLACE_RENAMER = Key.create("EditorInplaceRenamer");
   public static final Key<Boolean> INTRODUCE_RESTART = Key.create("INTRODUCE_RESTART");
 
@@ -208,7 +208,7 @@ public abstract class InplaceRefactoring {
     myEditor.putUserData(INPLACE_RENAMER, this);
     ourRenamersStack.push(this);
 
-    final List<Pair<PsiElement, TextRange>> stringUsages = new ArrayList<Pair<PsiElement, TextRange>>();
+    final List<Pair<PsiElement, TextRange>> stringUsages = new ArrayList<>();
     collectAdditionalElementsToRename(stringUsages);
     return buildTemplateAndStart(refs, stringUsages, scope, containingFile);
   }
@@ -391,7 +391,7 @@ public abstract class InplaceRefactoring {
     Template template = builder.buildInlineTemplate();
     template.setToShortenLongNames(false);
     template.setToReformat(false);
-    myHighlighters = new ArrayList<RangeHighlighter>();
+    myHighlighters = new ArrayList<>();
     topLevelEditor.getCaretModel().moveToOffset(rangeMarker.getStartOffset());
 
     TemplateManager.getInstance(myProject).startTemplate(topLevelEditor, template, templateListener);
@@ -402,7 +402,7 @@ public abstract class InplaceRefactoring {
   private void highlightTemplateVariables(Template template, Editor topLevelEditor) {
     //add highlights
     if (myHighlighters != null) { // can be null if finish is called during testing
-      Map<TextRange, TextAttributes> rangesToHighlight = new HashMap<TextRange, TextAttributes>();
+      Map<TextRange, TextAttributes> rangesToHighlight = new HashMap<>();
       final TemplateState templateState = TemplateManagerImpl.getTemplateState(topLevelEditor);
       if (templateState != null) {
         EditorColorsManager colorsManager = EditorColorsManager.getInstance();
@@ -426,12 +426,9 @@ public abstract class InplaceRefactoring {
 
   private void restoreOldCaretPositionAndSelection(final int offset) {
     //move to old offset
-    Runnable runnable = new Runnable() {
-      @Override
-      public void run() {
-        myEditor.getCaretModel().moveToOffset(restoreCaretOffset(offset));
-        restoreSelection();
-      }
+    Runnable runnable = () -> {
+      myEditor.getCaretModel().moveToOffset(restoreCaretOffset(offset));
+      restoreSelection();
     };
 
     final LookupImpl lookup = (LookupImpl)LookupManager.getActiveLookup(myEditor);
@@ -493,15 +490,12 @@ public abstract class InplaceRefactoring {
   protected StartMarkAction startRename() throws StartMarkAction.AlreadyStartedException {
     final StartMarkAction[] markAction = new StartMarkAction[1];
     final StartMarkAction.AlreadyStartedException[] ex = new StartMarkAction.AlreadyStartedException[1];
-    CommandProcessor.getInstance().executeCommand(myProject, new Runnable() {
-      @Override
-      public void run() {
-        try {
-          markAction[0] = StartMarkAction.start(myEditor, myProject, getCommandName());
-        }
-        catch (StartMarkAction.AlreadyStartedException e) {
-          ex[0] = e;
-        }
+    CommandProcessor.getInstance().executeCommand(myProject, () -> {
+      try {
+        markAction[0] = StartMarkAction.start(myEditor, myProject, getCommandName());
+      }
+      catch (StartMarkAction.AlreadyStartedException e) {
+        ex[0] = e;
       }
     }, getCommandName(), null);
     if (ex[0] != null) throw ex[0];
@@ -587,26 +581,20 @@ public abstract class InplaceRefactoring {
 
   protected void revertState() {
     if (myOldName == null) return;
-    CommandProcessor.getInstance().executeCommand(myProject, new Runnable() {
-      @Override
-      public void run() {
-        final Editor topLevelEditor = InjectedLanguageUtil.getTopLevelEditor(myEditor);
-        ApplicationManager.getApplication().runWriteAction(new Runnable() {
-          @Override
-          public void run() {
-            final TemplateState state = TemplateManagerImpl.getTemplateState(topLevelEditor);
-            assert state != null;
-            final int segmentsCount = state.getSegmentsCount();
-            final Document document = topLevelEditor.getDocument();
-            for (int i = 0; i < segmentsCount; i++) {
-              final TextRange segmentRange = state.getSegmentRange(i);
-              document.replaceString(segmentRange.getStartOffset(), segmentRange.getEndOffset(), myOldName);
-            }
-          }
-        });
-        if (!myProject.isDisposed() && myProject.isOpen()) {
-          PsiDocumentManager.getInstance(myProject).commitDocument(topLevelEditor.getDocument());
+    CommandProcessor.getInstance().executeCommand(myProject, () -> {
+      final Editor topLevelEditor = InjectedLanguageUtil.getTopLevelEditor(myEditor);
+      ApplicationManager.getApplication().runWriteAction(() -> {
+        final TemplateState state = TemplateManagerImpl.getTemplateState(topLevelEditor);
+        assert state != null;
+        final int segmentsCount = state.getSegmentsCount();
+        final Document document = topLevelEditor.getDocument();
+        for (int i = 0; i < segmentsCount; i++) {
+          final TextRange segmentRange = state.getSegmentRange(i);
+          document.replaceString(segmentRange.getStartOffset(), segmentRange.getEndOffset(), myOldName);
         }
+      });
+      if (!myProject.isDisposed() && myProject.isOpen()) {
+        PsiDocumentManager.getInstance(myProject).commitDocument(topLevelEditor.getDocument());
       }
     }, getCommandName(), null);
   }

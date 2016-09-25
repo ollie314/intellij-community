@@ -25,8 +25,8 @@ import com.intellij.debugger.engine.*;
 import com.intellij.debugger.engine.evaluation.*;
 import com.intellij.debugger.engine.evaluation.expression.EvaluatorBuilderImpl;
 import com.intellij.debugger.engine.evaluation.expression.ExpressionEvaluator;
-import com.intellij.debugger.engine.evaluation.expression.UnBoxingEvaluator;
 import com.intellij.debugger.engine.events.SuspendContextCommandImpl;
+import com.intellij.debugger.impl.DebuggerUtilsEx;
 import com.intellij.debugger.jdi.StackFrameProxyImpl;
 import com.intellij.debugger.jdi.ThreadReferenceProxyImpl;
 import com.intellij.debugger.requests.ClassPrepareRequestor;
@@ -269,13 +269,12 @@ public abstract class Breakpoint<P extends JavaBreakpointProperties> implements 
 
           final TextWithImports expressionToEvaluate = getLogMessage();
           try {
+            SourcePosition position = ContextUtil.getSourcePosition(context);
+            PsiElement element = ContextUtil.getContextElement(context, position);
             ExpressionEvaluator evaluator = DebuggerInvocationUtil.commitAndRunReadAction(myProject, new EvaluatingComputable<ExpressionEvaluator>() {
               @Override
               public ExpressionEvaluator compute() throws EvaluateException {
-                return EvaluatorBuilderImpl.build(expressionToEvaluate,
-                                                  ContextUtil.getContextElement(context),
-                                                  ContextUtil.getSourcePosition(context),
-                                                  myProject);
+                return EvaluatorBuilderImpl.build(expressionToEvaluate, element, position, myProject);
               }
             });
             final Value eval = evaluator.evaluate(context);
@@ -335,9 +334,9 @@ public abstract class Breakpoint<P extends JavaBreakpointProperties> implements 
       }
     }
 
-    if (isClassFiltersEnabled()) {
-      String typeName = calculateEventClass(context, event);
-      if (!typeMatchesClassFilters(typeName)) return false;
+    if (isClassFiltersEnabled() &&
+        !typeMatchesClassFilters(calculateEventClass(context, event), getClassFilters(), getClassExclusionFilters())) {
+      return false;
     }
 
     if (!isConditionEnabled() || getCondition().getText().isEmpty()) {
@@ -356,11 +355,11 @@ public abstract class Breakpoint<P extends JavaBreakpointProperties> implements 
     }
 
     try {
-      final Project project = context.getProject();
+      Project project = context.getProject();
+      SourcePosition contextSourcePosition = ContextUtil.getSourcePosition(context);
       ExpressionEvaluator evaluator = DebuggerInvocationUtil.commitAndRunReadAction(project, new EvaluatingComputable<ExpressionEvaluator>() {
         @Override
         public ExpressionEvaluator compute() throws EvaluateException {
-          final SourcePosition contextSourcePosition = ContextUtil.getSourcePosition(context);
           // IMPORTANT: calculate context psi element basing on the location where the exception
           // has been hit, not on the location where it was set. (For line breakpoints these locations are the same, however,
           // for method, exception and field breakpoints these locations differ)
@@ -371,13 +370,7 @@ public abstract class Breakpoint<P extends JavaBreakpointProperties> implements 
           return EvaluatorBuilderImpl.build(getCondition(), contextPsiElement, contextSourcePosition, project);
         }
       });
-      Object value = UnBoxingEvaluator.unbox(evaluator.evaluate(context), context);
-      if (!(value instanceof BooleanValue)) {
-        throw EvaluateExceptionUtil.createEvaluateException(DebuggerBundle.message("evaluation.error.boolean.expected"));
-      }
-      if (!((BooleanValue)value).booleanValue()) {
-        return false;
-      }
+      return DebuggerUtilsEx.evaluateBoolean(evaluator, context);
     }
     catch (EvaluateException ex) {
       if (ex.getCause() instanceof VMDisconnectedException) {
@@ -387,19 +380,18 @@ public abstract class Breakpoint<P extends JavaBreakpointProperties> implements 
         DebuggerBundle.message("error.failed.evaluating.breakpoint.condition", getCondition(), ex.getMessage())
       );
     }
-    return true;
   }
 
   protected String calculateEventClass(EvaluationContextImpl context, LocatableEvent event) throws EvaluateException {
     return event.location().declaringType().name();
   }
 
-  private boolean typeMatchesClassFilters(@Nullable String typeName) {
+  protected static boolean typeMatchesClassFilters(@Nullable String typeName, ClassFilter[] includeFilters, ClassFilter[] exludeFilters) {
     if (typeName == null) {
       return true;
     }
     boolean matches = false, hasEnabled = false;
-    for (ClassFilter classFilter : getClassFilters()) {
+    for (ClassFilter classFilter : includeFilters) {
       if (classFilter.isEnabled()) {
         hasEnabled = true;
         if (classFilter.matches(typeName)) {
@@ -408,10 +400,10 @@ public abstract class Breakpoint<P extends JavaBreakpointProperties> implements 
         }
       }
     }
-    if(hasEnabled && !matches) {
+    if (hasEnabled && !matches) {
       return false;
     }
-    for (ClassFilter classFilter : getClassExclusionFilters()) {
+    for (ClassFilter classFilter : exludeFilters) {
       if (classFilter.isEnabled() && classFilter.matches(typeName)) {
         return false;
       }
@@ -423,7 +415,7 @@ public abstract class Breakpoint<P extends JavaBreakpointProperties> implements 
     // need to delete the request immediately, see IDEA-133978
     debugProcess.getRequestsManager().deleteRequest(this);
 
-    debugProcess.addDebugProcessListener(new DebugProcessAdapter() {
+    debugProcess.addDebugProcessListener(new DebugProcessListener() {
       @Override
       public void resumed(SuspendContext suspendContext) {
         removeBreakpoint();
@@ -435,12 +427,7 @@ public abstract class Breakpoint<P extends JavaBreakpointProperties> implements 
       }
 
       private void removeBreakpoint() {
-        AppUIUtil.invokeOnEdt(new Runnable() {
-          @Override
-          public void run() {
-            DebuggerManagerEx.getInstanceEx(myProject).getBreakpointManager().removeBreakpoint(Breakpoint.this);
-          }
-        });
+        AppUIUtil.invokeOnEdt(() -> DebuggerManagerEx.getInstanceEx(myProject).getBreakpointManager().removeBreakpoint(Breakpoint.this));
         debugProcess.removeDebugProcessListener(this);
       }
     });
@@ -563,7 +550,7 @@ public abstract class Breakpoint<P extends JavaBreakpointProperties> implements 
     return getProperties().getClassExclusionFilters();
   }
 
-  protected void setClassExclusionFilters(ClassFilter[] filters) {
+  public void setClassExclusionFilters(ClassFilter[] filters) {
     if (getProperties().setClassExclusionFilters(filters)) {
       fireBreakpointChanged();
     }

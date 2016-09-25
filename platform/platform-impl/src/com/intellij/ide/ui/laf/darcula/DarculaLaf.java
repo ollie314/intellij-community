@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,8 +31,10 @@ import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.ui.ColorUtil;
 import com.intellij.util.Alarm;
 import com.intellij.util.containers.hash.HashMap;
+import com.intellij.util.ui.FontInfo;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
+import org.intellij.lang.annotations.JdkConstants;
 import org.jetbrains.annotations.NotNull;
 import sun.awt.AppContext;
 
@@ -57,6 +59,7 @@ import java.util.List;
  * @author Konstantin Bulenkov
  */
 public class DarculaLaf extends BasicLookAndFeel {
+  private static final Object SYSTEM = new Object();
   public static final String NAME = "Darcula";
   BasicLookAndFeel base;
   private static Disposable myDisposable;
@@ -64,17 +67,66 @@ public class DarculaLaf extends BasicLookAndFeel {
   private static boolean myAltPressed;
 
   public DarculaLaf() {
+    base = createBaseLookAndFeel();
+  }
+
+  private static void installMacOSXFonts(UIDefaults defaults) {
+    final String face = "HelveticaNeue-Regular";
+    final FontUIResource uiFont = getFont(face, 13, Font.PLAIN);
+    LafManagerImpl.initFontDefaults(defaults, 13, uiFont);
+    for (Object key : new HashSet<>(defaults.keySet())) {
+      Object value = defaults.get(key);
+      if (value instanceof FontUIResource) {
+        FontUIResource font = (FontUIResource)value;
+        if (font.getFamily().equals("Lucida Grande") || font.getFamily().equals("Serif")) {
+          if (!key.toString().contains("Menu")) {
+            defaults.put(key, getFont(face, font.getSize(), font.getStyle()));
+          }
+        }
+      }
+    }
+
+    FontUIResource uiFont11 = getFont(face, 11, Font.PLAIN);
+    defaults.put("TableHeader.font", uiFont11);
+
+    FontUIResource buttonFont = getFont("HelveticaNeue-Medium", 13, Font.PLAIN);
+    defaults.put("Button.font", buttonFont);
+    Font menuFont = getFont("Lucida Grande", 14, Font.PLAIN);
+    defaults.put("Menu.font", menuFont);
+    defaults.put("MenuItem.font", menuFont);
+    defaults.put("MenuItem.acceleratorFont", menuFont);
+    defaults.put("PasswordField.font", defaults.getFont("TextField.font"));
+  }
+
+  @NotNull
+  private static FontUIResource getFont(String yosemite, int size, @JdkConstants.FontStyle int style) {
+    if (SystemInfo.isMacOSElCapitan) {
+      // Text family should be used for relatively small sizes (<20pt), don't change to Display
+      // see more about SF https://medium.com/@mach/the-secret-of-san-francisco-fonts-4b5295d9a745#.2ndr50z2v
+      FontInfo fontInfo = FontInfo.get(".SF NS Text");
+      if (fontInfo != null) {
+        Font font = fontInfo.getFont();
+        if (font != null) {
+          return new FontUIResource(font.deriveFont(style, size));
+        }
+      }
+    }
+    return new FontUIResource(yosemite, style, size);
+  }
+
+  protected BasicLookAndFeel createBaseLookAndFeel() {
     try {
-      if (SystemInfo.isWindows || SystemInfo.isLinux) {
-        base = new IdeaLaf();
-      } else {
+      if (SystemInfo.isMac) {
         final String name = UIManager.getSystemLookAndFeelClassName();
-        base = (BasicLookAndFeel)Class.forName(name).newInstance();
+        return (BasicLookAndFeel)Class.forName(name).newInstance();
+      } else {
+        return new IdeaLaf();
       }
     }
     catch (Exception e) {
       log(e);
     }
+    return null;
   }
 
   private void callInit(String method, UIDefaults defaults) {
@@ -89,7 +141,7 @@ public class DarculaLaf extends BasicLookAndFeel {
   }
 
   @SuppressWarnings("UnusedParameters")
-  private static void log(Exception e) {
+  protected static void log(Exception e) {
 //    everything is gonna be alright
     e.printStackTrace();
   }
@@ -139,6 +191,9 @@ public class DarculaLaf extends BasicLookAndFeel {
         applySystemFonts(defaults);
       }
       defaults.put("EditorPane.font", defaults.getFont("TextField.font"));
+      if (SystemInfo.isMacOSYosemite) {
+        installMacOSXFonts(defaults);
+      }
       return defaults;
     }
     catch (Exception e) {
@@ -223,8 +278,11 @@ public class DarculaLaf extends BasicLookAndFeel {
     loadDefaults(defaults);
     defaults.put("Table.ancestorInputMap", new UIDefaults.LazyInputMap(new Object[] {
       "ctrl C", "copy",
+      "meta C", "copy",
       "ctrl V", "paste",
+      "meta V", "paste",
       "ctrl X", "cut",
+      "meta X", "cut",
       "COPY", "copy",
       "PASTE", "paste",
       "CUT", "cut",
@@ -287,11 +345,17 @@ public class DarculaLaf extends BasicLookAndFeel {
       properties.load(stream);
       stream.close();
 
-      HashMap<String, Object> darculaGlobalSettings = new HashMap<String, Object>();
+      HashMap<String, Object> darculaGlobalSettings = new HashMap<>();
       final String prefix = getPrefix() + ".";
       for (String key : properties.stringPropertyNames()) {
         if (key.startsWith(prefix)) {
-          darculaGlobalSettings.put(key.substring(prefix.length()), parseValue(key, properties.getProperty(key)));
+          Object value = parseValue(key, properties.getProperty(key));
+          String darculaKey = key.substring(prefix.length());
+          if (value == SYSTEM) {
+            darculaGlobalSettings.remove(darculaKey);
+          } else {
+            darculaGlobalSettings.put(darculaKey, value);
+          }
         }
       }
 
@@ -316,6 +380,10 @@ public class DarculaLaf extends BasicLookAndFeel {
   protected Object parseValue(String key, @NotNull String value) {
     if ("null".equals(value)) {
       return null;
+    }
+
+    if ("system".equals(value)) {
+      return SYSTEM;
     }
 
     if (key.endsWith("Insets")) {
@@ -429,25 +497,17 @@ public class DarculaLaf extends BasicLookAndFeel {
     if (application != null) {
       Disposer.register(application, myDisposable);
     }
-    myMnemonicAlarm = new Alarm(Alarm.ThreadToUse.SHARED_THREAD, myDisposable);
-    IdeEventQueue.getInstance().addDispatcher(new IdeEventQueue.EventDispatcher() {
-      @Override
-      public boolean dispatch(AWTEvent e) {
-        if (e instanceof KeyEvent && ((KeyEvent)e).getKeyCode() == KeyEvent.VK_ALT) {
-          myAltPressed = e.getID() == KeyEvent.KEY_PRESSED;
-          myMnemonicAlarm.cancelAllRequests();
-          final Component focusOwner = IdeFocusManager.findInstance().getFocusOwner();
-          if (focusOwner != null) {
-            myMnemonicAlarm.addRequest(new Runnable() {
-              @Override
-              public void run() {
-                repaintMnemonics(focusOwner, myAltPressed);
-              }
-            }, 10);
-          }
+    myMnemonicAlarm = new Alarm(Alarm.ThreadToUse.POOLED_THREAD, myDisposable);
+    IdeEventQueue.getInstance().addDispatcher(e -> {
+      if (e instanceof KeyEvent && ((KeyEvent)e).getKeyCode() == KeyEvent.VK_ALT) {
+        myAltPressed = e.getID() == KeyEvent.KEY_PRESSED;
+        myMnemonicAlarm.cancelAllRequests();
+        final Component focusOwner = IdeFocusManager.findInstance().getFocusOwner();
+        if (focusOwner != null) {
+          myMnemonicAlarm.addRequest(() -> repaintMnemonics(focusOwner, myAltPressed), 10);
         }
-        return false;
       }
+      return false;
     }, myDisposable);
   }
 

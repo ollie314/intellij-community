@@ -15,6 +15,7 @@ package org.zmlx.hg4idea.provider;
 import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.vcs.FilePath;
 import com.intellij.openapi.vcs.VcsActions;
 import com.intellij.openapi.vcs.VcsConfiguration;
@@ -56,7 +57,7 @@ public class HgHistoryProvider implements VcsHistoryProvider {
 
   public VcsDependentHistoryComponents getUICustomization(VcsHistorySession session,
                                                           JComponent forShortcutRegistration) {
-    return VcsDependentHistoryComponents.createOnlyColumns(new ColumnInfo[0]);
+    return VcsDependentHistoryComponents.createOnlyColumns(ColumnInfo.EMPTY_ARRAY);
   }
 
   public AnAction[] getAdditionalActions(Runnable runnable) {
@@ -77,7 +78,7 @@ public class HgHistoryProvider implements VcsHistoryProvider {
     if (vcsRoot == null) {
       return null;
     }
-    final List<VcsFileRevision> revisions = new ArrayList<VcsFileRevision>();
+    final List<VcsFileRevision> revisions = new ArrayList<>();
     revisions.addAll(getHistory(filePath, vcsRoot, myProject));
     return createAppendableSession(vcsRoot, revisions, null);
   }
@@ -145,7 +146,7 @@ public class HgHistoryProvider implements VcsHistoryProvider {
     final HgLogCommand logCommand = new HgLogCommand(project);
     logCommand.setFollowCopies(!filePath.isDirectory());
     logCommand.setIncludeRemoved(true);
-    List<String> args = new ArrayList<String>();
+    List<String> args = new ArrayList<>();
     if (revisionNumber != null) {
       args.add("--rev");
       args.add("reverse(0::" + revisionNumber.getChangeset() + ")");
@@ -168,7 +169,8 @@ public class HgHistoryProvider implements VcsHistoryProvider {
     List<String> argsForCmd = ContainerUtil.newArrayList();
     String relativePath = originalHgFile.getRelativePath();
     argsForCmd.add("--rev");
-    argsForCmd.add("reverse(follow(" + relativePath + "))");
+    argsForCmd
+      .add(String.format("reverse(follow(%s))", relativePath != null ? "'" + FileUtil.toSystemIndependentName(relativePath) + "'" : ""));
     HgCommandResult result = logCommand.execute(vcsRoot, template, limit, relativePath != null ? null : originalHgFile, argsForCmd);
     return HgHistoryUtil.getCommitRecords(project, result, new HgFileRevisionLogParser(project, originalHgFile, version));
   }

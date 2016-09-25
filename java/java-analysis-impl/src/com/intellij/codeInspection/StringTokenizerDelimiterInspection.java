@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package com.intellij.codeInspection;
 
+import com.intellij.codeInsight.FileModificationService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.*;
@@ -66,7 +67,7 @@ public class StringTokenizerDelimiterInspection extends BaseJavaBatchLocalInspec
       final Object value = ((PsiLiteralExpression)delimiterArgument).getValue();
       if (value instanceof String) {
         String delimiters = (String)value;
-        final Set<Character> chars = new THashSet<Character>();
+        final Set<Character> chars = new THashSet<>();
         for (char c : delimiters.toCharArray()) {
           if (!chars.add(c)) {
             holder.registerProblem(delimiterArgument, "Delimiters argument contains duplicated characters", new ReplaceDelimitersWithUnique(delimiterArgument));
@@ -96,13 +97,14 @@ public class StringTokenizerDelimiterInspection extends BaseJavaBatchLocalInspec
 
     @Override
     public void invoke(@NotNull Project project, @NotNull PsiFile file, @NotNull PsiElement startElement, @NotNull PsiElement endElement) {
-      final Set<Character> uniqueChars = new LinkedHashSet<Character>();
+      final Set<Character> uniqueChars = new LinkedHashSet<>();
       final PsiLiteralExpression delimiterArgument = (PsiLiteralExpression)startElement;
       for (char c : ((String)delimiterArgument.getValue()).toCharArray()) {
         uniqueChars.add(c);
       }
       final String newDelimiters = StringUtil.join(uniqueChars, "");
       final PsiElementFactory elementFactory = JavaPsiFacade.getElementFactory(project);
+      if (!FileModificationService.getInstance().prepareFileForWrite(file)) return;
       delimiterArgument.replace(elementFactory.createExpressionFromText(StringUtil.wrapWithDoubleQuote(StringUtil.escaper(true, null).fun(
         newDelimiters)), null));
     }

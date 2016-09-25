@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,6 @@ import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectRootManager;
-import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Key;
 import com.intellij.profile.Profile;
 import com.intellij.profile.ProfileChangeAdapter;
@@ -112,7 +111,7 @@ public class DomElementAnnotationsManagerImpl extends DomElementAnnotationsManag
     myProject = project;
     final ProfileChangeAdapter profileChangeAdapter = new ProfileChangeAdapter() {
       @Override
-      public void profileActivated(Profile oldProfile, Profile profile) {
+      public void profileActivated(Profile oldProfile, @Nullable Profile profile) {
         dropAnnotationsCache();
       }
 
@@ -122,14 +121,7 @@ public class DomElementAnnotationsManagerImpl extends DomElementAnnotationsManag
       }
     };
 
-    final InspectionProfileManager inspectionProfileManager = InspectionProfileManager.getInstance();
-    inspectionProfileManager.addProfileChangeListener(profileChangeAdapter, project);
-    Disposer.register(project, new Disposable() {
-      @Override
-      public void dispose() {
-        inspectionProfileManager.removeProfileChangeListener(profileChangeAdapter);
-      }
-    });
+    InspectionProfileManager.getInstance().addProfileChangeListener(profileChangeAdapter, project);
   }
 
   @Override
@@ -157,12 +149,9 @@ public class DomElementAnnotationsManagerImpl extends DomElementAnnotationsManag
     if (isHolderOutdated(element.getFile()) || holder == null) {
       holder = new DomElementsProblemsHolderImpl(element);
       rootTag.putUserData(DOM_PROBLEM_HOLDER_KEY, holder);
-      final CachedValue<Boolean> cachedValue = CachedValuesManager.getManager(myProject).createCachedValue(new CachedValueProvider<Boolean>() {
-        @Override
-        public Result<Boolean> compute() {
-          return new Result<Boolean>(Boolean.FALSE, element, PsiModificationTracker.OUT_OF_CODE_BLOCK_MODIFICATION_COUNT, DomElementAnnotationsManagerImpl.this, ProjectRootManager.getInstance(myProject));
-        }
-      }, false);
+      final CachedValue<Boolean> cachedValue = CachedValuesManager.getManager(myProject).createCachedValue(
+        () -> new CachedValueProvider.Result<>(Boolean.FALSE, element, PsiModificationTracker.OUT_OF_CODE_BLOCK_MODIFICATION_COUNT,
+                                               this, ProjectRootManager.getInstance(myProject)), false);
       cachedValue.getValue();
       element.getFile().putUserData(CACHED_VALUE_KEY, cachedValue);
     }
@@ -260,17 +249,17 @@ public class DomElementAnnotationsManagerImpl extends DomElementAnnotationsManag
   public List<DomElementsInspection> getSuitableDomInspections(final DomFileElement fileElement, boolean enabledOnly) {
     Class rootType = fileElement.getRootElementClass();
     final InspectionProfile profile = getInspectionProfile(fileElement);
-    final List<DomElementsInspection> inspections = new SmartList<DomElementsInspection>();
+    final List<DomElementsInspection> inspections = new SmartList<>();
     for (final InspectionToolWrapper toolWrapper : profile.getInspectionTools(fileElement.getFile())) {
       if (!enabledOnly || profile.isToolEnabled(HighlightDisplayKey.find(toolWrapper.getShortName()), fileElement.getFile())) {
-        ContainerUtil.addIfNotNull(getSuitableInspection(toolWrapper.getTool(), rootType), inspections);
+        ContainerUtil.addIfNotNull(inspections, getSuitableInspection(toolWrapper.getTool(), rootType));
       }
     }
     return inspections;
   }
 
   protected InspectionProfile getInspectionProfile(final DomFileElement fileElement) {
-    return InspectionProjectProfileManager.getInstance(fileElement.getManager().getProject()).getInspectionProfile();
+    return InspectionProjectProfileManager.getInstance(fileElement.getManager().getProject()).getCurrentProfile();
   }
 
   @Nullable
@@ -285,10 +274,10 @@ public class DomElementAnnotationsManagerImpl extends DomElementAnnotationsManag
 
   @Nullable public <T extends DomElement>  DomElementsInspection<T> getMockInspection(DomFileElement<T> root) {
     if (root.getFileDescription().isAutomaticHighlightingEnabled()) {
-      return new MockAnnotatingDomInspection<T>(root.getRootElementClass());
+      return new MockAnnotatingDomInspection<>(root.getRootElementClass());
     }
     if (getSuitableDomInspections(root, false).isEmpty()) {
-      return new MockDomInspection<T>(root.getRootElementClass());
+      return new MockDomInspection<>(root.getRootElementClass());
     }
 
     return null;

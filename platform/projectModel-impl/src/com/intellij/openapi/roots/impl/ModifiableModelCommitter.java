@@ -45,15 +45,12 @@ public class ModifiableModelCommitter {
     final List<ModifiableRootModel> modelsToDispose = ContainerUtil.newArrayList(rootModels);
     modelsToDispose.removeAll(modelsToCommit);
 
-    ModuleManagerImpl.commitModelWithRunnable(moduleModel, new Runnable() {
-      @Override
-      public void run() {
-        for (RootModelImpl model : modelsToCommit) {
-          ModuleRootManagerImpl.doCommit(model);
-        }
-        for (ModifiableRootModel model : modelsToDispose) {
-          model.dispose();
-        }
+    ModuleManagerImpl.commitModelWithRunnable(moduleModel, () -> {
+      for (RootModelImpl model : modelsToCommit) {
+        ModuleRootManagerImpl.doCommit(model);
+      }
+      for (ModifiableRootModel model : modelsToDispose) {
+        model.dispose();
       }
     });
   }
@@ -116,10 +113,10 @@ public class ModifiableModelCommitter {
             }
             return strings;
           }
-        }, new ArrayList<String>());
+        }, new ArrayList<>());
 
         String[] names = ArrayUtil.toStringArray(namesList);
-        List<RootModelImpl> result = new ArrayList<RootModelImpl>();
+        List<RootModelImpl> result = new ArrayList<>();
         for (String name : names) {
           RootModelImpl depRootModel = nameToModel.get(name);
           if (depRootModel != null) { // it is ok not to find one
@@ -129,6 +126,6 @@ public class ModifiableModelCommitter {
         return result.iterator();
       }
     };
-    return new DFSTBuilder<RootModelImpl>(new GraphGenerator<RootModelImpl>(new CachingSemiGraph<RootModelImpl>(graph)));
+    return new DFSTBuilder<>(new GraphGenerator<>(new CachingSemiGraph<>(graph)));
   }
 }

@@ -63,11 +63,11 @@ public class RenameJavaMethodProcessor extends RenameJavaMemberProcessor {
                             final UsageInfo[] usages,
                             @Nullable RefactoringElementListener listener) throws IncorrectOperationException {
     PsiMethod method = (PsiMethod) psiElement;
-    Set<PsiMethod> methodAndOverriders = new HashSet<PsiMethod>();
-    Set<PsiClass> containingClasses = new HashSet<PsiClass>();
-    LinkedHashSet<PsiElement> renamedReferences = new LinkedHashSet<PsiElement>();
-    List<MemberHidesOuterMemberUsageInfo> outerHides = new ArrayList<MemberHidesOuterMemberUsageInfo>();
-    List<MemberHidesStaticImportUsageInfo> staticImportHides = new ArrayList<MemberHidesStaticImportUsageInfo>();
+    Set<PsiMethod> methodAndOverriders = new HashSet<>();
+    Set<PsiClass> containingClasses = new HashSet<>();
+    LinkedHashSet<PsiElement> renamedReferences = new LinkedHashSet<>();
+    List<MemberHidesOuterMemberUsageInfo> outerHides = new ArrayList<>();
+    List<MemberHidesStaticImportUsageInfo> staticImportHides = new ArrayList<>();
 
     methodAndOverriders.add(method);
     containingClasses.add(method.getContainingClass());
@@ -277,26 +277,24 @@ public class RenameJavaMethodProcessor extends RenameJavaMemberProcessor {
   @Override
   public void prepareRenaming(PsiElement element, final String newName, final Map<PsiElement, String> allRenames, SearchScope scope) {
     final PsiMethod method = (PsiMethod) element;
-    OverridingMethodsSearch.search(method, scope, true).forEach(new Processor<PsiMethod>() {
-      public boolean process(PsiMethod overrider) {
-        if (overrider instanceof PsiMirrorElement) {
-          final PsiElement prototype = ((PsiMirrorElement)overrider).getPrototype();
-          if (prototype instanceof PsiMethod) {
-            overrider = (PsiMethod)prototype;
-          }
+    OverridingMethodsSearch.search(method, scope, true).forEach(overrider -> {
+      if (overrider instanceof PsiMirrorElement) {
+        final PsiElement prototype = ((PsiMirrorElement)overrider).getPrototype();
+        if (prototype instanceof PsiMethod) {
+          overrider = (PsiMethod)prototype;
         }
-
-        if (overrider instanceof SyntheticElement) return true;
-
-        final String overriderName = overrider.getName();
-        final String baseName = method.getName();
-        final String newOverriderName = RefactoringUtil.suggestNewOverriderName(overriderName, baseName, newName);
-        if (newOverriderName != null) {
-          RenameProcessor.assertNonCompileElement(overrider);
-          allRenames.put(overrider, newOverriderName);
-        }
-        return true;
       }
+
+      if (overrider instanceof SyntheticElement) return true;
+
+      final String overriderName = overrider.getName();
+      final String baseName = method.getName();
+      final String newOverriderName = RefactoringUtil.suggestNewOverriderName(overriderName, baseName, newName);
+      if (newOverriderName != null) {
+        RenameProcessor.assertNonCompileElement(overrider);
+        allRenames.put(overrider, newOverriderName);
+      }
+      return true;
     });
   }
 

@@ -21,13 +21,23 @@ def log_error_once(msg):
 
 pydev_src_dir = os.path.dirname(os.path.dirname(__file__))
 
+def _get_pydevd_args():
+    new_args = []
+    for x in sys.original_argv:
+        new_args.append(x)
+        if x == '--file':
+            break
+    return new_args
+
 def _get_python_c_args(host, port, indC, args):
     return ("import sys; sys.path.append(r'%s'); import pydevd; "
-            "pydevd.settrace(host='%s', port=%s, suspend=False, trace_only_current_thread=False, patch_multiprocessing=True); %s"
+            "pydevd.settrace(host='%s', port=%s, suspend=False, trace_only_current_thread=False, patch_multiprocessing=True); "
+            "sys.original_argv = %s; %s"
             ) % (
                pydev_src_dir,
                host,
                port,
+               _get_pydevd_args(),
                args[indC + 1])
 
 def _get_host_port():
@@ -66,8 +76,8 @@ def is_python(path):
 def remove_quotes_from_args(args):
     new_args = []
     for x in args:
-        if x.startswith('"') and x.endswith('"'):
-            x = x.strip('"')
+        if len(x) > 1 and x.startswith('"') and x.endswith('"'):
+            x = x[1:-1]
         new_args.append(x)
     return new_args
 

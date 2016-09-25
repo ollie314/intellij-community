@@ -97,7 +97,7 @@ public class JavaDocReferenceInspection extends JavaDocReferenceInspectionBase {
           if (word == null || StringUtil.isEmptyOrSpaces(word)) {
             return;
           }
-          final List<LookupElement> items = new ArrayList<LookupElement>();
+          final List<LookupElement> items = new ArrayList<>();
           for (String variant : myUnboundParams) {
             items.add(LookupElementBuilder.create(variant));
           }
@@ -134,23 +134,20 @@ public class JavaDocReferenceInspection extends JavaDocReferenceInspectionBase {
         Collections.sort(originalClasses, new PsiProximityComparator(referenceElement.getElement()));
         final JList list = new JBList(originalClasses.toArray(new PsiClass[originalClasses.size()]));
         list.setCellRenderer(new FQNameCellRenderer());
-        final Runnable runnable = new Runnable() {
-          @Override
-          public void run() {
-            if (!element.isValid()) return;
-            final int index = list.getSelectedIndex();
-            if (index < 0) return;
-            new WriteCommandAction(project, element.getContainingFile()){
-              @Override
-              protected void run(@NotNull final Result result) throws Throwable {
-                final PsiClass psiClass = originalClasses.get(index);
-                if (psiClass.isValid()) {
-                  PsiDocumentManager.getInstance(project).commitAllDocuments();
-                  referenceElement.bindToElement(psiClass);
-                }
+        final Runnable runnable = () -> {
+          if (!element.isValid()) return;
+          final int index = list.getSelectedIndex();
+          if (index < 0) return;
+          new WriteCommandAction(project, element.getContainingFile()){
+            @Override
+            protected void run(@NotNull final Result result) throws Throwable {
+              final PsiClass psiClass = originalClasses.get(index);
+              if (psiClass.isValid()) {
+                PsiDocumentManager.getInstance(project).commitAllDocuments();
+                referenceElement.bindToElement(psiClass);
               }
-            }.execute();
-          }
+            }
+          }.execute();
         };
         final AsyncResult<DataContext> asyncResult = DataManager.getInstance().getDataContextFromFocus();
         asyncResult.doWhenDone(new Consumer<DataContext>() {

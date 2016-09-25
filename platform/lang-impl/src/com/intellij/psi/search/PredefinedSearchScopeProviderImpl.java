@@ -19,6 +19,7 @@ import com.intellij.ide.IdeBundle;
 import com.intellij.ide.favoritesTreeView.FavoritesManager;
 import com.intellij.ide.hierarchy.HierarchyBrowserBase;
 import com.intellij.ide.projectView.impl.AbstractUrl;
+import com.intellij.ide.scratch.ScratchFileServiceImpl;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.actionSystem.LangDataKeys;
@@ -29,7 +30,6 @@ import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.module.*;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Computable;
-import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -80,6 +80,8 @@ public class PredefinedSearchScopeProviderImpl extends PredefinedSearchScopeProv
       result.add(GlobalSearchScopesCore.projectTestScope(project));
     }
 
+    result.add(ScratchFileServiceImpl.buildScratchesSearchScope());
+
     final GlobalSearchScope openFilesScope = GlobalSearchScopes.openFilesScope(project);
     if (openFilesScope != GlobalSearchScope.EMPTY_SCOPE) {
       result.add(openFilesScope);
@@ -91,8 +93,7 @@ public class PredefinedSearchScopeProviderImpl extends PredefinedSearchScopeProv
     final Editor selectedTextEditor = ApplicationManager.getApplication().isDispatchThread()
                                       ? FileEditorManager.getInstance(project).getSelectedTextEditor()
                                       : null;
-    final PsiFile psiFile =
-      (selectedTextEditor != null) ? PsiDocumentManager.getInstance(project).getPsiFile(selectedTextEditor.getDocument()) : null;
+    PsiFile psiFile = selectedTextEditor == null ? null : PsiDocumentManager.getInstance(project).getPsiFile(selectedTextEditor.getDocument());
     PsiFile currentFile = psiFile;
 
     if (dataContext != null) {
@@ -137,7 +138,7 @@ public class PredefinedSearchScopeProviderImpl extends PredefinedSearchScopeProv
           if (endElement != null) {
             final PsiElement parent = PsiTreeUtil.findCommonParent(startElement, endElement);
             if (parent != null) {
-              final List<PsiElement> elements = new ArrayList<PsiElement>();
+              final List<PsiElement> elements = new ArrayList<>();
               final PsiElement[] children = parent.getChildren();
               TextRange selection = new TextRange(start, end);
               for (PsiElement child : children) {
@@ -163,13 +164,12 @@ public class PredefinedSearchScopeProviderImpl extends PredefinedSearchScopeProv
       if (selectedUsageView != null && !selectedUsageView.isSearchInProgress()) {
         final Set<Usage> usages = ContainerUtil.newTroveSet(selectedUsageView.getUsages());
         usages.removeAll(selectedUsageView.getExcludedUsages());
-        final List<PsiElement> results = new ArrayList<PsiElement>(usages.size());
 
         if (prevSearchFiles) {
           final Set<VirtualFile> files = collectFiles(usages, true);
           if (!files.isEmpty()) {
             GlobalSearchScope prev = new GlobalSearchScope(project) {
-              private Set<VirtualFile> myFiles = null;
+              private Set<VirtualFile> myFiles;
 
               @NotNull
               @Override
@@ -204,6 +204,7 @@ public class PredefinedSearchScopeProviderImpl extends PredefinedSearchScopeProv
           }
         }
         else {
+          final List<PsiElement> results = new ArrayList<>(usages.size());
           for (Usage usage : usages) {
             if (usage instanceof PsiElementUsage) {
               final PsiElement element = ((PsiElementUsage)usage).getElement();
@@ -286,12 +287,7 @@ public class PredefinedSearchScopeProviderImpl extends PredefinedSearchScopeProv
   private static SearchScope getSelectedFilesScope(final Project project, @Nullable DataContext dataContext) {
     final VirtualFile[] filesOrDirs = dataContext == null ? null : CommonDataKeys.VIRTUAL_FILE_ARRAY.getData(dataContext);
     if (filesOrDirs != null) {
-      final List<VirtualFile> selectedFiles = ContainerUtil.filter(filesOrDirs, new Condition<VirtualFile>() {
-        @Override
-        public boolean value(VirtualFile file) {
-          return !file.isDirectory();
-        }
-      });
+      final List<VirtualFile> selectedFiles = ContainerUtil.filter(filesOrDirs, file -> !file.isDirectory());
       if (!selectedFiles.isEmpty()) {
         return GlobalSearchScope.filesScope(project, selectedFiles, "Selected Files");
       }
@@ -300,7 +296,7 @@ public class PredefinedSearchScopeProviderImpl extends PredefinedSearchScopeProv
   }
 
   protected static Set<VirtualFile> collectFiles(Set<Usage> usages, boolean findFirst) {
-    final Set<VirtualFile> files = new HashSet<VirtualFile>();
+    final Set<VirtualFile> files = new HashSet<>();
     for (Usage usage : usages) {
       if (usage instanceof PsiElementUsage) {
         PsiElement psiElement = ((PsiElementUsage)usage).getElement();

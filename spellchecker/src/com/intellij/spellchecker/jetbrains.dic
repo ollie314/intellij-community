@@ -92,11 +92,13 @@ codesign
 commandline
 committer
 commonjs
+comparision
 concat
 cond
 conf
 config
 configs
+configurability
 configurator
 configurators
 const
@@ -141,6 +143,7 @@ devkit
 dirs
 distinctrow
 django
+dockerfile
 dojo
 draggable
 dtrace
@@ -162,6 +165,7 @@ expr
 externalizer
 facebook
 facelet
+facelets
 fallthrough
 favicon
 filename
@@ -174,6 +178,7 @@ finalizers
 findbugs
 firefox
 fixme
+foldr
 foreach
 formatter
 freelist
@@ -184,6 +189,8 @@ frontend
 ftlvariable
 fulltext
 func
+functor
+functorial
 fxml
 gdata
 gemfire
@@ -207,6 +214,7 @@ hamcrest
 hardcoded
 hardlink
 hardlinks
+hashbang
 hashcode
 hateoas
 haxe
@@ -244,6 +252,7 @@ inout
 instantiable
 insteadof
 intellij
+intrinsics
 iphone
 iphoneos
 isnan
@@ -334,6 +343,8 @@ miny
 mixin
 mlslabel
 mockito
+monad
+monoidal
 mongodb
 monospaced
 multi
@@ -567,7 +578,9 @@ stacktrace
 startup
 stateful
 stdarg
+stderr
 stdlib
+stdout
 stepic
 stmt
 strictfp
@@ -577,6 +590,9 @@ stylesheets
 subexpression
 subexpressions
 sublicense
+sublist
+submodule
+submodules
 subpackage
 subpackages
 subpartition
@@ -598,6 +614,7 @@ sybase
 symlink
 symlinks
 sysdate
+sysroot
 systimestamp
 tablespace
 taglib
@@ -615,6 +632,7 @@ toggleable
 tokenize
 tokenizer
 toolchain
+toolchains
 tooltip
 tooltips
 toplink
@@ -633,11 +651,13 @@ unbuffered
 uncomment
 uncommented
 uncommenting
+uncurry
 undef
 underwave
 undoable
 undofile
 unescaped
+unfoldr
 unhandled
 uninstall
 uniques

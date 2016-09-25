@@ -32,7 +32,6 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiReference;
-import com.intellij.util.DocumentUtil;
 import com.intellij.util.Function;
 import org.jetbrains.annotations.NotNull;
 
@@ -46,12 +45,12 @@ import java.util.TreeSet;
  */
 public class TemplateBuilderImpl implements TemplateBuilder {
   private final RangeMarker myContainerElement;
-  private final Map<RangeMarker,Expression> myExpressions = new HashMap<RangeMarker, Expression>();
-  private final Map<RangeMarker,String> myVariableExpressions = new HashMap<RangeMarker, String>();
-  private final Map<RangeMarker, Boolean> myAlwaysStopAtMap = new HashMap<RangeMarker, Boolean>();
-  private final Map<RangeMarker, Boolean> mySkipOnStartMap = new HashMap<RangeMarker, Boolean>();
-  private final Map<RangeMarker, String> myVariableNamesMap = new HashMap<RangeMarker, String>();
-  private final Set<RangeMarker> myElements = new TreeSet<RangeMarker>(RangeMarker.BY_START_OFFSET);
+  private final Map<RangeMarker,Expression> myExpressions = new HashMap<>();
+  private final Map<RangeMarker,String> myVariableExpressions = new HashMap<>();
+  private final Map<RangeMarker, Boolean> myAlwaysStopAtMap = new HashMap<>();
+  private final Map<RangeMarker, Boolean> mySkipOnStartMap = new HashMap<>();
+  private final Map<RangeMarker, String> myVariableNamesMap = new HashMap<>();
+  private final Set<RangeMarker> myElements = new TreeSet<>(RangeMarker.BY_START_OFFSET);
 
   private RangeMarker myEndElement;
   private RangeMarker mySelection;
@@ -190,13 +189,13 @@ public class TemplateBuilderImpl implements TemplateBuilder {
     ApplicationManager.getApplication().assertWriteAccessAllowed();
 
     //this is kinda hacky way of doing things, but have not got a better idea
-    DocumentUtil.executeInBulk(myDocument, true, () -> {
+    //DocumentUtil.executeInBulk(myDocument, true, () -> {
       for (RangeMarker element : myElements) {
         if (element != myEndElement) {
           myDocument.deleteString(element.getStartOffset(), element.getEndOffset());
         }
       }
-    });
+    //});
 
     return template;
   }
@@ -213,14 +212,11 @@ public class TemplateBuilderImpl implements TemplateBuilder {
       if (start > offset) {
         LOG.error("file: " + myFile +
                   " container: " + myContainerElement +
-                  " markers: " + StringUtil.join(myElements, new Function<RangeMarker, String>() {
-                                    @Override
-                                    public String fun(RangeMarker rangeMarker) {
-                                      final String docString =
-                                        myDocument.getText(new TextRange(rangeMarker.getStartOffset(), rangeMarker.getEndOffset()));
-                                      return "[[" + docString + "]" + rangeMarker.getStartOffset() + ", " + rangeMarker.getEndOffset() + "]";
-                                    }
-                                  }, ", "));
+                  " markers: " + StringUtil.join(myElements, rangeMarker -> {
+                    final String docString =
+                      myDocument.getText(new TextRange(rangeMarker.getStartOffset(), rangeMarker.getEndOffset()));
+                    return "[[" + docString + "]" + rangeMarker.getStartOffset() + ", " + rangeMarker.getEndOffset() + "]";
+                  }, ", "));
       }
       template.addTextSegment(text.substring(start, offset));
 

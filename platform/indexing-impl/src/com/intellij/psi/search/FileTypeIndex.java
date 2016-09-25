@@ -20,6 +20,7 @@ import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.fileTypes.FileTypeRegistry;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.util.Processor;
 import com.intellij.util.indexing.*;
 import com.intellij.util.io.EnumeratorStringDescriptor;
 import com.intellij.util.io.KeyDescriptor;
@@ -37,12 +38,6 @@ import java.util.Map;
  */
 public class FileTypeIndex extends ScalarIndexExtension<FileType>
   implements FileBasedIndex.InputFilter, KeyDescriptor<FileType>, DataIndexer<FileType, Void, FileContent> {
-  private static final EnumeratorStringDescriptor ENUMERATOR_STRING_DESCRIPTOR = new EnumeratorStringDescriptor();
-
-  @NotNull
-  public static Collection<VirtualFile> getFiles(@NotNull FileType fileType, @NotNull GlobalSearchScope scope) {
-    return FileBasedIndex.getInstance().getContainingFiles(NAME, fileType, scope);
-  }
 
   public static final ID<FileType, Void> NAME = ID.create("filetypes");
 
@@ -103,12 +98,12 @@ public class FileTypeIndex extends ScalarIndexExtension<FileType>
 
   @Override
   public void save(@NotNull DataOutput out, FileType value) throws IOException {
-    ENUMERATOR_STRING_DESCRIPTOR.save(out, value.getName());
+    EnumeratorStringDescriptor.INSTANCE.save(out, value.getName());
   }
 
   @Override
   public FileType read(@NotNull DataInput in) throws IOException {
-    String read = ENUMERATOR_STRING_DESCRIPTOR.read(in);
+    String read = EnumeratorStringDescriptor.INSTANCE.read(in);
     return myFileTypeManager.findFileTypeByName(read);
   }
 
@@ -131,11 +126,24 @@ public class FileTypeIndex extends ScalarIndexExtension<FileType>
   }
 
   public static boolean containsFileOfType(@NotNull FileType type, @NotNull GlobalSearchScope scope) {
-    return !FileBasedIndex.getInstance().processValues(NAME, type, null, new FileBasedIndex.ValueProcessor<Void>() {
-      @Override
-      public boolean process(VirtualFile file, Void value) {
-        return false;
-      }
-    }, scope);
+    return !processFiles(type, file -> false, scope);
+  }
+
+  @NotNull
+  public static Collection<VirtualFile> getFiles(@NotNull FileType fileType, @NotNull GlobalSearchScope scope) {
+    return FileBasedIndex.getInstance().getContainingFiles(NAME, fileType, scope);
+  }
+
+  public static boolean processFiles(@NotNull FileType fileType, @NotNull Processor<VirtualFile> processor, GlobalSearchScope scope) {
+    return FileBasedIndex.getInstance().processValues(
+      NAME,
+      fileType,
+      null,
+      new FileBasedIndex.ValueProcessor<Void>() {
+        @Override
+        public boolean process(VirtualFile file, Void value) {
+          return processor.process(file);
+        }
+      }, scope);
   }
 }

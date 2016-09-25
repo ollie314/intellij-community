@@ -37,7 +37,6 @@ import com.intellij.openapi.fileTypes.PlainTextFileType;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.util.BackgroundTaskUtil;
 import com.intellij.openapi.util.Disposer;
-import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.HintHint;
 import com.intellij.ui.HintListener;
@@ -165,12 +164,12 @@ public abstract class LineStatusMarkerPopup {
       public List<DiffFragment> fun(ProgressIndicator indicator) {
         return ByWord.compare(vcsContent, currentContent, ComparisonPolicy.DEFAULT, indicator);
       }
-    }, Registry.intValue("diff.status.tracker.byword.delay"));
+    }, 200);
   }
 
   private void installMasterEditorHighlighters(@Nullable List<DiffFragment> wordDiff, @NotNull Disposable parentDisposable) {
     if (wordDiff == null) return;
-    final List<RangeHighlighter> highlighters = new ArrayList<RangeHighlighter>();
+    final List<RangeHighlighter> highlighters = new ArrayList<>();
 
     int currentStartShift = myTracker.getCurrentTextRange(myRange).getStartOffset();
     for (DiffFragment fragment : wordDiff) {

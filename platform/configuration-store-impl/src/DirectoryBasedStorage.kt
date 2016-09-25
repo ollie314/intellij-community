@@ -22,17 +22,15 @@ import com.intellij.openapi.components.StateStorage
 import com.intellij.openapi.components.TrackingPathMacroSubstitutor
 import com.intellij.openapi.components.impl.stores.DirectoryStorageUtil
 import com.intellij.openapi.components.impl.stores.FileStorageCoreUtil
-import com.intellij.openapi.components.impl.stores.StateStorageBase
-import com.intellij.openapi.util.JDOMUtil
 import com.intellij.openapi.util.Pair
-import com.intellij.openapi.vfs.CharsetToolkit
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.util.LineSeparator
 import com.intellij.util.SmartList
 import com.intellij.util.SystemProperties
 import com.intellij.util.containers.SmartHashSet
-import com.intellij.util.systemIndependentPath
+import com.intellij.util.io.systemIndependentPath
+import com.intellij.util.isEmpty
 import gnu.trove.THashMap
 import org.jdom.Element
 import java.io.IOException
@@ -119,7 +117,7 @@ open class DirectoryBasedStorage(private val dir: Path,
     override fun setSerializedState(componentName: String, element: Element?) {
       storage.componentName = componentName
 
-      if (JDOMUtil.isEmpty(element)) {
+      if (element.isEmpty()) {
         if (copiedStorageData != null) {
           copiedStorageData!!.clear()
         }
@@ -254,9 +252,6 @@ private fun loadFile(file: VirtualFile?): Pair<ByteArray, String> {
   }
 
   val bytes = file.contentsToByteArray()
-  var lineSeparator: String? = file.detectedLineSeparator
-  if (lineSeparator == null) {
-    lineSeparator = detectLineSeparators(CharsetToolkit.UTF8_CHARSET.decode(ByteBuffer.wrap(bytes)), null).separatorString
-  }
+  val lineSeparator = file.detectedLineSeparator ?: detectLineSeparators(Charsets.UTF_8.decode(ByteBuffer.wrap(bytes)), null).separatorString
   return Pair.create<ByteArray, String>(bytes, lineSeparator)
 }

@@ -115,7 +115,7 @@ public class GenericRepositoryEditor<T extends GenericRepository> extends BaseRe
     myCardPanel.add(jsonHandler.getConfigurationComponent(myProject), ResponseType.JSON.getMimeType());
     myCardPanel.add(textHandler.getConfigurationComponent(myProject), ResponseType.TEXT.getMimeType());
 
-    myRadio2ResponseType = new IdentityHashMap<JRadioButton, ResponseType>();
+    myRadio2ResponseType = new IdentityHashMap<>();
     myRadio2ResponseType.put(myJsonRadioButton, ResponseType.JSON);
     myRadio2ResponseType.put(myXmlRadioButton, ResponseType.XML);
     myRadio2ResponseType.put(myTextRadioButton, ResponseType.TEXT);
@@ -126,12 +126,7 @@ public class GenericRepositoryEditor<T extends GenericRepository> extends BaseRe
         final ManageTemplateVariablesDialog dialog = new ManageTemplateVariablesDialog(myManageTemplateVariablesButton);
         dialog.setTemplateVariables(myRepository.getAllTemplateVariables());
         if (dialog.showAndGet()) {
-          myRepository.setTemplateVariables(ContainerUtil.filter(dialog.getTemplateVariables(), new Condition<TemplateVariable>() {
-            @Override
-            public boolean value(TemplateVariable variable) {
-              return !variable.isReadOnly();
-            }
-          }));
+          myRepository.setTemplateVariables(ContainerUtil.filter(dialog.getTemplateVariables(), variable -> !variable.isReadOnly()));
           myCustomPanel.removeAll();
           myCustomPanel.add(createCustomPanel());
           //myCustomPanel.repaint();
@@ -181,7 +176,7 @@ public class GenericRepositoryEditor<T extends GenericRepository> extends BaseRe
   @Nullable
   @Override
   protected JComponent createCustomPanel() {
-    myField2Variable = new IdentityHashMap<JTextField, TemplateVariable>();
+    myField2Variable = new IdentityHashMap<>();
     FormBuilder builder = FormBuilder.createFormBuilder();
     for (final TemplateVariable variable : myRepository.getTemplateVariables()) {
       if (variable.isShownOnFirstTab()) {
@@ -266,7 +261,7 @@ public class GenericRepositoryEditor<T extends GenericRepository> extends BaseRe
         return text.substring(i, offset);
       }
     };
-    return new TextFieldWithAutoCompletion<String>(myProject, provider, true, text);
+    return new TextFieldWithAutoCompletion<>(myProject, provider, true, text);
   }
 
   @Override

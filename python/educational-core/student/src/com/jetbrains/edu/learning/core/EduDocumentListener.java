@@ -18,42 +18,29 @@ import java.util.List;
 public class EduDocumentListener extends DocumentAdapter {
   private final TaskFile myTaskFile;
   private final boolean myTrackLength;
-  private final boolean usePossibleAnswerLength;
-  private final List<AnswerPlaceholderWrapper> myAnswerPlaceholders = new ArrayList<AnswerPlaceholderWrapper>();
+  private final List<AnswerPlaceholderWrapper> myAnswerPlaceholders = new ArrayList<>();
 
 
   public EduDocumentListener(TaskFile taskFile) {
     myTaskFile = taskFile;
     myTrackLength = true;
-    usePossibleAnswerLength = false;
   }
 
   public EduDocumentListener(TaskFile taskFile, boolean trackLength) {
     myTaskFile = taskFile;
     myTrackLength = trackLength;
-    usePossibleAnswerLength = false;
   }
 
-  public EduDocumentListener(TaskFile taskFile, boolean trackLength, boolean usePossibleAnswerLength) {
-    myTaskFile = taskFile;
-    myTrackLength = trackLength;
-    this.usePossibleAnswerLength = usePossibleAnswerLength;
-  }
-
-
-  //remembering old end before document change because of problems
-  // with fragments containing "\n"
   @Override
   public void beforeDocumentChange(DocumentEvent e) {
     if (!myTaskFile.isTrackChanges()) {
       return;
     }
     myTaskFile.setHighlightErrors(true);
-    Document document = e.getDocument();
     myAnswerPlaceholders.clear();
     for (AnswerPlaceholder answerPlaceholder : myTaskFile.getAnswerPlaceholders()) {
-      int twStart = answerPlaceholder.getRealStartOffset(document);
-      int length = usePossibleAnswerLength ? answerPlaceholder.getPossibleAnswerLength() : answerPlaceholder.getLength();
+      int twStart = answerPlaceholder.getOffset();
+      int length = answerPlaceholder.getRealLength();
       int twEnd = twStart + length;
       myAnswerPlaceholders.add(new AnswerPlaceholderWrapper(answerPlaceholder, twStart, twEnd));
     }
@@ -80,16 +67,14 @@ public class EduDocumentListener extends DocumentAdapter {
           twEnd += change;
         }
         AnswerPlaceholder answerPlaceholder = answerPlaceholderWrapper.getAnswerPlaceholder();
-        int line = document.getLineNumber(twStart);
-        int start = twStart - document.getLineStartOffset(line);
         int length = twEnd - twStart;
-        answerPlaceholder.setLine(line);
-        answerPlaceholder.setStart(start);
-        if (usePossibleAnswerLength) {
-          answerPlaceholder.setPossibleAnswer(document.getText(TextRange.create(twStart, twStart + length)));
-        }
-        else if (myTrackLength) {
-          answerPlaceholder.setLength(length);
+        answerPlaceholder.setOffset(twStart);
+        if (myTrackLength) {
+          if (answerPlaceholder.getUseLength()) {
+            answerPlaceholder.setLength(length);
+          } else {
+            answerPlaceholder.setPossibleAnswer(document.getText(TextRange.create(twStart, twStart + length)));
+          }
         }
       }
     }

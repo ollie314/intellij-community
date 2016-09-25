@@ -245,7 +245,7 @@ class EditVarConstraintsDialog extends DialogWrapper {
           final Variable var = variables.get(parameterList.getSelectedIndex());
           if (validateParameters()) {
             if (current!=null) copyValuesFromUI(current);
-            ApplicationManager.getApplication().runWriteAction(new Runnable() { public void run() { copyValuesToUI(var); }});
+            ApplicationManager.getApplication().runWriteAction(() -> copyValuesToUI(var));
             current = var;
           } else {
             rollingBackSelection = true;
@@ -541,7 +541,7 @@ class EditVarConstraintsDialog extends DialogWrapper {
     regexp = createRegexComponent();
     regexprForExprType = createRegexComponent();
     formalArgType = createRegexComponent();
-    customScriptCode = new ComponentWithBrowseButton<EditorTextField>(createScriptComponent(), null);
+    customScriptCode = new ComponentWithBrowseButton<>(createScriptComponent(), null);
 
     myRegExHelpLabel = RegExHelpPopup.createRegExLink(SSRBundle.message("regular.expression.help.label"), regexp, LOG);
     myRegExHelpLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 5));

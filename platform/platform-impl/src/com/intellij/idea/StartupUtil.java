@@ -15,10 +15,12 @@
  */
 package com.intellij.idea;
 
+import com.intellij.ide.cloudConfig.CloudConfigProvider;
 import com.intellij.ide.customize.CustomizeIDEWizardDialog;
 import com.intellij.ide.customize.CustomizeIDEWizardStepsProvider;
 import com.intellij.ide.plugins.PluginManagerCore;
 import com.intellij.ide.startupWizard.StartupWizard;
+import com.intellij.jna.JnaLoader;
 import com.intellij.openapi.application.ApplicationInfo;
 import com.intellij.openapi.application.ApplicationNamesInfo;
 import com.intellij.openapi.application.ConfigImportHelper;
@@ -37,7 +39,6 @@ import com.intellij.util.Consumer;
 import com.intellij.util.EnvironmentUtil;
 import com.intellij.util.PlatformUtils;
 import com.intellij.util.lang.UrlClassLoader;
-import com.sun.jna.Native;
 import org.apache.log4j.ConsoleAppender;
 import org.apache.log4j.Level;
 import org.apache.log4j.PatternLayout;
@@ -76,11 +77,6 @@ public class StartupUtil {
     }
   }
 
-  public static int getAcquiredPort() {
-    BuiltInServer server = getServer();
-    return server == null ? -1 : server.getPort();
-  }
-
   @Nullable
   public synchronized static BuiltInServer getServer() {
     return ourSocketLock == null ? null : ourSocketLock.getServer();
@@ -88,6 +84,8 @@ public class StartupUtil {
 
   interface AppStarter {
     void start(boolean newConfigFolder);
+
+    default void beforeImportConfigs() {}
   }
 
   static void prepareAndStart(String[] args, AppStarter appStarter) {
@@ -130,6 +128,7 @@ public class StartupUtil {
     }
 
     if (newConfigFolder) {
+      appStarter.beforeImportConfigs();
       ConfigImportHelper.importConfigsTo(PathManager.getConfigPath());
     }
 
@@ -345,8 +344,7 @@ public class StartupUtil {
       System.setProperty("jna.nosys", "true");  // prefer bundled JNA dispatcher lib
     }
     try {
-      long t = System.currentTimeMillis();
-      log.info("JNA library loaded (" + (Native.POINTER_SIZE * 8) + "-bit) in " + (System.currentTimeMillis() - t) + " ms");
+      JnaLoader.load(log);
     }
     catch (Throwable t) {
       logError(log, "Unable to load JNA library", t);
@@ -428,8 +426,18 @@ public class StartupUtil {
         return;
       }
 
+      CloudConfigProvider configProvider = CloudConfigProvider.getProvider();
+      if (configProvider != null) {
+        configProvider.beforeStartupWizard();
+      }
+
       new CustomizeIDEWizardDialog(provider).show();
+
       PluginManagerCore.invalidatePlugins();
+      if (configProvider != null) {
+        configProvider.startupWizardFinished();
+      }
+
       return;
     }
 

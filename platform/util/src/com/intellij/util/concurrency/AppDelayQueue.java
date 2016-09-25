@@ -33,7 +33,7 @@ class AppDelayQueue extends DelayQueue<SchedulingWrapper.MyScheduledFutureTask> 
   private final AtomicBoolean shutdown = new AtomicBoolean();
 
   AppDelayQueue() {
-    /** this thread takes the ready-to-execute scheduled tasks off the queue and passes them for immediate execution to {@link SchedulingWrapper#backendExecutorService} */
+    /* this thread takes the ready-to-execute scheduled tasks off the queue and passes them for immediate execution to {@link SchedulingWrapper#backendExecutorService} */
     scheduledToPooledTransferer = new Thread(new Runnable() {
       @Override
       public void run() {
@@ -43,7 +43,9 @@ class AppDelayQueue extends DelayQueue<SchedulingWrapper.MyScheduledFutureTask> 
             if (LOG.isTraceEnabled()) {
               LOG.trace("Took "+BoundedTaskExecutor.info(task));
             }
-            task.getBackendExecutorService().execute(task);
+            if (!task.isDone()) {  // can be cancelled already
+              task.getBackendExecutorService().execute(task);
+            }
           }
           catch (InterruptedException e) {
             if (!shutdown.get()) {

@@ -23,6 +23,7 @@ import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory;
 import com.intellij.openapi.ui.FixedSizeButton;
 import com.intellij.openapi.ui.Splitter;
 import com.intellij.openapi.ui.TextFieldWithBrowseButton;
+import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.CharFilter;
 import com.intellij.openapi.util.text.StringUtil;
@@ -237,19 +238,16 @@ public class GuiUtils {
 
       if (pane.getDividerLocation() > 0) {
 // let the component chance to resize itself
-        SwingUtilities.invokeLater(new Runnable() {
-          @Override
-          public void run() {
-            double proportion;
-            if (pane.getOrientation() == JSplitPane.VERTICAL_SPLIT) {
-              proportion = pane.getDividerLocation() / (double)(parent.getHeight() - pane.getDividerSize());
-            }
-            else {
-              proportion = pane.getDividerLocation() / (double)(parent.getWidth() - pane.getDividerSize());
-            }
-            if (proportion > 0 && proportion < 1) {
-              splitter.setProportion((float)proportion);
-            }
+        SwingUtilities.invokeLater(() -> {
+          double proportion;
+          if (pane.getOrientation() == JSplitPane.VERTICAL_SPLIT) {
+            proportion = pane.getDividerLocation() / (double)(parent.getHeight() - pane.getDividerSize());
+          }
+          else {
+            proportion = pane.getDividerLocation() / (double)(parent.getWidth() - pane.getDividerSize());
+          }
+          if (proportion > 0 && proportion < 1) {
+            splitter.setProportion((float)proportion);
           }
         });
       }
@@ -309,12 +307,7 @@ public class GuiUtils {
   }
 
   public static void enableChildren(Component container, final boolean enabled, JComponent... excludeComponents) {
-    iterateChildren(container, new Consumer<Component>() {
-      @Override
-      public void consume(final Component t) {
-        enableComponent(t, enabled);
-      }
-    }, excludeComponents);
+    iterateChildren(container, t -> enableComponent(t, enabled), excludeComponents);
   }
 
   private static void enableComponent(Component component, boolean enabled) {
@@ -367,7 +360,7 @@ public class GuiUtils {
   }
 
   public static void runOrInvokeAndWait(@NotNull Runnable runnable) throws InvocationTargetException, InterruptedException {
-    ApplicationManager.getApplication().invokeAndWait(runnable, ModalityState.defaultModalityState());
+    ApplicationManager.getApplication().invokeAndWait(runnable);
   }
 
   public static void invokeLaterIfNeeded(@NotNull Runnable runnable, @NotNull ModalityState modalityState) {
@@ -375,6 +368,14 @@ public class GuiUtils {
       runnable.run();
     } else {
       ApplicationManager.getApplication().invokeLater(runnable, modalityState);
+    }
+  }
+
+  public static void invokeLaterIfNeeded(@NotNull Runnable runnable, @NotNull ModalityState modalityState, @NotNull Condition expired) {
+    if (ApplicationManager.getApplication().isDispatchThread()) {
+      runnable.run();
+    } else {
+      ApplicationManager.getApplication().invokeLater(runnable, modalityState, expired);
     }
   }
 

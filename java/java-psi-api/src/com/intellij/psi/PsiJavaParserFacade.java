@@ -235,11 +235,19 @@ public interface PsiJavaParserFacade {
   /**
    * Creates a Java type from the specified text.
    *
-   * @param text        the text of the type to create (a primitive type keyword).
-   * @param annotations array (possible empty) of annotations to annotate the created type.
+   * @param text the text of the type to create (a primitive type keyword).
    * @return the created type instance.
    * @throws IncorrectOperationException if some of the parameters are not valid.
    */
   @NotNull
+  PsiType createPrimitiveTypeFromText(@NotNull String text) throws IncorrectOperationException;
+
+  /**
+   * Creates a Java module declaration from the specified text.
+   */
+  @NotNull
+  PsiJavaModule createModuleFromText(@NotNull String text);
+
+  /** @deprecated use {@link PsiType#annotate(TypeAnnotationProvider)} (to be removed in IDEA 18) */
   PsiType createPrimitiveType(@NotNull String text, @NotNull PsiAnnotation[] annotations) throws IncorrectOperationException;
 }

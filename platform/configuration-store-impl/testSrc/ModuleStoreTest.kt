@@ -14,9 +14,9 @@ import com.intellij.openapi.roots.impl.storage.ClasspathStorage
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.testFramework.*
-import com.intellij.util.parentSystemIndependentPath
-import com.intellij.util.readText
-import com.intellij.util.systemIndependentPath
+import com.intellij.util.io.parentSystemIndependentPath
+import com.intellij.util.io.readText
+import com.intellij.util.io.systemIndependentPath
 import gnu.trove.TObjectIntHashMap
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.ClassRule
@@ -103,9 +103,6 @@ class ModuleStoreTest {
         override fun onBatchUpdateStarted() {
           nameToCount.put(moduleName, ++batchUpdateCount)
         }
-
-        override fun onBatchUpdateFinished() {
-        }
       })
 
       //
@@ -137,9 +134,6 @@ class ModuleStoreTest {
     projectRule.project.messageBus.connect(m1).subscribe(BatchUpdateListener.TOPIC, object : BatchUpdateListener {
       override fun onBatchUpdateStarted() {
         nameToCount.put("p", ++projectBatchUpdateCount)
-      }
-
-      override fun onBatchUpdateFinished() {
       }
     })
 

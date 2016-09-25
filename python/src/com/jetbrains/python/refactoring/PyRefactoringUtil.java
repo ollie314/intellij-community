@@ -49,7 +49,7 @@ public class PyRefactoringUtil {
     if (context == null) {
       return Collections.emptyList();
     }
-    final List<PsiElement> occurrences = new ArrayList<PsiElement>();
+    final List<PsiElement> occurrences = new ArrayList<>();
     final PyElementVisitor visitor = new PyElementVisitor() {
       public void visitElement(@NotNull final PsiElement element) {
         if (element instanceof PyParameter) {
@@ -260,7 +260,7 @@ public class PyRefactoringUtil {
     }
 
     PsiElement[] children = parent.getChildren();
-    ArrayList<PsiElement> array = new ArrayList<PsiElement>();
+    ArrayList<PsiElement> array = new ArrayList<>();
     boolean flag = false;
     for (PsiElement child : children) {
       if (child.equals(element1)) {
@@ -293,21 +293,18 @@ public class PyRefactoringUtil {
 
   @NotNull
   public static List<UsageInfo> findUsages(@NotNull PsiNamedElement element, boolean forHighlightUsages) {
-    final List<UsageInfo> usages = new ArrayList<UsageInfo>();
+    final List<UsageInfo> usages = new ArrayList<>();
     final FindUsagesHandler handler = new PyFindUsagesHandlerFactory().createFindUsagesHandler(element, forHighlightUsages);
     assert handler != null;
-    final List<PsiElement> elementsToProcess = new ArrayList<PsiElement>();
+    final List<PsiElement> elementsToProcess = new ArrayList<>();
     Collections.addAll(elementsToProcess, handler.getPrimaryElements());
     Collections.addAll(elementsToProcess, handler.getSecondaryElements());
     for (PsiElement e : elementsToProcess) {
-      handler.processElementUsages(e, new Processor<UsageInfo>() {
-        @Override
-        public boolean process(UsageInfo usageInfo) {
-          if (!usageInfo.isNonCodeUsage) {
-            usages.add(usageInfo);
-          }
-          return true;
+      handler.processElementUsages(e, usageInfo -> {
+        if (!usageInfo.isNonCodeUsage) {
+          usages.add(usageInfo);
         }
+        return true;
       }, FindUsagesHandler.createFindUsagesOptions(element.getProject(), null));
     }
     return usages;

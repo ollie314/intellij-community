@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2013 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -134,20 +134,6 @@ public class PyTypeTest extends PyTestCase {
   public void testUnicodeLiteral() {  // PY-1427
     doTest("unicode",
            "expr = u'foo'");
-  }
-
-  // TODO: uncomment when we have a mock SDK for Python 3.x
-  // PY-1427
-  @SuppressWarnings("unused")
-  public void _testBytesLiteral() {  // PY-1427
-    PythonLanguageLevelPusher.setForcedLanguageLevel(myFixture.getProject(), LanguageLevel.PYTHON30);
-    try {
-      doTest("bytes",
-             "expr = b'foo'");
-    }
-    finally {
-      PythonLanguageLevelPusher.setForcedLanguageLevel(myFixture.getProject(), null);
-    }
   }
 
   public void testPropertyType() {
@@ -322,6 +308,90 @@ public class PyTypeTest extends PyTestCase {
            "        x = 1 if c else 'foo'\n" +
            "        self.assertIsInstance(x, int)\n" +
            "        expr = x\n");
+  }
+
+  // PY-20679
+  public void testIsInstanceViaTrue() {
+    doTest("str",
+           "a = None\n" +
+           "if isinstance(a, str) is True:\n" +
+           "    expr = a\n" +
+           "raise TypeError('Invalid type')");
+
+    doTest("str",
+           "a = None\n" +
+           "if True is isinstance(a, str):\n" +
+           "    expr = a\n" +
+           "raise TypeError('Invalid type')");
+  }
+
+  // PY-20679
+  public void testIsInstanceViaFalse() {
+    doTest("str",
+           "a = None\n" +
+           "if isinstance(a, str) is not False:\n" +
+           "    expr = a\n" +
+           "raise TypeError('Invalid type')");
+
+    doTest("str",
+           "a = None\n" +
+           "if False is not isinstance(a, str):\n" +
+           "    expr = a\n" +
+           "raise TypeError('Invalid type')");
+
+    doTest("str",
+           "a = None\n" +
+           "if not isinstance(a, str) is False:\n" +
+           "    expr = a\n" +
+           "raise TypeError('Invalid type')");
+
+    doTest("str",
+           "a = None\n" +
+           "if not False is isinstance(a, str):\n" +
+           "    expr = a\n" +
+           "raise TypeError('Invalid type')");
+  }
+
+  // PY-20679
+  public void testNotIsInstanceViaTrue() {
+    doTest("str",
+           "a = None\n" +
+           "if not isinstance(a, str) is True:\n" +
+           "    raise TypeError('Invalid type')\n" +
+           "expr = a");
+
+    doTest("str",
+           "a = None\n" +
+           "if not True is isinstance(a, str):\n" +
+           "    raise TypeError('Invalid type')\n" +
+           "expr = a");
+
+    doTest("str",
+           "a = None\n" +
+           "if isinstance(a, str) is not True:\n" +
+           "    raise TypeError('Invalid type')\n" +
+           "expr = a");
+
+    doTest("str",
+           "a = None\n" +
+           "if True is not isinstance(a, str):\n" +
+           "    raise TypeError('Invalid type')\n" +
+           "expr = a");
+  }
+
+  // PY-20679
+  public void testNotIsInstanceViaFalse() {
+    doTest("str",
+           "a = None\n" +
+           "if isinstance(a, str) is False:\n" +
+           "    raise TypeError('Invalid type')\n" +
+           "expr = a");
+
+    doTest("str",
+           "a = None\n" +
+           "if False is isinstance(a, str):\n" +
+           "    raise TypeError('Invalid type')\n" +
+           "expr = a");
   }
 
   // PY-4279
@@ -834,6 +904,30 @@ public class PyTypeTest extends PyTestCase {
            "expr = (1, False) * 2");
   }
 
+
+  public void testTupleDestructuring() {
+    doTest("str",
+           "_, expr = (1, 'val') ");
+  }
+
+  public void testParensTupleDestructuring() {
+    doTest("str",
+           "(_, expr) = (1, 'val') ");
+  }
+
+  // PY-19825
+  public void testSubTupleDestructuring() {
+    doTest("str",
+           "(a, (_, expr)) = (1, (2,'val')) ");
+  }
+
+  // PY-19825
+  public void testSubTupleIndirectDestructuring() {
+    doTest("str",
+           "xs = (2,'val')\n" +
+           "(a, (_, expr)) = (1, xs) ");
+  }
+
   public void testConstructorUnification() {
     doTest("C[int]",
            "class C(object):\n" +
@@ -1063,6 +1157,68 @@ public class PyTypeTest extends PyTestCase {
                     "from module import func\n" +
                     "\n" +
                     "expr = func()");
+  }
+
+  // PY-19967
+  public void testInheritedNamedTupleReplace() {
+    PyExpression expr = parseExpr("from collections import namedtuple\n" +
+                                  "class MyClass(namedtuple('T', 'a b c')):\n" +
+                                  "    def get_foo(self):\n" +
+                                  "        return self.a\n" +
+                                  "\n" +
+                                  "inst = MyClass(1,2,3)\n" +
+                                  "expr = inst._replace(a=2)\n");
+    doTest("MyClass",
+           expr,
+           TypeEvalContext.userInitiated(expr.getProject(), expr.getContainingFile()));
+  }
+
+  // PY-20063
+  public void testIteratedSetElement() {
+    doTest("int",
+           "xs = {1}\n" +
+           "for expr in xs:\n" +
+           "    print(expr)");
+  }
+
+  public void testIsNotNone() {
+    doTest("int",
+           "def test_1(self, c):\n" +
+           "    x = 1 if c else None\n" +
+           "    if x is not None:\n" +
+           "        expr = x\n");
+
+    doTest("int",
+           "def test_1(self, c):\n" +
+           "    x = 1 if c else None\n" +
+           "    if None is not x:\n" +
+           "        expr = x\n");
+
+    doTest("int",
+           "def test_1(self, c):\n" +
+           "    x = 1 if c else None\n" +
+           "    if not x is None:\n" +
+           "        expr = x\n");
+
+    doTest("int",
+           "def test_1(self, c):\n" +
+           "    x = 1 if c else None\n" +
+           "    if not None is x:\n" +
+           "        expr = x\n");
+  }
+
+  public void testIsNone() {
+    doTest("None",
+           "def test_1(self, c):\n" +
+           "    x = 1 if c else None\n" +
+           "    if x is None:\n" +
+           "        expr = x\n");
+
+    doTest("None",
+           "def test_1(self, c):\n" +
+           "    x = 1 if c else None\n" +
+           "    if None is x:\n" +
+           "        expr = x\n");
   }
 
   private static List<TypeEvalContext> getTypeEvalContexts(@NotNull PyExpression element) {

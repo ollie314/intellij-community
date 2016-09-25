@@ -22,7 +22,6 @@ import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Computable;
@@ -58,7 +57,7 @@ public class FormatterImpl extends FormatterEx
              FormattingModelFactory {
   private static final Logger LOG = Logger.getInstance("#com.intellij.formatting.FormatterImpl");
 
-  private final AtomicReference<FormattingProgressTask> myProgressTask = new AtomicReference<FormattingProgressTask>();
+  private final AtomicReference<FormattingProgressTask> myProgressTask = new AtomicReference<>();
 
   private final AtomicInteger myIsDisabledCount = new AtomicInteger();
   private final IndentImpl NONE_INDENT = new IndentImpl(Indent.Type.NONE, false, false);
@@ -322,12 +321,7 @@ public class FormatterImpl extends FormatterEx
     }
     else {
       progressTask.setTask(task);
-      Runnable callback = new Runnable() {
-        @Override
-        public void run() {
-          enableFormatting();
-        }
-      };
+      Runnable callback = () -> enableFormatting();
       for (FormattingProgressCallback.EventType eventType : FormattingProgressCallback.EventType.values()) {
         progressTask.addCallback(eventType, callback);
       }
@@ -398,17 +392,17 @@ public class FormatterImpl extends FormatterEx
   }
 
   @Override
-  public void formatAroundRange(final FormattingModel model,
-                                final CodeStyleSettings settings,
-                                final TextRange textRange,
-                                final FileType fileType) {
+  public void formatAroundRange(FormattingModel model,
+                                CodeStyleSettings settings,
+                                PsiFile file,
+                                TextRange textRange) {
     disableFormatting();
     try {
       validateModel(model);
       final FormattingDocumentModel documentModel = model.getDocumentModel();
       final Block block = model.getRootBlock();
       final FormatProcessor processor = buildProcessorAndWrapBlocks(
-        documentModel, block, settings, settings.getIndentOptions(fileType), null
+        documentModel, block, settings, settings.getIndentOptionsByFile(file), null
       );
       LeafBlockWrapper tokenBlock = processor.getFirstTokenBlock();
       while (tokenBlock != null) {
@@ -557,13 +551,25 @@ public class FormatterImpl extends FormatterEx
     final FormatProcessor processor = buildProcessorAndWrapBlocks(
       documentModel, block, settings, indentOptions, new FormatTextRanges(affectedRange, true), offset
     );
-    final LeafBlockWrapper blockAfterOffset = processor.getBlockRangesMap().getBlockAtOrAfter(offset);
-
-    if (blockAfterOffset != null && !blockAfterOffset.contains(offset)) {
-      final WhiteSpace whiteSpace = blockAfterOffset.getWhiteSpace();
+    WhiteSpace whiteSpace = getWhiteSpaceAtOffset(offset, processor);
+    if (whiteSpace != null) {
       final IndentInfo indent = calcIndent(offset, documentModel, processor, whiteSpace);
-
       return indent.generateNewWhiteSpace(indentOptions);
+    }
+    return null;
+  }
+  
+  @Nullable
+  private static WhiteSpace getWhiteSpaceAtOffset(int offset,
+                                                  @NotNull FormatProcessor formatProcessor) {
+    final LeafBlockWrapper blockAfterOffset = formatProcessor.getBlockRangesMap().getBlockAtOrAfter(offset);
+    if (blockAfterOffset != null) {
+      if (!blockAfterOffset.contains(offset)) return blockAfterOffset.getWhiteSpace();
+    }
+    else {
+      if (offset >= formatProcessor.getLastWhiteSpace().getStartOffset()) {
+        return formatProcessor.getLastWhiteSpace();
+      }
     }
     return null;
   }
@@ -813,7 +819,7 @@ public class FormatterImpl extends FormatterEx
     return getSpacingImpl(minSpaces, maxSpaces, minLineFeeds, false, false, keepLineBreaks, keepBlankLines, false, prefLineFeeds);
   }
 
-  private final Map<SpacingImpl,SpacingImpl> ourSharedProperties = new HashMap<SpacingImpl,SpacingImpl>();
+  private final Map<SpacingImpl,SpacingImpl> ourSharedProperties = new HashMap<>();
   private final SpacingImpl ourSharedSpacing = new SpacingImpl(-1,-1,-1,false,false,false,-1,false,0);
 
   private SpacingImpl getSpacingImpl(final int minSpaces,

@@ -22,6 +22,7 @@ import com.intellij.ui.BrowserHyperlinkListener;
 import com.intellij.ui.ColorUtil;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.ui.UIUtil;
+import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -37,7 +38,7 @@ public class StudySwingToolWindow extends StudyToolWindow {
   }
 
   @Override
-  public JComponent createTaskInfoPanel(String taskText, Project project) {
+  public JComponent createTaskInfoPanel(Project project) {
     myTaskTextPane = new JTextPane();
     final JBScrollPane scrollPane = new JBScrollPane(myTaskTextPane);
     myTaskTextPane.setContentType(new HTMLEditorKit().getContentType());
@@ -57,12 +58,11 @@ public class StudySwingToolWindow extends StudyToolWindow {
       myTaskTextPane.setBackground(EditorColorsManager.getInstance().getGlobalScheme().getDefaultBackground());
     }
     myTaskTextPane.setBorder(new EmptyBorder(20, 20, 0, 10));
-    myTaskTextPane.setText(taskText);
     myTaskTextPane.addHyperlinkListener(BrowserHyperlinkListener.INSTANCE);
     return scrollPane;
   }
 
-  public void setTaskText(String text) {
+  public void setText(@NotNull String text) {
     myTaskTextPane.setText(text);
   }
 }

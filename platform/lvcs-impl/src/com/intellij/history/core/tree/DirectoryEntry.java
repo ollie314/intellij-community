@@ -33,14 +33,18 @@ public class DirectoryEntry extends Entry {
   private final ArrayList<Entry> myChildren;
 
   public DirectoryEntry(String name) {
-    super(name);
-    myChildren = new ArrayList<Entry>(3);
+    this(toNameId(name));
+  }
+
+  public DirectoryEntry(int nameId) {
+    super(nameId);
+    myChildren = new ArrayList<>(3);
   }
 
   public DirectoryEntry(DataInput in, boolean dummy /* to distinguish from general constructor*/) throws IOException {
     super(in);
     int count = DataInputOutputUtil.readINT(in);
-    myChildren = new ArrayList<Entry>(count);
+    myChildren = new ArrayList<>(count);
     while (count-- > 0) {
       unsafeAddChild(StreamUtil.readEntry(in));
     }
@@ -124,7 +128,7 @@ public class DirectoryEntry extends Entry {
   }
 
   protected DirectoryEntry copyEntry() {
-    return new DirectoryEntry(myName);
+    return new DirectoryEntry(getNameId());
   }
 
   @Override

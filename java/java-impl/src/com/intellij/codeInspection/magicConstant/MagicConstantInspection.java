@@ -18,6 +18,7 @@ package com.intellij.codeInspection.magicConstant;
 import com.intellij.analysis.AnalysisScope;
 import com.intellij.codeInsight.AnnotationUtil;
 import com.intellij.codeInsight.ExternalAnnotationsManager;
+import com.intellij.codeInsight.FileModificationService;
 import com.intellij.codeInsight.daemon.GroupNames;
 import com.intellij.codeInspection.*;
 import com.intellij.ide.util.treeView.AbstractTreeNode;
@@ -37,6 +38,8 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.*;
 import com.intellij.psi.codeStyle.JavaCodeStyleManager;
 import com.intellij.psi.impl.JavaConstantExpressionEvaluator;
+import com.intellij.psi.impl.cache.impl.id.IdIndex;
+import com.intellij.psi.impl.cache.impl.id.IdIndexEntry;
 import com.intellij.psi.javadoc.PsiDocComment;
 import com.intellij.psi.javadoc.PsiDocTag;
 import com.intellij.psi.search.GlobalSearchScope;
@@ -46,6 +49,7 @@ import com.intellij.psi.util.*;
 import com.intellij.slicer.*;
 import com.intellij.util.Processor;
 import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.indexing.FileBasedIndex;
 import gnu.trove.THashSet;
 import org.intellij.lang.annotations.MagicConstant;
 import org.jetbrains.annotations.Nls;
@@ -412,12 +416,16 @@ public class MagicConstantInspection extends BaseJavaLocalInspectionTool {
 
   @NotNull
   private static PsiAnnotation[] getAllAnnotations(@NotNull PsiModifierListOwner element) {
-    return CachedValuesManager.getCachedValue(element,
-                                              () -> CachedValueProvider.Result.create(AnnotationUtil.getAllAnnotations(element, true, null),
-                                                                                      PsiModificationTracker.MODIFICATION_COUNT));
+    return CachedValuesManager.getCachedValue(element, () ->
+      CachedValueProvider.Result.create(AnnotationUtil.getAllAnnotations(element, true, null, false),
+                                        PsiModificationTracker.MODIFICATION_COUNT));
   }
 
   private static AllowedValues parseBeanInfo(@NotNull PsiModifierListOwner owner, @NotNull PsiManager manager) {
+    PsiFile containingFile = owner.getContainingFile();
+    if (containingFile != null && !containsBeanInfoText((PsiFile)containingFile.getNavigationElement())) {
+      return null;
+    }
     PsiMethod method = null;
     if (owner instanceof PsiParameter) {
       PsiParameter parameter = (PsiParameter)owner;
@@ -489,6 +497,15 @@ public class MagicConstantInspection extends BaseJavaLocalInspectionTool {
     if (values.isEmpty()) return null;
     PsiAnnotationMemberValue[] array = values.toArray(new PsiAnnotationMemberValue[values.size()]);
     return new AllowedValues(array, false);
+  }
+
+  private static boolean containsBeanInfoText(@NotNull PsiFile file) {
+    return CachedValuesManager.getCachedValue(file, () -> {
+      Collection<VirtualFile> files = FileBasedIndex.getInstance().getContainingFiles(IdIndex.NAME,
+                                                                                      new IdIndexEntry("beaninfo", true),
+                                                                                      GlobalSearchScope.fileScope(file));
+      return CachedValueProvider.Result.create(!files.isEmpty(), file);
+    });
   }
 
   private static PsiType getType(@NotNull PsiModifierListOwner element) {
@@ -743,6 +760,7 @@ public class MagicConstantInspection extends BaseJavaLocalInspectionTool {
 
     @Override
     public void invoke(@NotNull Project project, @NotNull PsiFile file, @NotNull PsiElement startElement, @NotNull PsiElement endElement) {
+      if (!FileModificationService.getInstance().prepareFileForWrite(file)) return;
       List<PsiAnnotationMemberValue> values = myMemberValuePointers.stream().map(SmartPsiElementPointer::getElement).collect(Collectors.toList());
       String text = StringUtil.join(Collections.nCopies(values.size(), "0"), " | ");
       PsiExpression concatExp = PsiElementFactory.SERVICE.getInstance(project).createExpressionFromText(text, startElement);

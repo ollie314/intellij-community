@@ -275,17 +275,11 @@ public class CollectionAddAllCanBeReplacedWithConstructorInspection extends Base
   private static List<PsiElement> extractReferencedElementsFromParameter(PsiMethodCallExpression expression) {
     final PsiExpression psiExpression = expression.getArgumentList().getExpressions()[0];
     final Collection<PsiReferenceExpression> references =
-      new ArrayList<PsiReferenceExpression>(PsiTreeUtil.findChildrenOfType(psiExpression, PsiReferenceExpression.class));
+      new ArrayList<>(PsiTreeUtil.findChildrenOfType(psiExpression, PsiReferenceExpression.class));
     if (psiExpression instanceof PsiReferenceExpression) {
       references.add((PsiReferenceExpression)psiExpression);
     }
-    return ContainerUtil.mapNotNull(references, new NullableFunction<PsiReferenceExpression, PsiElement>() {
-      @Nullable
-      @Override
-      public PsiElement fun(PsiReferenceExpression expression) {
-        return expression.resolve();
-      }
-    });
+    return ContainerUtil.mapNotNull(references, (NullableFunction<PsiReferenceExpression, PsiElement>)expression1 -> expression1.resolve());
   }
 
   private static boolean isReferenceToOneOf(PsiReferenceExpression reference, List<PsiElement> elements) {

@@ -20,7 +20,6 @@ import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -230,7 +229,7 @@ public class VcsUtil {
   }
 
   private static List<VirtualFile> collectFilesToRefresh(final File[] roots) {
-    final ArrayList<VirtualFile> result = new ArrayList<VirtualFile>();
+    final ArrayList<VirtualFile> result = new ArrayList<>();
     for (File root : roots) {
       VirtualFile vFile = findFileFor(root);
       if (vFile != null) {
@@ -494,7 +493,7 @@ public class VcsUtil {
 
   public static boolean runVcsProcessWithProgress(final VcsRunnable runnable, String progressTitle, boolean canBeCanceled, Project project)
     throws VcsException {
-    final Ref<VcsException> ex = new Ref<VcsException>();
+    final Ref<VcsException> ex = new Ref<>();
     boolean result = ProgressManager.getInstance().runProcessWithProgressSynchronously(new Runnable() {
       @Override
       public void run() {
@@ -527,7 +526,7 @@ public class VcsUtil {
       }
     };
 
-    app.invokeAndWait(action, ModalityState.defaultModalityState());
+    app.invokeAndWait(action);
 
     return file[0];
   }
@@ -650,7 +649,7 @@ public class VcsUtil {
   public static List<VcsDirectoryMapping> addMapping(@NotNull List<VcsDirectoryMapping> existingMappings,
                                                      @NotNull String path,
                                                      @NotNull String vcs) {
-    List<VcsDirectoryMapping> mappings = new ArrayList<VcsDirectoryMapping>(existingMappings);
+    List<VcsDirectoryMapping> mappings = new ArrayList<>(existingMappings);
     for (Iterator<VcsDirectoryMapping> iterator = mappings.iterator(); iterator.hasNext(); ) {
       VcsDirectoryMapping mapping = iterator.next();
       if (mapping.isDefaultMapping() && StringUtil.isEmptyOrSpaces(mapping.getVcs())) {
@@ -670,5 +669,4 @@ public class VcsUtil {
     mappings.add(new VcsDirectoryMapping(path, vcs));
     return mappings;
   }
-
 }

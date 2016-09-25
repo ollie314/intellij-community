@@ -71,17 +71,15 @@ public class CompilerPathsEx extends CompilerPaths {
 
   public static void visitFiles(final Collection<VirtualFile> directories, final FileVisitor visitor) {
     for (final VirtualFile outputDir : directories) {
-      ApplicationManager.getApplication().runReadAction(new Runnable() {
-        public void run() {
-          final String path = outputDir.getPath();
-          visitor.accept(outputDir, path, path);
-        }
+      ApplicationManager.getApplication().runReadAction(() -> {
+        final String path = outputDir.getPath();
+        visitor.accept(outputDir, path, path);
       });
     }
   }
 
   public static String[] getOutputPaths(Module[] modules) {
-    final Set<String> outputPaths = new OrderedSet<String>();
+    final Set<String> outputPaths = new OrderedSet<>();
     for (Module module : modules) {
       final CompilerModuleExtension compilerModuleExtension = !module.isDisposed()? CompilerModuleExtension.getInstance(module) : null;
       if (compilerModuleExtension == null) {

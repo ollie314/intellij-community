@@ -85,7 +85,7 @@ public class ToggleHighlightingMarkupAction extends AnAction {
     final StringBuilder sb = new StringBuilder();
     Pattern pattern = Pattern.compile("<(error|warning|EOLError|EOLWarning|info|weak_warning)((?:\\s|=|\\w+|\\\"(?:[^\"]|\\\\\\\")*?\\\")*?)>(.*?)</\\1>");
     Matcher matcher = pattern.matcher(sequence);
-    List<TextRange> ranges = new ArrayList<TextRange>();
+    List<TextRange> ranges = new ArrayList<>();
     if (matcher.find(startOffset)) {
       boolean compactMode = false;
       int pos;
@@ -117,19 +117,16 @@ public class ToggleHighlightingMarkupAction extends AnAction {
     }
     else {
       final int[] offset = new int[] {0};
-      final ArrayList<HighlightInfo> infos = new ArrayList<HighlightInfo>();
+      final ArrayList<HighlightInfo> infos = new ArrayList<>();
       DaemonCodeAnalyzerEx.processHighlights(
         document, project, HighlightSeverity.WARNING, 0, sequence.length(),
-        new Processor<HighlightInfo>() {
-          @Override
-          public boolean process(HighlightInfo info) {
-            if (info.getSeverity() != HighlightSeverity.WARNING && info.getSeverity() != HighlightSeverity.ERROR) return true;
-            if (info.getStartOffset() >= endOffset) return false;
-            if (info.getEndOffset() > startOffset) {
-              offset[0] = appendInfo(info, sb, sequence, offset[0], infos, false);
-            }
-            return true;
+        info -> {
+          if (info.getSeverity() != HighlightSeverity.WARNING && info.getSeverity() != HighlightSeverity.ERROR) return true;
+          if (info.getStartOffset() >= endOffset) return false;
+          if (info.getEndOffset() > startOffset) {
+            offset[0] = appendInfo(info, sb, sequence, offset[0], infos, false);
           }
+          return true;
         });
       offset[0] = appendInfo(null, sb, sequence, offset[0], infos, false);
       sb.append(sequence.subSequence(offset[0], sequence.length()));
@@ -153,7 +150,7 @@ public class ToggleHighlightingMarkupAction extends AnAction {
       }
       else {
         // process overlapped
-        LinkedList<HighlightInfo> stack = new LinkedList<HighlightInfo>();
+        LinkedList<HighlightInfo> stack = new LinkedList<>();
         for (HighlightInfo cur : infos) {
           offset = processStack(stack, sb, sequence, offset, cur.getStartOffset(), compact);
           sb.append(sequence.subSequence(offset, cur.getStartOffset()));

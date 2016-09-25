@@ -15,17 +15,20 @@
  */
 package com.intellij.codeInspection.ui;
 
-import com.intellij.codeInsight.daemon.HighlightDisplayKey;
-import com.intellij.codeInspection.ex.DisableInspectionToolAction;
+import com.intellij.codeInspection.InspectionsBundle;
+import com.intellij.codeInspection.actions.RunInspectionAction;
 import com.intellij.codeInspection.ex.InspectionProfileImpl;
 import com.intellij.codeInspection.ex.InspectionToolWrapper;
+import com.intellij.codeInspection.ex.ToolsImpl;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager;
 import com.intellij.profile.codeInspection.ui.SingleInspectionProfilePanel;
+import com.intellij.profile.codeInspection.ui.inspectionsTree.InspectionsConfigTreeTable;
 import com.intellij.ui.*;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBLabelDecorator;
+import com.intellij.ui.components.panels.StatelessCardLayout;
 import com.intellij.util.ui.JBInsets;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
@@ -40,24 +43,17 @@ import java.awt.event.MouseEvent;
  */
 public class InspectionNodeInfo extends JPanel {
   private final static Logger LOG = Logger.getInstance(InspectionNodeInfo.class);
-  private final JButton myButton;
-  private final JBLabel myEnabledLabel;
-  private final HighlightDisplayKey myKey;
-  private final InspectionProfileImpl myCurrentProfile;
-  private final Project myProject;
-  @NotNull private final InspectionTree myTree;
 
   public InspectionNodeInfo(@NotNull final InspectionTree tree,
                             @NotNull final Project project) {
-    myTree = tree;
     setLayout(new GridBagLayout());
     setBorder(IdeBorderFactory.createEmptyBorder(11, 0, 0, 0));
-    final InspectionToolWrapper toolWrapper = tree.getSelectedToolWrapper();
+    final InspectionToolWrapper toolWrapper = tree.getSelectedToolWrapper(false);
     LOG.assertTrue(toolWrapper != null);
-    myProject = project;
-    myCurrentProfile = (InspectionProfileImpl)InspectionProjectProfileManager.getInstance(project).getProjectProfileImpl();
-    myKey = HighlightDisplayKey.find(toolWrapper.getShortName());
-    myButton = new JButton();
+    InspectionProfileImpl currentProfile =
+      (InspectionProfileImpl)InspectionProjectProfileManager.getInstance(project).getCurrentProfile();
+    final ToolsImpl tools = currentProfile.getTools(toolWrapper.getShortName(), project);
+    boolean enabled = tools.isEnabled();
 
     JPanel titlePanel = new JPanel();
     titlePanel.setLayout(new BoxLayout(titlePanel, BoxLayout.LINE_AXIS));
@@ -65,9 +61,12 @@ public class InspectionNodeInfo extends JPanel {
     label.setText(toolWrapper.getDisplayName() + " inspection");
     titlePanel.add(label);
     titlePanel.add(Box.createHorizontalStrut(JBUI.scale(16)));
-    myEnabledLabel = new JBLabel();
-    myEnabledLabel.setForeground(JBColor.GRAY);
-    titlePanel.add(myEnabledLabel);
+    if (!enabled) {
+      JBLabel enabledLabel = new JBLabel();
+      enabledLabel.setForeground(JBColor.GRAY);
+      enabledLabel.setText("Disabled");
+      titlePanel.add(enabledLabel);
+    }
 
     add(titlePanel,
         new GridBagConstraints(0, 0, 1, 1, 0, 0, GridBagConstraints.NORTHWEST, GridBagConstraints.NONE, new JBInsets(0, 12, 5, 16),
@@ -77,51 +76,46 @@ public class InspectionNodeInfo extends JPanel {
     description.setContentType(UIUtil.HTML_MIME);
     description.setEditable(false);
     description.setOpaque(false);
+    description.setBackground(UIUtil.getLabelBackground());
     description.addHyperlinkListener(BrowserHyperlinkListener.INSTANCE);
     final String toolDescription = toolWrapper.loadDescription();
     SingleInspectionProfilePanel.readHTML(description, SingleInspectionProfilePanel.toHTML(description, toolDescription == null ? "" : toolDescription, false));
     JScrollPane pane = ScrollPaneFactory.createScrollPane(description, true);
+    int maxWidth = getFontMetrics(UIUtil.getLabelFont()).charWidth('f') * 110 - pane.getMinimumSize().width;
+    pane.setMaximumSize(new Dimension(maxWidth, Integer.MAX_VALUE));
+    pane.setAlignmentX(0);
 
-    add(pane,
-        new GridBagConstraints(0, 1, 1, 1, 1.0, 1.0, GridBagConstraints.NORTHWEST, GridBagConstraints.VERTICAL,
-                               new JBInsets(0, 10, 0, 0), getFontMetrics(UIUtil.getLabelFont()).charWidth('f') * 110 - pane.getMinimumSize().width, 0));
-    add(myButton,
-        new GridBagConstraints(0, 2, 1, 1, 1.0, 0.0, GridBagConstraints.NORTHWEST, GridBagConstraints.NONE,
-                               new JBInsets(15, 9, 9, 0), 0, 0));
-    updateEnableButtonText(false);
-
+    add(StatelessCardLayout.wrap(pane),
+        new GridBagConstraints(0, 1, 1, 1, 1.0, 1.0, GridBagConstraints.NORTHWEST, GridBagConstraints.BOTH,
+                               new JBInsets(0, 10, 0, 0), 0, 0));
+    JButton enableButton = new JButton((enabled ? "Disable" : "Enable") + " inspection");
     new ClickListener() {
       @Override
       public boolean onClick(@NotNull MouseEvent event, int clickCount) {
-        updateEnableButtonText(true);
-        tree.revalidate();
-        tree.repaint();
+        InspectionsConfigTreeTable.setToolEnabled(!enabled, currentProfile, toolWrapper.getShortName(), project);
+        tree.getContext().getView().profileChanged();
         return true;
       }
-    }.installOn(myButton);
-  }
+    }.installOn(enableButton);
 
-  private void updateEnableButtonText(boolean revert) {
-    boolean isEnabled = myCurrentProfile.isToolEnabled(myKey);
-    if (revert) {
-      final boolean isEnabledAsFinal = isEnabled;
-      DisableInspectionToolAction.modifyAndCommitProjectProfile(model -> {
-        if (isEnabledAsFinal) {
-          model.disableTool(myKey.getID(), myProject);
-        }
-        else {
-          ((InspectionProfileImpl)model).enableTool(myKey.getID(), myProject);
-        }
-      }, myProject);
-      isEnabled = !isEnabled;
-    }
-    myButton.setText((isEnabled ? "Disable" : "Enable") + " inspection");
-    myButton.revalidate();
-    myButton.repaint();
-    myEnabledLabel.setText(isEnabled ? "Enabled" : "Disabled");
-    myEnabledLabel.revalidate();
-    myEnabledLabel.repaint();
-    myTree.revalidate();
-    myTree.repaint();
+    JButton runInspectionOnButton = new JButton(InspectionsBundle.message("run.inspection.on.file.intention.text"));
+    new ClickListener() {
+      @Override
+      public boolean onClick(@NotNull MouseEvent event, int clickCount) {
+        RunInspectionAction.runInspection(project, toolWrapper.getShortName(), null, null, null);
+        return true;
+      }
+    }.installOn(runInspectionOnButton);
+
+    JPanel buttons = new JPanel();
+    buttons.setLayout(new BoxLayout(buttons, BoxLayout.LINE_AXIS));
+    buttons.add(enableButton);
+    buttons.add(Box.createHorizontalStrut(JBUI.scale(3)));
+    buttons.add(runInspectionOnButton);
+
+    add(buttons,
+        new GridBagConstraints(0, 2, 1, 1, 1.0, 0.0, GridBagConstraints.NORTHWEST, GridBagConstraints.NONE,
+                               new JBInsets(15, 9, 9, 0), 0, 0));
+
   }
 }

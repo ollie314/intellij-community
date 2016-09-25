@@ -43,7 +43,6 @@ public class FilenameIndex extends ScalarIndexExtension<String> {
   @NonNls public static final ID<String, Void> NAME = ID.create("FilenameIndex");
   private final MyDataIndexer myDataIndexer = new MyDataIndexer();
   private final MyInputFilter myInputFilter = new MyInputFilter();
-  private final EnumeratorStringDescriptor myKeyDescriptor = new EnumeratorStringDescriptor();
 
   @NotNull
   @Override
@@ -60,7 +59,7 @@ public class FilenameIndex extends ScalarIndexExtension<String> {
   @NotNull
   @Override
   public KeyDescriptor<String> getKeyDescriptor() {
-    return myKeyDescriptor;
+    return EnumeratorStringDescriptor.INSTANCE;
   }
 
   @NotNull
@@ -81,7 +80,7 @@ public class FilenameIndex extends ScalarIndexExtension<String> {
 
   @Override
   public int getVersion() {
-    return 1 + (FileBasedIndex.ourEnableTracingOfKeyHashToVirtualFileMapping ? 1 : 0);
+    return 1 + (FileBasedIndex.ourEnableTracingOfKeyHashToVirtualFileMapping ? 2 : 0);
   }
 
   public static String[] getAllFilenames(Project project) {
@@ -124,7 +123,7 @@ public class FilenameIndex extends ScalarIndexExtension<String> {
     final Set<VirtualFile> files;
 
     if (caseSensitively) {
-      files = new THashSet<VirtualFile>();
+      files = new THashSet<>();
       FileBasedIndex.getInstance().processValues(NAME, name, null, new FileBasedIndex.ValueProcessor<Void>() {
         @Override
         public boolean process(final VirtualFile file, final Void value) {
@@ -164,20 +163,17 @@ public class FilenameIndex extends ScalarIndexExtension<String> {
   private static Set<VirtualFile> getVirtualFilesByNameIgnoringCase(@NotNull final String name,
                                                                     @NotNull final GlobalSearchScope scope,
                                                                     @Nullable final IdFilter idFilter) {
-    final Set<String> keys = new THashSet<String>();
+    final Set<String> keys = new THashSet<>();
     final FileBasedIndex index = FileBasedIndex.getInstance();
-    index.processAllKeys(NAME, new Processor<String>() {
-      @Override
-      public boolean process(String value) {
-        if (name.equalsIgnoreCase(value)) {
-          keys.add(value);
-        }
-        return true;
+    index.processAllKeys(NAME, value -> {
+      if (name.equalsIgnoreCase(value)) {
+        keys.add(value);
       }
+      return true;
     }, scope, idFilter);
 
     // values accessed outside of provessAllKeys 
-    final Set<VirtualFile> files = new THashSet<VirtualFile>();
+    final Set<VirtualFile> files = new THashSet<>();
     for (String each : keys) {
       files.addAll(index.getContainingFiles(NAME, each, scope));
     }
@@ -188,7 +184,7 @@ public class FilenameIndex extends ScalarIndexExtension<String> {
                                          final String name,
                                          @NotNull final GlobalSearchScope scope,
                                          boolean includeDirs) {
-    SmartList<PsiFileSystemItem> result = new SmartList<PsiFileSystemItem>();
+    SmartList<PsiFileSystemItem> result = new SmartList<>();
     Processor<PsiFileSystemItem> processor = Processors.cancelableCollectProcessor(result);
     processFilesByName(name, includeDirs, processor, scope, project, null);
 
@@ -197,6 +193,10 @@ public class FilenameIndex extends ScalarIndexExtension<String> {
     }
     //noinspection SuspiciousToArrayCall
     return result.toArray(new PsiFile[result.size()]);
+  }
+
+  public static void processAllFileNames(@NotNull Processor<String> processor, @NotNull GlobalSearchScope scope, @NotNull IdFilter filter) {
+    FileBasedIndex.getInstance().processAllKeys(NAME, processor, scope, filter);
   }
 
   private static class MyDataIndexer implements DataIndexer<String, Void, FileContent> {
@@ -236,7 +236,7 @@ public class FilenameIndex extends ScalarIndexExtension<String> {
     ext = "." + ext;
     len++;
 
-    final List<VirtualFile> files = new ArrayList<VirtualFile>();
+    final List<VirtualFile> files = new ArrayList<>();
     for (String name : getAllFilenames(project)) {
       final int length = name.length();
       if (length > len && name.substring(length - len).equalsIgnoreCase(ext)) {

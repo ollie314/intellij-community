@@ -29,10 +29,12 @@ import com.intellij.openapi.progress.util.ProgressIndicatorListenerAdapter;
 import com.intellij.openapi.progress.util.ProgressWindowWithNotification;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
-import com.intellij.util.Alarm;
+import com.intellij.util.concurrency.AppExecutorUtil;
 import com.sun.jdi.VMDisconnectedException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.TestOnly;
+
+import java.util.concurrent.TimeUnit;
 
 /**
  * @author lex
@@ -110,34 +112,26 @@ public class DebuggerManagerThreadImpl extends InvokeAndWaitThread<DebuggerComma
     invoke(command);
 
     if (currentCommand != null) {
-      final Alarm alarm = new Alarm(Alarm.ThreadToUse.SHARED_THREAD);
-      alarm.addRequest(new Runnable() {
-        @Override
-        public void run() {
-          try {
-            if (currentCommand == myEvents.getCurrentEvent()) {
-              // if current command is still in progress, cancel it
-              getCurrentRequest().requestStop();
-              try {
-                getCurrentRequest().join();
-              }
-              catch (InterruptedException ignored) {
-              }
-              catch (Exception e) {
-                throw new RuntimeException(e);
-              }
-              finally {
-                if (!myDisposed) {
-                  startNewWorkerThread();
-                }
+      AppExecutorUtil.getAppScheduledExecutorService().schedule(
+        () -> {
+          if (currentCommand == myEvents.getCurrentEvent()) {
+            // if current command is still in progress, cancel it
+            getCurrentRequest().requestStop();
+            try {
+              getCurrentRequest().join();
+            }
+            catch (InterruptedException ignored) {
+            }
+            catch (Exception e) {
+              throw new RuntimeException(e);
+            }
+            finally {
+              if (!myDisposed) {
+                startNewWorkerThread();
               }
             }
           }
-          finally {
-            Disposer.dispose(alarm);
-          }
-        }
-      }, terminateTimeout);
+        }, terminateTimeout, TimeUnit.MILLISECONDS);
     }
   }
 
@@ -175,17 +169,8 @@ public class DebuggerManagerThreadImpl extends InvokeAndWaitThread<DebuggerComma
       }
     });
 
-    ApplicationManager.getApplication().executeOnPooledThread(new Runnable() {
-      @Override
-      public void run() {
-        ProgressManager.getInstance().runProcess(new Runnable() {
-          @Override
-          public void run() {
-            invokeAndWait(command);
-          }
-        }, progressWindow);
-      }
-    });
+    ApplicationManager.getApplication().executeOnPooledThread(
+      () -> ProgressManager.getInstance().runProcess(() -> invokeAndWait(command), progressWindow));
   }
 
 

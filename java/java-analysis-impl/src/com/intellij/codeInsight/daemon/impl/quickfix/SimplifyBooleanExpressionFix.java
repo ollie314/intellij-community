@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2009 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-/**
- * @author cdr
- */
 package com.intellij.codeInsight.daemon.impl.quickfix;
 
 import com.intellij.codeInsight.FileModificationService;
@@ -32,10 +29,9 @@ import com.intellij.psi.codeStyle.CodeStyleManager;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiUtil;
-import com.intellij.util.Function;
 import com.intellij.util.IncorrectOperationException;
 import com.siyeh.ig.psiutils.ParenthesesUtils;
-import com.siyeh.ig.psiutils.VariableSearchUtils;
+import com.siyeh.ig.psiutils.DeclarationSearchUtils;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 
@@ -86,12 +82,7 @@ public class SimplifyBooleanExpressionFix extends LocalQuickFixOnPsiElement {
     if (!isAvailable()) return;
     final PsiExpression expression = getSubExpression();
     if (!FileModificationService.getInstance().preparePsiElementForWrite(expression)) return;
-    ApplicationManager.getApplication().runWriteAction(new Runnable() {
-      @Override
-      public void run() {
-        simplifyExpression(project, expression, mySubExpressionValue);
-      }
-    });
+    ApplicationManager.getApplication().runWriteAction(() -> simplifyExpression(project, expression, mySubExpressionValue));
   }
 
   public static void simplifyExpression(Project project, final PsiExpression subExpression, final Boolean subExpressionValue) {
@@ -139,7 +130,7 @@ public class SimplifyBooleanExpressionFix extends LocalQuickFixOnPsiElement {
     PsiElement parent = orig.getParent();
     if (parent == null) return;
     if (statement instanceof PsiBlockStatement && parent instanceof PsiCodeBlock &&
-        !VariableSearchUtils.containsConflictingDeclarations(((PsiBlockStatement)statement).getCodeBlock(), (PsiCodeBlock)parent)) {
+        !DeclarationSearchUtils.containsConflictingDeclarations(((PsiBlockStatement)statement).getCodeBlock(), (PsiCodeBlock)parent)) {
       // See IDEADEV-24277
       // Code block can only be inlined into another (parent) code block.
       // Code blocks, which are if or loop statement branches should not be inlined.
@@ -221,7 +212,7 @@ public class SimplifyBooleanExpressionFix extends LocalQuickFixOnPsiElement {
     if (!(expression instanceof PsiConditionalExpression) && !PsiType.BOOLEAN.equals(expression.getType())) return false;
 
     final ExpressionVisitor expressionVisitor = new ExpressionVisitor(expression.getManager(), false);
-    final Ref<Boolean> canBeSimplified = new Ref<Boolean>(Boolean.FALSE);
+    final Ref<Boolean> canBeSimplified = new Ref<>(Boolean.FALSE);
     expression.accept(new JavaRecursiveElementWalkingVisitor() {
       @Override
       public void visitElement(PsiElement element) {
@@ -284,7 +275,7 @@ public class SimplifyBooleanExpressionFix extends LocalQuickFixOnPsiElement {
       if (JavaTokenType.XOR == tokenType) {
 
         boolean negate = false;
-        List<PsiExpression> expressions = new ArrayList<PsiExpression>();
+        List<PsiExpression> expressions = new ArrayList<>();
         for (PsiExpression operand : operands) {
           final Boolean constBoolean = getConstBoolean(operand);
           if (constBoolean != null) {
@@ -299,12 +290,7 @@ public class SimplifyBooleanExpressionFix extends LocalQuickFixOnPsiElement {
         if (expressions.isEmpty()) {
           resultExpression = negate ? trueExpression : falseExpression;
         } else {
-          String simplifiedText = StringUtil.join(expressions, new Function<PsiExpression, String>() {
-            @Override
-            public String fun(PsiExpression expression) {
-              return expression.getText();
-            }
-          }, " ^ ");
+          String simplifiedText = StringUtil.join(expressions, expression1 -> expression1.getText(), " ^ ");
           if (negate) {
             if (expressions.size() > 1) {
               simplifiedText = "!(" + simplifiedText + ")";

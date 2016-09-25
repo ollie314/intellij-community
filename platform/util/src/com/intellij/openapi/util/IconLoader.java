@@ -100,9 +100,6 @@ public final class IconLoader {
   }
 
   public static void setFilter(ImageFilter filter) {
-    if (!Registry.is("color.blindness.icon.filter")) {
-      filter = null;
-    }
     if (IMAGE_FILTER != filter) {
       IMAGE_FILTER = filter;
       clearCache();
@@ -141,11 +138,11 @@ public final class IconLoader {
     }
   }
 
-  @Nullable
   /**
    * Might return null if icon was not found.
    * Use only if you expected null return value, otherwise see {@link IconLoader#getIcon(String)}
    */
+  @Nullable
   public static Icon findIcon(@NonNls @NotNull String path) {
     Class callerClass = ReflectionUtil.getGrandCallerClass();
     if (callerClass == null) return null;
@@ -184,9 +181,13 @@ public final class IconLoader {
   }
 
   @Nullable
-  public static Icon findIcon(@NotNull String path, @NotNull final Class aClass, boolean computeNow, boolean strict) {
+  public static Icon findIcon(@NotNull String path, @NotNull Class aClass, boolean computeNow, boolean strict) {
     String originalPath = path;
-    path = patchPath(path);
+    Pair<String, Class> patchedPath = patchPath(path);
+    path = patchedPath.first;
+    if (patchedPath.second != null) {
+      aClass = patchedPath.second;
+    }
     if (isReflectivePath(path)) return getReflectiveIcon(path, aClass.getClassLoader());
 
     URL myURL = aClass.getResource(path);
@@ -202,14 +203,15 @@ public final class IconLoader {
     return icon;
   }
 
-  private static String patchPath(@NotNull String path) {
+  @NotNull
+  private static Pair<String, Class> patchPath(@NotNull String path) {
     for (IconPathPatcher patcher : ourPatchers) {
       String newPath = patcher.patchPath(path);
       if (newPath != null) {
-        path = newPath;
+        return Pair.create(newPath, patcher.getContextClass(path));
       }
     }
-    return path;
+    return Pair.create(path, null);
   }
 
   private static boolean isReflectivePath(@NotNull String path) {
@@ -240,7 +242,11 @@ public final class IconLoader {
   @Nullable
   public static Icon findIcon(@NotNull String path, @NotNull ClassLoader classLoader) {
     String originalPath = path;
-    path = patchPath(path);
+    Pair<String, Class> patchedPath = patchPath(path);
+    path = patchedPath.first;
+    if (patchedPath.second != null) {
+      classLoader = patchedPath.second.getClassLoader();
+    }
     if (isReflectivePath(path)) return getReflectiveIcon(path, classLoader);
     if (!StringUtil.startsWithChar(path, '/')) return null;
 
@@ -389,8 +395,12 @@ public final class IconLoader {
         myScaledIconsCache.clear();
         if (numberOfPatchers != ourPatchers.size()) {
           numberOfPatchers = ourPatchers.size();
-          String path = myOriginalPath == null ? null : patchPath(myOriginalPath);
-          if (myClassLoader != null&& path != null && path.startsWith("/")) {
+          Pair<String, Class> patchedPath = patchPath(myOriginalPath);
+          String path = myOriginalPath == null ? null : patchedPath.first;
+          if (patchedPath.second != null) {
+            myClassLoader = patchedPath.second.getClassLoader();
+          }
+          if (myClassLoader != null && path != null && path.startsWith("/")) {
             path = path.substring(1);
             final URL url = myClassLoader.getResource(path);
             if (url != null) {

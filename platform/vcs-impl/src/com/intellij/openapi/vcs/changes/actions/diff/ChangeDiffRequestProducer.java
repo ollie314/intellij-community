@@ -23,6 +23,7 @@ import com.intellij.diff.chains.DiffRequestProducerException;
 import com.intellij.diff.contents.DiffContent;
 import com.intellij.diff.contents.FileAwareDocumentContent;
 import com.intellij.diff.impl.DiffViewerWrapper;
+import com.intellij.diff.merge.MergeUtil;
 import com.intellij.diff.requests.DiffRequest;
 import com.intellij.diff.requests.ErrorDiffRequest;
 import com.intellij.diff.requests.SimpleDiffRequest;
@@ -247,8 +248,8 @@ public class ChangeDiffRequestProducer implements DiffRequestProducer {
       }
       try {
         // FIXME: loadRevisions() can call runProcessWithProgressSynchronously() inside
-        final Ref<Throwable> exceptionRef = new Ref<Throwable>();
-        final Ref<MergeData> mergeDataRef = new Ref<MergeData>();
+        final Ref<Throwable> exceptionRef = new Ref<>();
+        final Ref<MergeData> mergeDataRef = new Ref<>();
         final VirtualFile finalFile = file;
         UIUtil.invokeAndWaitIfNeeded(new Runnable() {
           @Override
@@ -285,7 +286,10 @@ public class ChangeDiffRequestProducer implements DiffRequestProducer {
           contentFactory.createFromBytes(project, file, mergeData.LAST)
         );
 
-        return new SimpleDiffRequest(title, contents, titles);
+        SimpleDiffRequest request = new SimpleDiffRequest(title, contents, titles);
+        MergeUtil.putRevisionInfos(request, mergeData);
+
+        return request;
       }
       catch (VcsException e) {
         LOG.info(e);

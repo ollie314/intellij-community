@@ -23,6 +23,9 @@ import org.jdom.Element;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.Collections;
+import java.util.List;
+
 /**
  * @author peter
  */
@@ -44,6 +47,14 @@ public abstract class CustomCodeStyleSettings implements Cloneable {
     return myTagName;
   }
 
+  /**
+   * in case settings save additional top-level tags, list the list of them to prevent serializer to treat such tag as unknown settings.
+   */
+  @NotNull
+  public List<String> getKnownTagNames() {
+    return Collections.singletonList(getTagName());
+  }
+
   public void readExternal(Element parentElement) throws InvalidDataException {
     Element child = parentElement.getChild(myTagName);
     if (child != null) {
@@ -54,7 +65,7 @@ public abstract class CustomCodeStyleSettings implements Cloneable {
 
   public void writeExternal(Element parentElement, @NotNull final CustomCodeStyleSettings parentSettings) throws WriteExternalException {
     final Element childElement = new Element(myTagName);
-    DefaultJDOMExternalizer.writeExternal(this, childElement, new DifferenceFilter<CustomCodeStyleSettings>(this, parentSettings));
+    DefaultJDOMExternalizer.writeExternal(this, childElement, new DifferenceFilter<>(this, parentSettings));
     if (!childElement.getContent().isEmpty()) {
       parentElement.addContent(childElement);
     }

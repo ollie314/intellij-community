@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -99,7 +99,7 @@ public abstract class TaskBranchesTest extends PlatformTestCase {
     assertNotNull(defaultTask);
     LocalTaskImpl foo = myTaskManager.createLocalTask("foo");
     LocalTask localTask = myTaskManager.activateTask(foo, false);
-    myTaskManager.createBranch(localTask, defaultTask, myTaskManager.suggestBranchName(localTask));
+    myTaskManager.createBranch(localTask, defaultTask, myTaskManager.suggestBranchName(localTask), null);
     String defaultBranchName = getDefaultBranchName();
 
     assertEquals(4, localTask.getBranches().size());
@@ -115,7 +115,7 @@ public abstract class TaskBranchesTest extends PlatformTestCase {
 
     foo = myTaskManager.createLocalTask("foo");
     localTask = myTaskManager.activateTask(foo, false);
-    myTaskManager.createBranch(localTask, defaultTask, myTaskManager.suggestBranchName(localTask));
+    myTaskManager.createBranch(localTask, defaultTask, myTaskManager.suggestBranchName(localTask), null);
     assertEquals("foo", repository.getCurrentBranchName());
     createAndCommitChanges(repository);
 
@@ -133,7 +133,7 @@ public abstract class TaskBranchesTest extends PlatformTestCase {
     LocalTask defaultTask = myTaskManager.getActiveTask();
     LocalTaskImpl foo = myTaskManager.createLocalTask("foo");
     final LocalTask localTask = myTaskManager.activateTask(foo, false);
-    myTaskManager.createBranch(localTask, defaultTask, myTaskManager.suggestBranchName(localTask));
+    myTaskManager.createBranch(localTask, defaultTask, myTaskManager.suggestBranchName(localTask), null);
     createAndCommitChanges(repository);
     myTaskManager.mergeBranch(localTask);
     repository.update();
@@ -146,7 +146,7 @@ public abstract class TaskBranchesTest extends PlatformTestCase {
     String defaultBranchName = getDefaultBranchName();
     LocalTaskImpl task = myTaskManager.createLocalTask("foo");
     OpenTaskDialog dialog = new OpenTaskDialog(getProject(), task);
-    Disposer.register(myTestRootDisposable, dialog.getDisposable());
+    Disposer.register(getTestRootDisposable(), dialog.getDisposable());
     dialog.createTask();
     assertEquals("foo", myTaskManager.getActiveTask().getSummary());
     List<BranchInfo> branches = task.getBranches(true);
@@ -164,7 +164,7 @@ public abstract class TaskBranchesTest extends PlatformTestCase {
     assertEquals(0, defaultTask.getBranches().size());
     LocalTaskImpl foo = myTaskManager.createLocalTask("foo");
     LocalTask localTask = myTaskManager.activateTask(foo, false);
-    myTaskManager.createBranch(localTask, defaultTask, myTaskManager.suggestBranchName(localTask));
+    myTaskManager.createBranch(localTask, defaultTask, myTaskManager.suggestBranchName(localTask), null);
     repository.update();
     assertEquals(2, localTask.getBranches().size());
     assertEquals(1, defaultTask.getBranches().size());
@@ -172,7 +172,7 @@ public abstract class TaskBranchesTest extends PlatformTestCase {
     myTaskManager.activateTask(localTask, false);
     LocalTaskImpl bar = myTaskManager.createLocalTask("bar");
     LocalTask barTask = myTaskManager.activateTask(bar, false);
-    myTaskManager.createBranch(localTask, defaultTask, myTaskManager.suggestBranchName(barTask));
+    myTaskManager.createBranch(localTask, defaultTask, myTaskManager.suggestBranchName(barTask), null);
     repository.update();
     assertEquals(1, defaultTask.getBranches().size());
   }
@@ -184,7 +184,7 @@ public abstract class TaskBranchesTest extends PlatformTestCase {
     assertEquals(0, defaultTask.getBranches().size());
     LocalTaskImpl foo = myTaskManager.createLocalTask("foo");
     LocalTask localTask = myTaskManager.activateTask(foo, false);
-    myTaskManager.createBranch(localTask, defaultTask, myTaskManager.suggestBranchName(localTask));
+    myTaskManager.createBranch(localTask, defaultTask, myTaskManager.suggestBranchName(localTask), null);
     assertEquals(2, localTask.getBranches().size());
     assertEquals(1, defaultTask.getBranches().size());
 

@@ -222,7 +222,7 @@ public class PushLog extends JPanel implements DataProvider {
     PopupHandler.installPopupHandler(myTree, VcsLogActionPlaces.POPUP_ACTION_GROUP, CONTEXT_MENU);
 
     myChangesBrowser =
-      new ChangesBrowser(project, null, Collections.<Change>emptyList(), null, false, true, null, ChangesBrowser.MyUseCase.LOCAL_CHANGES,
+      new ChangesBrowser(project, null, Collections.<Change>emptyList(), null, false, false, null, ChangesBrowser.MyUseCase.LOCAL_CHANGES,
                          null);
     myChangesBrowser.getDiffAction().registerCustomShortcutSet(myChangesBrowser.getDiffAction().getShortcutSet(), myTree);
     final EditSourceForDialogAction editSourceAction = new EditSourceForDialogAction(myChangesBrowser);
@@ -284,7 +284,7 @@ public class PushLog extends JPanel implements DataProvider {
   private JComponent createStrategyPanel() {
     final JPanel labelPanel = new JPanel(new BorderLayout());
     labelPanel.setBackground(myTree.getBackground());
-    final LinkLabel<String> linkLabel = new LinkLabel<String>("Edit all targets", null);
+    final LinkLabel<String> linkLabel = new LinkLabel<>("Edit all targets", null);
     linkLabel.setBorder(new EmptyBorder(2, 2, 2, 2));
     linkLabel.setListener(new LinkListener<String>() {
       @Override

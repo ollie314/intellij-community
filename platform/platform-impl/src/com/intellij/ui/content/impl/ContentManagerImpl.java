@@ -43,10 +43,8 @@ import javax.swing.*;
 import java.awt.*;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
-import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.*;
 import java.util.List;
-import java.util.Set;
 
 /**
  * @author Anton Katilin
@@ -56,20 +54,20 @@ public class ContentManagerImpl implements ContentManager, PropertyChangeListene
   private static final Logger LOG = Logger.getInstance("#com.intellij.ui.content.impl.ContentManagerImpl");
 
   private ContentUI myUI;
-  private final List<Content> myContents = new ArrayList<Content>();
+  private final List<Content> myContents = new ArrayList<>();
   private final EventDispatcher<ContentManagerListener> myDispatcher = EventDispatcher.create(ContentManagerListener.class);
-  private final List<Content> mySelection = new ArrayList<Content>();
+  private final List<Content> mySelection = new ArrayList<>();
   private final boolean myCanCloseContents;
 
   private MyNonOpaquePanel myComponent;
 
-  private final Set<Content> myContentWithChangedComponent = new HashSet<Content>();
+  private final Set<Content> myContentWithChangedComponent = new HashSet<>();
 
   private boolean myDisposed;
   private final Project myProject;
 
-  private final List<DataProvider> dataProviders = new SmartList<DataProvider>();
-  private ArrayList<Content> mySelectionHistory = new ArrayList<Content>();
+  private final List<DataProvider> dataProviders = new SmartList<>();
+  private ArrayList<Content> mySelectionHistory = new ArrayList<>();
 
   /**
    * WARNING: as this class adds listener to the ProjectManager which is removed on projectClosed event, all instances of this class
@@ -148,7 +146,7 @@ public class ContentManagerImpl implements ContentManager, PropertyChangeListene
       if (myUI instanceof SwitchProvider) {
         return ((SwitchProvider)myUI).getTargets(onlyVisible, false);
       }
-      return new SmartList<SwitchTarget>();
+      return Collections.emptyList();
     }
 
     @Override
@@ -216,21 +214,18 @@ public class ContentManagerImpl implements ContentManager, PropertyChangeListene
   @Override
   public ActionCallback removeContent(@NotNull Content content, boolean dispose, final boolean trackFocus, final boolean forcedFocus) {
     final ActionCallback result = new ActionCallback();
-    removeContent(content, true, dispose).doWhenDone(new Runnable() {
-      @Override
-      public void run() {
-        if (trackFocus) {
-          Content current = getSelectedContent();
-          if (current != null) {
-            setSelectedContent(current, true, true, !forcedFocus);
-          }
-          else {
-            result.setDone();
-          }
+    removeContent(content, true, dispose).doWhenDone(() -> {
+      if (trackFocus) {
+        Content current = getSelectedContent();
+        if (current != null) {
+          setSelectedContent(current, true, true, !forcedFocus);
         }
         else {
           result.setDone();
         }
+      }
+      else {
+        result.setDone();
       }
     });
 
@@ -522,12 +517,7 @@ public class ContentManagerImpl implements ContentManager, PropertyChangeListene
     boolean enabledFocus = getFocusManager().isFocusTransferEnabled();
     if (focused || requestFocus) {
       if (enabledFocus) {
-        return getFocusManager().requestFocus(myComponent, true).doWhenProcessed(new Runnable() {
-          @Override
-          public void run() {
-            selection.run().notify(result);
-          }
-        });
+        return getFocusManager().requestFocus(myComponent, true).doWhenProcessed(() -> selection.run().notify(result));
       }
       return selection.run().notify(result);
     }

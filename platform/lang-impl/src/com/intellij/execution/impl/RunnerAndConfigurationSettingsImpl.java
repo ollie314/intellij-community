@@ -42,15 +42,12 @@ public class RunnerAndConfigurationSettingsImpl implements JDOMExternalizable, C
   @NonNls
   private static final String RUNNER_ID = "RunnerId";
 
-  private static final Comparator<Element> RUNNER_COMPARATOR = new Comparator<Element>() {
-    @Override
-    public int compare(@NotNull Element o1, @NotNull Element o2) {
-      String attributeValue1 = o1.getAttributeValue(RUNNER_ID);
-      if (attributeValue1 == null) {
-        return 1;
-      }
-      return StringUtil.compare(attributeValue1, o2.getAttributeValue(RUNNER_ID), false);
+  private static final Comparator<Element> RUNNER_COMPARATOR = (o1, o2) -> {
+    String attributeValue1 = o1.getAttributeValue(RUNNER_ID);
+    if (attributeValue1 == null) {
+      return 1;
     }
+    return StringUtil.compare(attributeValue1, o2.getAttributeValue(RUNNER_ID), false);
   };
 
   @NonNls
@@ -112,11 +109,11 @@ public class RunnerAndConfigurationSettingsImpl implements JDOMExternalizable, C
 
   @SuppressWarnings("deprecation")
   private abstract class RunnerItem<T> {
-    private final Map<ProgramRunner, T> settings = new THashMap<ProgramRunner, T>();
+    private final Map<ProgramRunner, T> settings = new THashMap<>();
 
     private List<Element> unloadedSettings;
     // to avoid changed files
-    private final Set<String> loadedIds = new THashSet<String>();
+    private final Set<String> loadedIds = new THashSet<>();
 
     private final String childTagName;
 
@@ -143,13 +140,7 @@ public class RunnerAndConfigurationSettingsImpl implements JDOMExternalizable, C
 
     private ProgramRunner findRunner(final String runnerId) {
       List<ProgramRunner> runnersById
-        = ContainerUtil.filter(ProgramRunner.PROGRAM_RUNNER_EP.getExtensions(), new Condition<ProgramRunner>() {
-
-        @Override
-        public boolean value(ProgramRunner runner) {
-          return Comparing.equal(runnerId, runner.getRunnerId());
-        }
-      });
+        = ContainerUtil.filter(ProgramRunner.PROGRAM_RUNNER_EP.getExtensions(), runner -> Comparing.equal(runnerId, runner.getRunnerId()));
 
       int runnersByIdCount = runnersById.size();
       if (runnersByIdCount == 0) {
@@ -172,7 +163,7 @@ public class RunnerAndConfigurationSettingsImpl implements JDOMExternalizable, C
     }
 
     public void getState(@NotNull Element element) throws WriteExternalException {
-      List<Element> runnerSettings = new SmartList<Element>();
+      List<Element> runnerSettings = new SmartList<>();
       for (ProgramRunner runner : settings.keySet()) {
         T settings = this.settings.get(runner);
         boolean wasLoaded = loadedIds.contains(runner.getRunnerId());
@@ -205,7 +196,7 @@ public class RunnerAndConfigurationSettingsImpl implements JDOMExternalizable, C
     private void add(@NotNull Element state, @Nullable ProgramRunner runner, @Nullable T data) throws InvalidDataException {
       if (runner == null) {
         if (unloadedSettings == null) {
-          unloadedSettings = new SmartList<Element>();
+          unloadedSettings = new SmartList<>();
         }
         unloadedSettings.add(state);
         return;
@@ -268,12 +259,9 @@ public class RunnerAndConfigurationSettingsImpl implements JDOMExternalizable, C
 
   @Override
   public Factory<RunnerAndConfigurationSettings> createFactory() {
-    return new Factory<RunnerAndConfigurationSettings>() {
-      @Override
-      public RunnerAndConfigurationSettings create() {
-        RunConfiguration configuration = myConfiguration.getFactory().createConfiguration(ExecutionBundle.message("default.run.configuration.name"), myConfiguration);
-        return new RunnerAndConfigurationSettingsImpl(myManager, configuration, false);
-      }
+    return () -> {
+      RunConfiguration configuration = myConfiguration.getFactory().createConfiguration(ExecutionBundle.message("default.run.configuration.name"), myConfiguration);
+      return new RunnerAndConfigurationSettingsImpl(myManager, configuration, false);
     };
   }
 
@@ -435,7 +423,7 @@ public class RunnerAndConfigurationSettingsImpl implements JDOMExternalizable, C
     myConfiguration.checkConfiguration();
     if (myConfiguration instanceof RunConfigurationBase) {
       final RunConfigurationBase runConfigurationBase = (RunConfigurationBase) myConfiguration;
-      Set<ProgramRunner> runners = new THashSet<ProgramRunner>();
+      Set<ProgramRunner> runners = new THashSet<>();
       runners.addAll(myRunnerSettings.settings.keySet());
       runners.addAll(myConfigurationPerRunnerSettings.settings.keySet());
       for (ProgramRunner runner : runners) {

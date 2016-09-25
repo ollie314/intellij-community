@@ -16,9 +16,11 @@
 package com.intellij.codeInsight;
 
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Comparing;
 import com.intellij.psi.*;
 import com.intellij.psi.util.*;
 import com.intellij.util.ArrayUtil;
+import com.intellij.util.Consumer;
 import com.intellij.util.Processor;
 import com.intellij.util.Processors;
 import com.intellij.util.containers.ConcurrentFactoryMap;
@@ -252,22 +254,35 @@ public class AnnotationUtil {
     return map.get(annotationNames);
   }
 
-  private static void collectSuperParameters(@NotNull Set<PsiModifierListOwner> result, @NotNull PsiParameter parameter) {
-    PsiElement scope = parameter.getDeclarationScope();
-    if (!(scope instanceof PsiMethod)) {
-      return;
-    }
-    PsiMethod method = (PsiMethod)scope;
-
+  private static void collectSuperParameters(@NotNull final Set<PsiModifierListOwner> result, @NotNull PsiParameter parameter) {
     PsiElement parent = parameter.getParent();
     if (!(parent instanceof PsiParameterList)) {
       return;
     }
-    int index = ((PsiParameterList)parent).getParameterIndex(parameter);
-    for (PsiMethod superMethod : getSuperAnnotationOwners(method)) {
-      PsiParameter[] superParameters = superMethod.getParameterList().getParameters();
-      if (index < superParameters.length) {
-        result.add(superParameters[index]);
+    final int index = ((PsiParameterList)parent).getParameterIndex(parameter);
+    Consumer<PsiMethod> forEachSuperMethod = new Consumer<PsiMethod>() {
+      @Override
+      public void consume(PsiMethod method) {
+        PsiParameter[] superParameters = method.getParameterList().getParameters();
+        if (index < superParameters.length) {
+          result.add(superParameters[index]);
+        }
+      }
+    };
+
+    PsiElement scope = parent.getParent();
+    if (scope instanceof PsiLambdaExpression) {
+      PsiMethod method = LambdaUtil.getFunctionalInterfaceMethod(((PsiLambdaExpression)scope).getFunctionalInterfaceType());
+      if (method != null) {
+        forEachSuperMethod.consume(method);
+        for (PsiMethod superMethod : getSuperAnnotationOwners(method)) {
+          forEachSuperMethod.consume(superMethod);
+        }
+      }
+    }
+    else if (scope instanceof PsiMethod) {
+      for (PsiMethod superMethod : getSuperAnnotationOwners((PsiMethod)scope)) {
+        forEachSuperMethod.consume(superMethod);
       }
     }
   }
@@ -453,7 +468,7 @@ public class AnnotationUtil {
       if (owner instanceof PsiClass) {
         for (PsiClass superClass : ((PsiClass)owner).getSupers()) {
           if (visited == null) visited = new THashSet<PsiModifierListOwner>();
-          if (visited.add(superClass)) annotations = ArrayUtil.mergeArrays(annotations, getAllAnnotations(superClass, true, visited));
+          if (visited.add(superClass)) annotations = ArrayUtil.mergeArrays(annotations, getAllAnnotations(superClass, true, visited, withInferred));
         }
       }
       else if (owner instanceof PsiMethod) {
@@ -469,7 +484,7 @@ public class AnnotationUtil {
             if (visited == null) visited = new THashSet<PsiModifierListOwner>();
             if (!visited.add(superMethod)) continue;
             if (!resolveHelper.isAccessible(superMethod, owner, null)) continue;
-            annotations = ArrayUtil.mergeArrays(annotations, getAllAnnotations(superMethod, true, visited));
+            annotations = ArrayUtil.mergeArrays(annotations, getAllAnnotations(superMethod, true, visited, withInferred));
           }
         }
       }
@@ -493,7 +508,7 @@ public class AnnotationUtil {
               if (!resolveHelper.isAccessible(superMethod, owner, null)) continue;
               PsiParameter[] superParameters = superMethod.getParameterList().getParameters();
               if (index < superParameters.length) {
-                annotations = ArrayUtil.mergeArrays(annotations, getAllAnnotations(superParameters[index], true, visited));
+                annotations = ArrayUtil.mergeArrays(annotations, getAllAnnotations(superParameters[index], true, visited, withInferred));
               }
             }
           }
@@ -547,5 +562,17 @@ public class AnnotationUtil {
     AnnotationInvocationHandler handler = new AnnotationInvocationHandler(annotationClass, annotation);
     @SuppressWarnings("unchecked") T t = (T)Proxy.newProxyInstance(annotationClass.getClassLoader(), new Class<?>[]{annotationClass}, handler);
     return t;
+  }
+
+  @Nullable
+  public static PsiNameValuePair findDeclaredAttribute(@NotNull PsiAnnotation annotation, @NonNls String attributeName) {
+    if (PsiAnnotation.DEFAULT_REFERENCED_METHOD_NAME.equals(attributeName)) attributeName = null;
+    for (PsiNameValuePair attribute : annotation.getParameterList().getAttributes()) {
+      @NonNls final String name = attribute.getName();
+      if (Comparing.equal(name, attributeName) || attributeName == null && PsiAnnotation.DEFAULT_REFERENCED_METHOD_NAME.equals(name)) {
+        return attribute;
+      }
+    }
+    return null;
   }
 }

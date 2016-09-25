@@ -19,6 +19,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.TextRange;
+import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
@@ -87,7 +88,7 @@ public class LocalSearchScope extends SearchScope {
       }
     }
     myScope = PsiUtilCore.toPsiElementArray(localScope);
-    myVirtualFiles = virtualFiles.isEmpty() ? VirtualFile.EMPTY_ARRAY : virtualFiles.toArray(VirtualFile.EMPTY_ARRAY);
+    myVirtualFiles = VfsUtilCore.toVirtualFileArray(virtualFiles);
   }
 
   public boolean isIgnoreInjectedPsi() {
@@ -114,12 +115,14 @@ public class LocalSearchScope extends SearchScope {
     if (this == o) return true;
     if (!(o instanceof LocalSearchScope)) return false;
 
-    final LocalSearchScope localSearchScope = (LocalSearchScope)o;
+    LocalSearchScope other = (LocalSearchScope)o;
 
-    if (localSearchScope.myIgnoreInjectedPsi != myIgnoreInjectedPsi) return false;
-    if (localSearchScope.myScope.length != myScope.length) return false;
+    if (other.myIgnoreInjectedPsi != myIgnoreInjectedPsi) return false;
+    if (other.myScope.length != myScope.length) return false;
+    if (!Comparing.strEqual(myDisplayName, other.myDisplayName)) return false; // scopes like "Current file" and "Changed files" should be different event if empty
+
     for (final PsiElement scopeElement : myScope) {
-      final PsiElement[] thatScope = localSearchScope.myScope;
+      final PsiElement[] thatScope = other.myScope;
       for (final PsiElement thatScopeElement : thatScope) {
         if (!Comparing.equal(scopeElement, thatScopeElement)) return false;
       }

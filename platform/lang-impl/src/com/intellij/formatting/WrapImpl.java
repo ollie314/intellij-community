@@ -27,7 +27,6 @@ public class WrapImpl extends Wrap {
   private LeafBlockWrapper myChopStartBlock = null;
   private int myWrapOffset = -1;
   private int myFlags;
-  private static int ourId = 0;
 
   private static final Set<WrapImpl> emptyParentsSet = Collections.emptySet();
   private Set<WrapImpl> myParents = emptyParentsSet;
@@ -38,8 +37,6 @@ public class WrapImpl extends Wrap {
   private static final int WRAP_FIRST_ELEMENT_MASK = 4;
   private static final int TYPE_MASK = 0x18;
   private static final int TYPE_SHIFT = 3;
-  private static final int ID_SHIFT = 5;
-  private static final int ID_MAX = 1 << 26;
   private static final Type[] myTypes = Type.values();
 
 
@@ -70,7 +67,7 @@ public class WrapImpl extends Wrap {
     if (parent == this) return;
     if (parent == null) return;
     if (parent.isChildOf(this, null)) return;
-    if (myParents == emptyParentsSet) myParents = new HashSet<WrapImpl>(5);
+    if (myParents == emptyParentsSet) myParents = new HashSet<>(5);
     myParents.add(parent);
   }
 
@@ -116,11 +113,9 @@ public class WrapImpl extends Wrap {
    */
   public void ignoreParentWrap(@Nullable final WrapImpl wrap, final LeafBlockWrapper currentBlock) {
     if (myIgnoredWraps == null) {
-      myIgnoredWraps = new HashMap<WrapImpl, Collection<LeafBlockWrapper>>(5);
+      myIgnoredWraps = new HashMap<>(5);
     }
-    if (myIgnoredWraps.get(wrap) == null) {
-      myIgnoredWraps.put(wrap, new HashSet<LeafBlockWrapper>(2));
-    }
+    myIgnoredWraps.putIfAbsent(wrap, new HashSet<>(2));
     myIgnoredWraps.get(wrap).add(currentBlock);
   }
 
@@ -175,9 +170,7 @@ public class WrapImpl extends Wrap {
         default: myType = Type.CHOP_IF_NEEDED;
     }
 
-    int myId = ourId++;
-    assert myId < ID_MAX;
-    myFlags |= (wrapFirstElement ? WRAP_FIRST_ELEMENT_MASK:0) | (myType.ordinal() << TYPE_SHIFT) | (myId << ID_SHIFT);
+    myFlags |= (wrapFirstElement ? WRAP_FIRST_ELEMENT_MASK:0) | (myType.ordinal() << TYPE_SHIFT);
   }
 
   public final Type getType() {
@@ -207,11 +200,7 @@ public class WrapImpl extends Wrap {
   public String toString() {
     return getType().toString();
   }
-
-  public String getId() {
-    return String.valueOf(myFlags >>> ID_SHIFT);
-  }
-
+  
   /**
    * Allows to instruct current wrap to ignore all parent wraps, i.e. all calls to {@link #isChildOf(WrapImpl, LeafBlockWrapper)}
    * return <code>'false'</code> after invocation of this method.

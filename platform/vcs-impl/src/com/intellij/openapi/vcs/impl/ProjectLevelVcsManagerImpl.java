@@ -18,7 +18,7 @@ package com.intellij.openapi.vcs.impl;
 import com.intellij.execution.filters.TextConsoleBuilderFactory;
 import com.intellij.execution.ui.ConsoleView;
 import com.intellij.execution.ui.ConsoleViewContentType;
-import com.intellij.ide.impl.ProjectUtil;
+import com.intellij.ide.AppLifecycleListener;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.actionSystem.ActionPlaces;
@@ -26,13 +26,15 @@ import com.intellij.openapi.actionSystem.ActionToolbar;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
-import com.intellij.openapi.components.ProjectComponent;
+import com.intellij.openapi.components.*;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.markup.TextAttributes;
 import com.intellij.openapi.extensions.Extensions;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.project.ProjectManager;
+import com.intellij.openapi.project.ProjectManagerAdapter;
 import com.intellij.openapi.roots.FileIndexFacade;
 import com.intellij.openapi.util.*;
 import com.intellij.openapi.util.io.FileUtil;
@@ -57,6 +59,7 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowId;
 import com.intellij.openapi.wm.ToolWindowManager;
+import com.intellij.project.ProjectKt;
 import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentFactory;
 import com.intellij.ui.content.ContentManager;
@@ -78,7 +81,8 @@ import java.awt.*;
 import java.util.*;
 import java.util.List;
 
-public class ProjectLevelVcsManagerImpl extends ProjectLevelVcsManagerEx implements ProjectComponent, JDOMExternalizable {
+@State(name = "ProjectLevelVcsManager", storages = @Storage(StoragePathMacros.WORKSPACE_FILE))
+public class ProjectLevelVcsManagerImpl extends ProjectLevelVcsManagerEx implements ProjectComponent, PersistentStateComponent<Element> {
   private static final Logger LOG = Logger.getInstance("#com.intellij.openapi.vcs.impl.ProjectLevelVcsManagerImpl");
   @NonNls public static final String SETTINGS_EDITED_MANUALLY = "settingsEditedManually";
 
@@ -128,23 +132,45 @@ public class ProjectLevelVcsManagerImpl extends ProjectLevelVcsManagerEx impleme
   private final VcsFileListenerContextHelper myVcsFileListenerContextHelper;
   private final VcsAnnotationLocalChangesListenerImpl myAnnotationLocalChangesListener;
 
-  public ProjectLevelVcsManagerImpl(Project project, final FileStatusManager manager, MessageBus messageBus,
-                                    final FileIndexFacade excludedFileIndex) {
+  public ProjectLevelVcsManagerImpl(Project project,
+                                    final FileStatusManager manager,
+                                    MessageBus messageBus,
+                                    final FileIndexFacade excludedFileIndex,
+                                    ProjectManager projectManager,
+                                    DefaultVcsRootPolicy defaultVcsRootPolicy,
+                                    VcsFileListenerContextHelper vcsFileListenerContextHelper) {
     myProject = project;
     myMessageBus = messageBus;
     mySerialization = new ProjectLevelVcsManagerSerialization();
     myOptionsAndConfirmations = new OptionsAndConfirmations();
 
-    myDefaultVcsRootPolicy = DefaultVcsRootPolicy.getInstance(project);
+    myDefaultVcsRootPolicy = defaultVcsRootPolicy;
 
     myInitialization = new VcsInitialization(myProject);
+    Disposer.register(project, myInitialization); // wait for the thread spawned in VcsInitialization to terminate
+    projectManager.addProjectManagerListener(project, new ProjectManagerAdapter() {
+      @Override
+      public void projectClosing(Project project) {
+        Disposer.dispose(myInitialization);
+      }
+    });
+    if (project.isDefault()) {
+      // default project is disposed in write action, so treat it differently
+      MessageBusConnection connection = ApplicationManager.getApplication().getMessageBus().connect();
+      connection.subscribe(AppLifecycleListener.TOPIC, new AppLifecycleListener.Adapter() {
+        @Override
+        public void appClosing() {
+          Disposer.dispose(myInitialization);
+        }
+      });
+    }
     myMappings = new NewMappings(myProject, myMessageBus, this, manager);
     myMappingsToRoots = new MappingsToRoots(myMappings, myProject);
 
     myVcsHistoryCache = new VcsHistoryCache();
     myContentRevisionCache = new ContentRevisionCache();
     myConnect = myMessageBus.connect();
-    myVcsFileListenerContextHelper = VcsFileListenerContextHelper.getInstance(myProject);
+    myVcsFileListenerContextHelper = vcsFileListenerContextHelper;
     VcsListener vcsListener = new VcsListener() {
       @Override
       public void directoryMappingChanged() {
@@ -571,10 +597,21 @@ public class ProjectLevelVcsManagerImpl extends ProjectLevelVcsManagerEx impleme
     VcsRootIterator.iterateVcsRoot(myProject, root, iterator, directoryFilter);
   }
 
+  @Nullable
   @Override
-  public void readExternal(Element element) throws InvalidDataException {
-    mySerialization.readExternalUtil(element, myOptionsAndConfirmations);
-    final Attribute attribute = element.getAttribute(SETTINGS_EDITED_MANUALLY);
+  public Element getState() {
+    Element element = new Element("state");
+    mySerialization.writeExternalUtil(element, myOptionsAndConfirmations);
+    if (myHaveLegacyVcsConfiguration) {
+      element.setAttribute(SETTINGS_EDITED_MANUALLY, "true");
+    }
+    return element;
+  }
+
+  @Override
+  public void loadState(Element state) {
+    mySerialization.readExternalUtil(state, myOptionsAndConfirmations);
+    final Attribute attribute = state.getAttribute(SETTINGS_EDITED_MANUALLY);
     if (attribute != null) {
       try {
         myHaveLegacyVcsConfiguration = attribute.getBooleanValue();
@@ -582,12 +619,6 @@ public class ProjectLevelVcsManagerImpl extends ProjectLevelVcsManagerEx impleme
       catch (DataConversionException ignored) {
       }
     }
-  }
-
-  @Override
-  public void writeExternal(Element element) throws WriteExternalException {
-    mySerialization.writeExternalUtil(element, myOptionsAndConfirmations);
-    element.setAttribute(SETTINGS_EDITED_MANUALLY, String.valueOf(myHaveLegacyVcsConfiguration));
   }
 
   @Override
@@ -612,7 +643,7 @@ public class ProjectLevelVcsManagerImpl extends ProjectLevelVcsManagerEx impleme
     return myOptionsAndConfirmations.getConfirmation(option);
   }
 
-  private final Map<VcsListener, MessageBusConnection> myAdapters = new HashMap<VcsListener, MessageBusConnection>();
+  private final Map<VcsListener, MessageBusConnection> myAdapters = new HashMap<>();
 
   @Override
   public void addVcsListener(VcsListener listener) {
@@ -665,7 +696,7 @@ public class ProjectLevelVcsManagerImpl extends ProjectLevelVcsManagerEx impleme
 
   @Override
   public VirtualFile[] getAllVersionedRoots() {
-    List<VirtualFile> vFiles = new ArrayList<VirtualFile>();
+    List<VirtualFile> vFiles = new ArrayList<>();
     final AbstractVcs[] vcses = myMappings.getActiveVcses();
     for (AbstractVcs vcs : vcses) {
       Collections.addAll(vFiles, getRootsUnderVcs(vcs));
@@ -676,7 +707,7 @@ public class ProjectLevelVcsManagerImpl extends ProjectLevelVcsManagerEx impleme
   @Override
   @NotNull
   public VcsRoot[] getAllVcsRoots() {
-    List<VcsRoot> vcsRoots = new ArrayList<VcsRoot>();
+    List<VcsRoot> vcsRoots = new ArrayList<>();
     final AbstractVcs[] vcses = myMappings.getActiveVcses();
     for (AbstractVcs vcs : vcses) {
       final VirtualFile[] roots = getRootsUnderVcs(vcs);
@@ -700,7 +731,7 @@ public class ProjectLevelVcsManagerImpl extends ProjectLevelVcsManagerEx impleme
   public void readDirectoryMappings(final Element element) {
     myMappings.clear();
 
-    final List<VcsDirectoryMapping> mappingsList = new ArrayList<VcsDirectoryMapping>();
+    final List<VcsDirectoryMapping> mappingsList = new ArrayList<>();
     boolean haveNonEmptyMappings = false;
     for (Element child : element.getChildren(ELEMENT_MAPPING)) {
       final String vcs = child.getAttributeValue(ATTRIBUTE_VCS);
@@ -881,12 +912,8 @@ public class ProjectLevelVcsManagerImpl extends ProjectLevelVcsManagerEx impleme
   }
 
   private boolean isInDirectoryBasedRoot(@Nullable VirtualFile file) {
-    if (file != null && ProjectUtil.isDirectoryBased(myProject)) {
-      VirtualFile baseDir = myProject.getBaseDir();
-      if (baseDir != null) {
-        VirtualFile ideaDir = baseDir.findChild(Project.DIRECTORY_STORE_FOLDER);
-        return ideaDir != null && ideaDir.isValid() && ideaDir.isDirectory() && VfsUtilCore.isAncestor(ideaDir, file, false);
-      }
+    if (file != null && ProjectKt.isDirectoryBased(myProject)) {
+      return ProjectKt.getStateStore(myProject).isProjectFile(file);
     }
     return false;
   }
@@ -898,7 +925,7 @@ public class ProjectLevelVcsManagerImpl extends ProjectLevelVcsManagerEx impleme
 
   // inner roots disclosed
   public static List<VirtualFile> getRootsUnder(final List<VirtualFile> roots, final VirtualFile underWhat) {
-    final List<VirtualFile> result = new ArrayList<VirtualFile>(roots.size());
+    final List<VirtualFile> result = new ArrayList<>(roots.size());
     for (VirtualFile root : roots) {
       if (VfsUtilCore.isAncestor(underWhat, root, false)) {
         result.add(root);

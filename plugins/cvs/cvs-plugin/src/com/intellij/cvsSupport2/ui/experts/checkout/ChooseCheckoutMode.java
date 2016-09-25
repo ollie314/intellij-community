@@ -56,7 +56,7 @@ import java.util.List;
 public class ChooseCheckoutMode extends WizardStep {
 
   private File mySelectedLocation;
-  private final Collection<File> myCvsPaths = new ArrayList<File>();
+  private final Collection<File> myCvsPaths = new ArrayList<>();
   private final DefaultListModel myCheckoutModeModel = new DefaultListModel();
   private final JList myCheckoutModeList = new JBList(myCheckoutModeModel);
   private final JCheckBox myMakeNewFilesReadOnly = new JCheckBox(CvsBundle.message("checkbox.make.new.files.read.only"));
@@ -76,7 +76,7 @@ public class ChooseCheckoutMode extends WizardStep {
     super("###", wizard);
     myCheckoutModeList.setCellRenderer(new ColoredListCellRenderer() {
       @Override
-      protected void customizeCellRenderer(JList list, Object value, int index, boolean selected, boolean hasFocus) {
+      protected void customizeCellRenderer(@NotNull JList list, Object value, int index, boolean selected, boolean hasFocus) {
         final CheckoutStrategy checkoutStrategy = (CheckoutStrategy)value;
         append(checkoutStrategy.getResult().getAbsolutePath(), new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, list.getForeground()));
         setIcon(PlatformIcons.DIRECTORY_CLOSED_ICON);
@@ -241,25 +241,20 @@ public class ChooseCheckoutMode extends WizardStep {
   }
 
   private Collection<File> getSelectedFiles() {
-    final Collection<File> allFiles = new HashSet<File>();
+    final Collection<File> allFiles = new HashSet<>();
     final CvsElement[] selection = getWizard().getSelectedElements();
     if (selection == null) return allFiles;
     for (CvsElement cvsElement : selection) {
       allFiles.add(new File(cvsElement.getCheckoutPath()));
     }
 
-    final ArrayList<File> result = new ArrayList<File>();
+    final ArrayList<File> result = new ArrayList<>();
 
     for (File file : allFiles) {
       if (!hasParentIn(allFiles, file)) result.add(file);
     }
 
-    Collections.sort(result, new Comparator<File>(){
-      @Override
-      public int compare(File file, File file1) {
-        return file.getPath().compareTo(file1.getPath());
-      }
-    });
+    Collections.sort(result, (file, file1) -> file.getPath().compareTo(file1.getPath()));
     return result;
   }
 

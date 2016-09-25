@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -146,7 +146,6 @@ public class CustomizePluginsStepPanel extends AbstractCustomizeWizardStep imple
   static JBScrollPane createScrollPane(JPanel gridPanel) {
     JBScrollPane scrollPane =
       new JBScrollPane(gridPanel, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-    scrollPane.getVerticalScrollBar().setUnitIncrement(10);
     scrollPane.setBorder(JBUI.Borders.empty()); // to disallow resetting border on LaF change
     return scrollPane;
   }
@@ -230,11 +229,6 @@ public class CustomizePluginsStepPanel extends AbstractCustomizeWizardStep imple
   }
 
   @Override
-  public String getHTMLFooter() {
-    return null;
-  }
-
-  @Override
   public boolean beforeOkAction() {
     try {
       PluginManager.saveDisabledPlugins(myPluginGroups.getDisabledPluginIds(), false);
@@ -259,8 +253,8 @@ public class CustomizePluginsStepPanel extends AbstractCustomizeWizardStep imple
       gbc.insets.right = 25;
       gbc.gridy = 0;
       buttonPanel.add(mySaveButton, gbc);
-      buttonPanel.add(new LinkLabel<String>("Enable All", null, this, "enable"), gbc);
-      buttonPanel.add(new LinkLabel<String>("Disable All", null, this, "disable"), gbc);
+      buttonPanel.add(new LinkLabel<>("Enable All", null, this, "enable"), gbc);
+      buttonPanel.add(new LinkLabel<>("Disable All", null, this, "disable"), gbc);
       gbc.weightx = 1;
       buttonPanel.add(Box.createHorizontalGlue(), gbc);
       add(buttonPanel);

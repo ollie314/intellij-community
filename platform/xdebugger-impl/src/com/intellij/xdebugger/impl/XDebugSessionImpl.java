@@ -43,7 +43,6 @@ import com.intellij.openapi.ui.MessageType;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.Disposer;
-import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.ToolWindowId;
 import com.intellij.ui.AppUIUtil;
 import com.intellij.util.EventDispatcher;
@@ -677,11 +676,10 @@ public class XDebugSessionImpl implements XDebugSession {
                                    @NotNull XSuspendContext suspendContext, boolean doProcessing) {
     if (doProcessing) {
       if (breakpoint.isLogMessage()) {
-        String text = StringUtil.decapitalize(XBreakpointUtil.getDisplayText(breakpoint));
-        final XSourcePosition position = breakpoint.getSourcePosition();
-        final OpenFileHyperlinkInfo hyperlinkInfo =
+        XSourcePosition position = breakpoint.getSourcePosition();
+        OpenFileHyperlinkInfo hyperlinkInfo =
           position != null ? new OpenFileHyperlinkInfo(myProject, position.getFile(), position.getLine()) : null;
-        printMessage(XDebuggerBundle.message("xbreakpoint.reached.text") + " ", text, hyperlinkInfo);
+        printMessage(XDebuggerBundle.message("xbreakpoint.reached.text") + " ", XBreakpointUtil.getShortText(breakpoint), hyperlinkInfo);
       }
 
       if (evaluatedLogExpression != null) {
@@ -701,17 +699,7 @@ public class XDebugSessionImpl implements XDebugSession {
     // set this session active on breakpoint, update execution position will be called inside positionReached
     myDebuggerManager.setCurrentSession(this);
 
-    positionReachedInternal(suspendContext);
-
-    UIUtil.invokeLaterIfNeeded(() -> {
-      if (mySessionTab != null) {
-        if (XDebuggerSettingManagerImpl.getInstanceImpl().getGeneralSettings().isShowDebuggerOnBreakpoint()) {
-          mySessionTab.toFront(true, this::updateExecutionPosition);
-        }
-        mySessionTab.getUi().attractBy(XDebuggerUIConstants.LAYOUT_VIEW_BREAKPOINT_CONDITION);
-      }
-    });
-
+    positionReachedInternal(suspendContext, true);
 
     if (doProcessing && breakpoint instanceof XLineBreakpoint<?> && ((XLineBreakpoint)breakpoint).isTemporary()) {
       handleTemporaryBreakpointHit(breakpoint);
@@ -774,7 +762,7 @@ public class XDebugSessionImpl implements XDebugSession {
     myPaused.set(false);
   }
 
-  private void positionReachedInternal(@NotNull final XSuspendContext suspendContext) {
+  private void positionReachedInternal(@NotNull final XSuspendContext suspendContext, boolean attract) {
     enableBreakpoints();
     mySuspendContext = suspendContext;
     myCurrentExecutionStack = suspendContext.getActiveExecutionStack();
@@ -787,19 +775,44 @@ public class XDebugSessionImpl implements XDebugSession {
     updateExecutionPosition();
 
     if (myShowTabOnSuspend.compareAndSet(true, false)) {
-      UIUtil.invokeLaterIfNeeded(() -> {
+      AppUIUtil.invokeLaterIfProjectAlive(myProject, () -> {
         initSessionTab(null);
         showSessionTab();
       });
     }
 
     myDispatcher.getMulticaster().sessionPaused();
+
+    // user attractions should only be made if event happens independently (e.g. program paused/suspended)
+    // and should not be made when user steps in the code
+    if (attract) {
+      UIUtil.invokeLaterIfNeeded(() -> {
+        if (mySessionTab != null) {
+
+          if (XDebuggerSettingManagerImpl.getInstanceImpl().getGeneralSettings().isShowDebuggerOnBreakpoint()) {
+            mySessionTab.toFront(true, this::updateExecutionPosition);
+          }
+
+          if (myTopFramePosition == null) {
+            // if there is no source position available, we should somehow tell the user that session is stopped.
+            // the best way is to show the stack frames.
+            XDebugSessionTab.showFramesView(this);
+          }
+
+          mySessionTab.getUi().attractBy(XDebuggerUIConstants.LAYOUT_VIEW_BREAKPOINT_CONDITION);
+        }
+      });
+    }
   }
 
   @Override
   public void positionReached(@NotNull final XSuspendContext suspendContext) {
+    positionReached(suspendContext, false);
+  }
+
+  public void positionReached(@NotNull XSuspendContext suspendContext, boolean attract) {
     myActiveNonLineBreakpoint = null;
-    positionReachedInternal(suspendContext);
+    positionReachedInternal(suspendContext, attract);
   }
 
   @Override

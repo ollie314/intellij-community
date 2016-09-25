@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.ui.paint.EffectPainter;
 import com.intellij.util.ui.JBInsets;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
@@ -114,9 +115,9 @@ public class SimpleColoredComponent extends JComponent implements Accessible, Co
   private boolean myTransparentIconBackground;
 
   public SimpleColoredComponent() {
-    myFragments = new ArrayList<String>(3);
-    myLayouts = new ArrayList<TextLayout>(3);
-    myAttributes = new ArrayList<SimpleTextAttributes>(3);
+    myFragments = new ArrayList<>(3);
+    myLayouts = new ArrayList<>(3);
+    myAttributes = new ArrayList<>(3);
     myIpad = new JBInsets(1, 2, 1, 2);
     myIconTextGap = JBUI.scale(2);
     myBorder = new MyBorder();
@@ -213,7 +214,7 @@ public class SimpleColoredComponent extends JComponent implements Accessible, Co
   private synchronized void _append(String fragment, SimpleTextAttributes attributes, Object tag) {
     append(fragment, attributes);
     if (myFragmentTags == null) {
-      myFragmentTags = new ArrayList<Object>();
+      myFragmentTags = new ArrayList<>();
     }
     while (myFragmentTags.size() < myFragments.size() - 1) {
       myFragmentTags.add(null);
@@ -221,11 +222,11 @@ public class SimpleColoredComponent extends JComponent implements Accessible, Co
     myFragmentTags.add(tag);
   }
 
-  @Deprecated
   /**
    * fragment width isn't a right name, it is actually a padding
    * @deprecated remove in IDEA 16
    */
+  @Deprecated
   public synchronized void appendFixedTextFragmentWidth(int width) {
     appendTextPadding(width);
   }
@@ -753,7 +754,7 @@ public class SimpleColoredComponent extends JComponent implements Accessible, Co
       offset += myBorder.getBorderInsets(this).left;
     }
 
-    final List<Object[]> searchMatches = new ArrayList<Object[]>();
+    final List<Object[]> searchMatches = new ArrayList<>();
 
     applyAdditionalHints(g);
     final Font baseFont = getBaseFont();
@@ -829,19 +830,18 @@ public class SimpleColoredComponent extends JComponent implements Accessible, Co
 
       // 1. Strikeout effect
       if (attributes.isStrikeout() && !attributes.isSearchMatch()) {
-        drawStrikeout(g, offset, offset + fragmentWidth, textBaseline);
+        EffectPainter.STRIKE_THROUGH.paint(g, offset, textBaseline, fragmentWidth, getCharHeight(g), null);
       }
       // 2. Waved effect
       if (attributes.isWaved()) {
         if (attributes.getWaveColor() != null) {
           g.setColor(attributes.getWaveColor());
         }
-        UIUtil.drawWave(g, new Rectangle(offset, textBaseline + 1, fragmentWidth, Math.max(2, metrics.getDescent())));
+        EffectPainter.WAVE_UNDERSCORE.paint(g, offset, textBaseline + 1, fragmentWidth, Math.max(2, metrics.getDescent()), null);
       }
       // 3. Underline
       if (attributes.isUnderline()) {
-        final int underlineAt = textBaseline + 1;
-        UIUtil.drawLine(g, offset, underlineAt, offset + fragmentWidth, underlineAt);
+        EffectPainter.LINE_UNDERSCORE.paint(g, offset, textBaseline, fragmentWidth, metrics.getDescent(), null);
       }
       // 4. Bold Dotted Line
       if (attributes.isBoldDottedLine()) {
@@ -885,16 +885,15 @@ public class SimpleColoredComponent extends JComponent implements Accessible, Co
       g.drawString(text, x1, baseline);
 
       if (((SimpleTextAttributes)info[5]).isStrikeout()) {
-        drawStrikeout(g, x1, x2, baseline);
+        EffectPainter.STRIKE_THROUGH.paint(g, x1, baseline, x2 - x1, getCharHeight(g), null);
       }
     }
     return offset;
   }
 
-  private static void drawStrikeout(Graphics g, int x1, int x2, int y) {
+  private static int getCharHeight(Graphics g) {
     // magic of determining character height
-    int strikeOutAt = y - g.getFontMetrics().charWidth('a') / 2;
-    UIUtil.drawLine(g, x1, strikeOutAt, x2, strikeOutAt);
+    return g.getFontMetrics().charWidth('a');
   }
 
   private int computeTextAlignShift(@NotNull Font font) {
@@ -1047,12 +1046,12 @@ public class SimpleColoredComponent extends JComponent implements Accessible, Co
   @Override
   public AccessibleContext getAccessibleContext() {
     if (accessibleContext == null) {
-      accessibleContext = new MyAccessibleContext();
+      accessibleContext = new AccessibleSimpleColoredComponent();
     }
     return accessibleContext;
   }
 
-  private class MyAccessibleContext extends JComponent.AccessibleJComponent {
+  protected class AccessibleSimpleColoredComponent extends JComponent.AccessibleJComponent {
     @Override
     public String getAccessibleName() {
       return getCharSequence(false).toString();

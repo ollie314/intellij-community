@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2009 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -59,10 +59,10 @@ public abstract class AbstractIdeModifiableModelsProvider extends IdeModelsProvi
   private static final Logger LOG = Logger.getInstance(AbstractIdeModifiableModelsProvider.class);
 
   private ModifiableModuleModel myModifiableModuleModel;
-  private Map<Module, ModifiableRootModel> myModifiableRootModels = new THashMap<Module, ModifiableRootModel>();
-  private Map<Module, ModifiableFacetModel> myModifiableFacetModels = new THashMap<Module, ModifiableFacetModel>();
-  private Map<Module, String> myProductionModulesForTestModules = new THashMap<Module, String>();
-  private Map<Library, Library.ModifiableModel> myModifiableLibraryModels = new IdentityHashMap<Library, Library.ModifiableModel>();
+  private Map<Module, ModifiableRootModel> myModifiableRootModels = new THashMap<>();
+  private Map<Module, ModifiableFacetModel> myModifiableFacetModels = new THashMap<>();
+  private Map<Module, String> myProductionModulesForTestModules = new THashMap<>();
+  private Map<Library, Library.ModifiableModel> myModifiableLibraryModels = new IdentityHashMap<>();
   private ModifiableArtifactModel myModifiableArtifactModel;
   private AbstractIdeModifiableModelsProvider.MyPackagingElementResolvingContext myPackagingElementResolvingContext;
   private final ArtifactExternalDependenciesImporter myArtifactExternalDependenciesImporter;
@@ -181,23 +181,13 @@ public abstract class AbstractIdeModifiableModelsProvider extends IdeModelsProvi
 
   @NotNull
   private ModuleRootModel getRootModel(Module module) {
-    ModifiableRootModel result = myModifiableRootModels.get(module);
-    if (result == null) {
-      result = doGetModifiableRootModel(module);
-      myModifiableRootModels.put(module, result);
-    }
-    return result;
+    return myModifiableRootModels.computeIfAbsent(module, k -> doGetModifiableRootModel(module));
   }
 
   @Override
   @NotNull
   public ModifiableFacetModel getModifiableFacetModel(Module module) {
-    ModifiableFacetModel result = myModifiableFacetModels.get(module);
-    if (result == null) {
-      result = doGetModifiableFacetModel(module);
-      myModifiableFacetModels.put(module, result);
-    }
-    return result;
+    return myModifiableFacetModels.computeIfAbsent(module, k -> doGetModifiableFacetModel(module));
   }
 
   @Override
@@ -233,12 +223,7 @@ public abstract class AbstractIdeModifiableModelsProvider extends IdeModelsProvi
 
   @Override
   public Library.ModifiableModel getModifiableLibraryModel(Library library) {
-    Library.ModifiableModel result = myModifiableLibraryModels.get(library);
-    if (result == null) {
-      result = doGetModifiableLibraryModel(library);
-      myModifiableLibraryModels.put(library, result);
-    }
-    return result;
+    return myModifiableLibraryModels.computeIfAbsent(library, k -> doGetModifiableLibraryModel(library));
   }
 
   @NotNull
@@ -264,7 +249,7 @@ public abstract class AbstractIdeModifiableModelsProvider extends IdeModelsProvi
   @NotNull
   @Override
   public List<Module> getAllDependentModules(@NotNull Module module) {
-    final ArrayList<Module> list = new ArrayList<Module>();
+    final ArrayList<Module> list = new ArrayList<>();
     final Graph<Module> graph = getModuleGraph(true);
     for (Iterator<Module> i = graph.getOut(module); i.hasNext();) {
       list.add(i.next());
@@ -364,39 +349,37 @@ public abstract class AbstractIdeModifiableModelsProvider extends IdeModelsProvi
 
   @Override
   public void commit() {
-    ((ProjectRootManagerEx)ProjectRootManager.getInstance(myProject)).mergeRootsChangesDuring(new Runnable() {
-      public void run() {
-        processExternalArtifactDependencies();
-        for (Library.ModifiableModel each : myModifiableLibraryModels.values()) {
-          each.commit();
-        }
-        getModifiableProjectLibrariesModel().commit();
+    ProjectRootManagerEx.getInstanceEx(myProject).mergeRootsChangesDuring(() -> {
+      processExternalArtifactDependencies();
+      for (Library.ModifiableModel each : myModifiableLibraryModels.values()) {
+        each.commit();
+      }
+      getModifiableProjectLibrariesModel().commit();
 
-        Collection<ModifiableRootModel> rootModels = myModifiableRootModels.values();
-        ModifiableRootModel[] rootModels1 = rootModels.toArray(new ModifiableRootModel[rootModels.size()]);
+      Collection<ModifiableRootModel> rootModels = myModifiableRootModels.values();
+      ModifiableRootModel[] rootModels1 = rootModels.toArray(new ModifiableRootModel[rootModels.size()]);
+      for (ModifiableRootModel model : rootModels1) {
+        assert !model.isDisposed() : "Already disposed: " + model;
+      }
+
+      if (myModifiableModuleModel != null) {
+        ModifiableModelCommitter.multiCommit(rootModels1, myModifiableModuleModel);
+      } else {
         for (ModifiableRootModel model : rootModels1) {
-          assert !model.isDisposed() : "Already disposed: " + model;
+          model.commit();
         }
+      }
+      for (Map.Entry<Module, String> entry : myProductionModulesForTestModules.entrySet()) {
+        TestModuleProperties.getInstance(entry.getKey()).setProductionModuleName(entry.getValue());
+      }
 
-        if (myModifiableModuleModel != null) {
-          ModifiableModelCommitter.multiCommit(rootModels1, myModifiableModuleModel);
-        } else {
-          for (ModifiableRootModel model : rootModels1) {
-            model.commit();
-          }
+      for (Map.Entry<Module, ModifiableFacetModel> each : myModifiableFacetModels.entrySet()) {
+        if(!each.getKey().isDisposed()) {
+          each.getValue().commit();
         }
-        for (Map.Entry<Module, String> entry : myProductionModulesForTestModules.entrySet()) {
-          TestModuleProperties.getInstance(entry.getKey()).setProductionModuleName(entry.getValue());
-        }
-
-        for (Map.Entry<Module, ModifiableFacetModel> each : myModifiableFacetModels.entrySet()) {
-          if(!each.getKey().isDisposed()) {
-            each.getValue().commit();
-          }
-        }
-        if (myModifiableArtifactModel != null) {
-          myModifiableArtifactModel.commit();
-        }
+      }
+      if (myModifiableArtifactModel != null) {
+        myModifiableArtifactModel.commit();
       }
     });
   }

@@ -18,6 +18,7 @@ package com.intellij.ide.plugins;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ApplicationNamesInfo;
+import com.intellij.openapi.application.TransactionGuard;
 import com.intellij.openapi.options.newEditor.SettingsDialog;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.GraphicsConfig;
@@ -266,12 +267,7 @@ public class PluginHeaderPanel {
         switch (myActionId) {
           case UPDATE:
           case INSTALL:
-            Runnable setPlugin = new Runnable() {
-              @Override
-              public void run() {
-                setPlugin(myPlugin);
-              }
-            };
+            Runnable setPlugin = () -> setPlugin(myPlugin);
             new InstallPluginAction(myManager.getAvailable(), myManager.getInstalled()).install(setPlugin, setPlugin, true);
             break;
           case UNINSTALL:
@@ -286,19 +282,12 @@ public class PluginHeaderPanel {
             if (dialog != null && dialog.isModal()) {
               dialog.close(DialogWrapper.OK_EXIT_CODE);
             }
-            //noinspection SSBasedInspection
-            SwingUtilities.invokeLater(new Runnable() {
-              @Override
-              public void run() {
-                final DialogWrapper settings =
-                  DialogWrapper.findInstance(IdeFocusManager.findInstance().getFocusOwner());
-                if (settings instanceof SettingsDialog) {
-                  ((SettingsDialog)settings).doOKAction();
-                  ApplicationManager.getApplication().restart();
-                } else {
-                  ApplicationManager.getApplication().restart();
-                }
+            TransactionGuard.getInstance().submitTransactionLater(ApplicationManager.getApplication(), () -> {
+              DialogWrapper settings = DialogWrapper.findInstance(IdeFocusManager.findInstance().getFocusOwner());
+              if (settings instanceof SettingsDialog) {
+                ((SettingsDialog)settings).doOKAction();
               }
+              ApplicationManager.getApplication().restart();
             });
             break;
         }

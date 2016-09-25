@@ -18,7 +18,6 @@ package com.intellij.codeInsight.daemon.lambda;
 import com.intellij.codeInsight.daemon.LightDaemonAnalyzerTestCase;
 import com.intellij.codeInspection.deadCode.UnusedDeclarationInspection;
 import com.intellij.openapi.projectRoots.JavaSdkVersion;
-import com.intellij.openapi.projectRoots.Sdk;
 import com.intellij.testFramework.IdeaTestUtil;
 import org.jetbrains.annotations.NonNls;
 
@@ -308,6 +307,34 @@ public class NewLambdaHighlightingTest extends LightDaemonAnalyzerTestCase {
     doTest();
   }
 
+  public void testPreserveCapturedWildcardAsLambdaParameterType() throws Exception {
+    doTest();
+  }
+
+  public void testDontWarnAboutNestedLambdaForAProblemInOuter() throws Exception {
+    doTest();
+  }
+
+  public void testUncheckedPartial() throws Exception {
+    doTest();
+  }
+
+  public void testVarargMethodWithThrownTypes() throws Exception {
+    doTest();
+  }
+
+  public void testExceptionInLambdaBodyCheck() throws Exception {
+    doTest();
+  }
+
+  public void testHighlightFaultyLambdaReturnExpression() throws Exception {
+    doTest();
+  }
+
+  public void testUncheckedConstraintOnInferenceVariableWithProperUpperBound() throws Exception {
+    doTest();
+  }
+
   private void doTest() {
     doTest(false);
   }
@@ -317,11 +344,7 @@ public class NewLambdaHighlightingTest extends LightDaemonAnalyzerTestCase {
     doTest(BASE_PATH + "/" + getTestName(false) + ".java", warnings, false);
   }
 
-  @Override
-  protected Sdk getProjectJDK() {
-    return IdeaTestUtil.getMockJdk18();
-  }
-/*
+  /*
   public static Test suite() {
     final TestSuite suite = new TestSuite();
     for (int i = 0; i < 1000; i++) {

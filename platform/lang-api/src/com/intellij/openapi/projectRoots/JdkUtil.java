@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package com.intellij.openapi.projectRoots;
 
+import com.intellij.execution.CantRunException;
 import com.intellij.execution.CommandLineWrapperUtil;
 import com.intellij.execution.configurations.GeneralCommandLine;
 import com.intellij.execution.configurations.GeneralCommandLine.ParentEnvironmentType;
@@ -26,8 +27,9 @@ import com.intellij.openapi.application.ApplicationNamesInfo;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.io.FileUtil;
+import com.intellij.openapi.util.io.FileUtilRt;
+import com.intellij.openapi.util.io.JarUtil;
 import com.intellij.openapi.util.text.StringUtilRt;
-import com.intellij.openapi.vfs.JarFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.encoding.EncodingManager;
 import com.intellij.util.PathUtil;
@@ -62,50 +64,52 @@ public class JdkUtil {
    * see <a href="https://youtrack.jetbrains.com/issue/IDEA-126859#comment=27-778948">IDEA-126859</a> for additional details
    */
   public static final String PROPERTY_DO_NOT_ESCAPE_CLASSPATH_URL = "idea.do.not.escape.classpath.url";
+
   private static final Logger LOG = Logger.getInstance("#com.intellij.openapi.projectRoots.JdkUtil");
   private static final String WRAPPER_CLASS = "com.intellij.rt.execution.CommandLineWrapper";
 
   private JdkUtil() { }
 
   /**
-   * @return the specified attribute of the JDK (examines rt.jar) or null if cannot determine the value
+   * Returns the specified attribute of the JDK (examines rt.jar), or {@code null} if cannot determine the value.
    */
   @Nullable
-  public static String getJdkMainAttribute(@NotNull Sdk jdk, Attributes.Name attribute) {
-    VirtualFile homeDirectory = jdk.getHomeDirectory();
-    if (homeDirectory == null) return null;
-
-    VirtualFile rtJar = homeDirectory.findFileByRelativePath("jre/lib/rt.jar");                 // JDK
-    if (rtJar == null) rtJar = homeDirectory.findFileByRelativePath("lib/rt.jar");              // JRE
-    if (rtJar == null) rtJar = homeDirectory.findFileByRelativePath("jre/lib/vm.jar");          // IBM JDK
-    if (rtJar == null) rtJar = homeDirectory.findFileByRelativePath("../Classes/classes.jar");  // Apple JDK
-
-    if (rtJar == null) {
+  public static String getJdkMainAttribute(@NotNull Sdk jdk, @NotNull Attributes.Name attribute) {
+    if (attribute == Attributes.Name.IMPLEMENTATION_VERSION) {
+      // optimization: JDK version string is cached
       String versionString = jdk.getVersionString();
       if (versionString != null) {
-        final int start = versionString.indexOf("\"");
-        final int end = versionString.lastIndexOf("\"");
-        versionString = start >= 0 && (end > start)? versionString.substring(start + 1, end) : null;
+        int start = versionString.indexOf('"'), end = versionString.lastIndexOf('"');
+        if (start >= 0 && end > start) {
+          return versionString.substring(start + 1, end);
+        }
       }
-      return versionString;
     }
 
-    VirtualFile jarRoot = JarFileSystem.getInstance().getJarRootForLocalFile(rtJar);
-    return jarRoot != null ? getJarMainAttribute(jarRoot, attribute) : null;
+    String homePath = jdk.getHomePath();
+    if (homePath != null) {
+      File signatureJar = FileUtil.findFirstThatExist(
+        homePath + "/jre/lib/rt.jar",
+        homePath + "/lib/rt.jar",
+        homePath + "/jre/lib/vm.jar",
+        homePath + "/../Classes/classes.jar",
+        homePath + "/jrt-fs.jar");
+      if (signatureJar != null) {
+        return JarUtil.getJarAttribute(signatureJar, attribute);
+      }
+    }
+
+    return null;
   }
 
+  /** @deprecated to be removed in IDEA 2018 */
   @Nullable
-  public static String getJarMainAttribute(@NotNull VirtualFile jarRoot, Attributes.Name attribute) {
+  @SuppressWarnings("unused")
+  public static String getJarMainAttribute(@NotNull VirtualFile jarRoot, @NotNull Attributes.Name attribute) {
     VirtualFile manifestFile = jarRoot.findFileByRelativePath(JarFile.MANIFEST_NAME);
     if (manifestFile != null) {
-      try {
-        InputStream stream = manifestFile.getInputStream();
-        try {
-          return new Manifest(stream).getMainAttributes().getValue(attribute);
-        }
-        finally {
-          stream.close();
-        }
+      try (InputStream stream = manifestFile.getInputStream()) {
+        return new Manifest(stream).getMainAttributes().getValue(attribute);
       }
       catch (IOException e) {
         LOG.debug(e);
@@ -123,13 +127,10 @@ public class JdkUtil {
     File binPath = new File(homePath, "bin");
     if (!binPath.exists()) return false;
 
-    FileFilter fileFilter = new FileFilter() {
-      @Override
-      public boolean accept(@NotNull File f) {
-        if (f.isDirectory()) return false;
-        String name = FileUtil.getNameWithoutExtension(f);
-        return "javac".equals(name) || "javah".equals(name);
-      }
+    FileFilter fileFilter = f -> {
+      if (f.isDirectory()) return false;
+      String name = FileUtil.getNameWithoutExtension(f);
+      return "javac".equals(name) || "javah".equals(name);
     };
     File[] children = binPath.listFiles(fileFilter);
 
@@ -145,12 +146,7 @@ public class JdkUtil {
     File binPath = new File(homePath, "bin");
     if (!binPath.exists()) return false;
 
-    FileFilter fileFilter = new FileFilter() {
-      @Override
-      public boolean accept(@NotNull File f) {
-        return !f.isDirectory() && "java".equals(FileUtil.getNameWithoutExtension(f));
-      }
-    };
+    FileFilter fileFilter = f -> !f.isDirectory() && "java".equals(FileUtil.getNameWithoutExtension(f));
     File[] children = binPath.listFiles(fileFilter);
 
     return children != null && children.length >= 1 &&
@@ -176,10 +172,12 @@ public class JdkUtil {
     commandLine.withParentEnvironmentType(javaParameters.isPassParentEnvs() ? ParentEnvironmentType.CONSOLE : ParentEnvironmentType.NONE);
 
     final Class commandLineWrapper;
+    boolean passProgramParametersViaClassPathJar = false;
     if ((commandLineWrapper = getCommandLineWrapperClass()) != null) {
       if (forceDynamicClasspath && !vmParametersList.hasParameter("-classpath") && !vmParametersList.hasParameter("-cp")) {
         if (isClassPathJarEnabled(javaParameters, PathUtil.getJarPathForClass(ClassPath.class))) {
-          appendJarClasspathParams(javaParameters, commandLine, vmParametersList, commandLineWrapper);
+          passProgramParametersViaClassPathJar = javaParameters.isPassProgramParametersViaClasspathJar();
+          appendJarClasspathParams(javaParameters, commandLine, vmParametersList, commandLineWrapper, passProgramParametersViaClassPathJar);
         }
         else {
           appendOldCommandLineWrapper(javaParameters, commandLine, vmParametersList, commandLineWrapper);
@@ -203,7 +201,9 @@ public class JdkUtil {
       commandLine.addParameter(jarPath);
     }
 
-    commandLine.addParameters(javaParameters.getProgramParametersList().getList());
+    if (!passProgramParametersViaClassPathJar) {
+      commandLine.addParameters(javaParameters.getProgramParametersList().getList());
+    }
 
     commandLine.withWorkDirectory(javaParameters.getWorkingDirectory());
 
@@ -270,36 +270,35 @@ public class JdkUtil {
       commandLine.addParameter(classpath);
     }
     catch (IOException e) {
-      LOG.error(e);
+      LOG.info(e);
+      throwUnableToCreateTempFile();
     }
     appendEncoding(javaParameters, commandLine, vmParametersList);
-    if (classpathFile != null) {
-      commandLine.addParameter(commandLineWrapper.getName());
-      commandLine.addParameter(classpathFile.getAbsolutePath());
-    }
+    commandLine.addParameter(commandLineWrapper.getName());
+    commandLine.addParameter(classpathFile.getAbsolutePath());
 
     if (vmParamsFile != null) {
       commandLine.addParameter("@vm_params");
       commandLine.addParameter(vmParamsFile.getAbsolutePath());
     }
 
-    if (classpathFile != null || vmParamsFile != null) {
-      final Set<File> filesToDelete = getFilesToDeleteUserData(commandLine);
-      ContainerUtil.addIfNotNull(classpathFile, filesToDelete);
-      ContainerUtil.addIfNotNull(vmParamsFile, filesToDelete);
-    }
+    final Set<File> filesToDelete = getFilesToDeleteUserData(commandLine);
+    ContainerUtil.addIfNotNull(filesToDelete, classpathFile);
+    ContainerUtil.addIfNotNull(filesToDelete, vmParamsFile);
   }
 
   private static void appendJarClasspathParams(SimpleJavaParameters javaParameters,
                                                GeneralCommandLine commandLine,
-                                               ParametersList vmParametersList, Class commandLineWrapper) {
+                                               ParametersList vmParametersList,
+                                               Class commandLineWrapper,
+                                               boolean storeProgramParametersInJar) {
     try {
       final Manifest manifest = new Manifest();
       manifest.getMainAttributes().putValue("Created-By",
                                             ApplicationNamesInfo.getInstance().getFullProductName());
       final boolean writeDynamicVMOptions = javaParameters.isDynamicVMOptions() && useDynamicVMOptions();
       if (writeDynamicVMOptions) {
-        List<String> dParams = new ArrayList<String>();
+        List<String> dParams = new ArrayList<>();
         for (String param : vmParametersList.getList()) {
           if (param.startsWith("-D")) {
             dParams.add(param);
@@ -307,13 +306,17 @@ public class JdkUtil {
         }
 
         manifest.getMainAttributes().putValue("VM-Options", ParametersListUtil.join(dParams));
-        final ArrayList<String> restParams = new ArrayList<String>(vmParametersList.getList());
+        final ArrayList<String> restParams = new ArrayList<>(vmParametersList.getList());
         restParams.removeAll(dParams);
         commandLine.addParameters(restParams);
       }
       else {
         commandLine.addParameters(vmParametersList.getList());
       }
+      if (storeProgramParametersInJar) {
+        manifest.getMainAttributes().putValue("Program-Parameters", ParametersListUtil.join(javaParameters.getProgramParametersList().getList()));
+      }
+
       final boolean notEscape = vmParametersList.hasParameter(PROPERTY_DO_NOT_ESCAPE_CLASSPATH_URL);
       final List<String> classPathList = javaParameters.getClassPath().getPathList();
 
@@ -322,7 +325,7 @@ public class JdkUtil {
 
       final String jarFile = classpathJarFile.getAbsolutePath();
       commandLine.addParameter("-classpath");
-      if (writeDynamicVMOptions) {
+      if (writeDynamicVMOptions || storeProgramParametersInJar) {
         commandLine.addParameter(PathUtil.getJarPathForClass(commandLineWrapper) + File.pathSeparator + jarFile);
         appendEncoding(javaParameters, commandLine, vmParametersList);
         commandLine.addParameter(commandLineWrapper.getName());
@@ -334,14 +337,19 @@ public class JdkUtil {
       }
     }
     catch (IOException e) {
-      LOG.error(e);
+      LOG.info(e);
+      throwUnableToCreateTempFile();
     }
+  }
+
+  private static void throwUnableToCreateTempFile() {
+    throw new RuntimeException(new CantRunException("Failed to create temp file with long classpath in " + FileUtilRt.getTempDirectory()));
   }
 
   private static boolean isClassPathJarEnabled(SimpleJavaParameters javaParameters, String currentPath) {
     if (javaParameters.isUseClasspathJar() && useClasspathJar()) {
       try {
-        final ArrayList<URL> urls = new ArrayList<URL>();
+        final ArrayList<URL> urls = new ArrayList<>();
         for (String path : javaParameters.getClassPath().getPathList()) {
           if (!path.equals(currentPath)) {
             try {

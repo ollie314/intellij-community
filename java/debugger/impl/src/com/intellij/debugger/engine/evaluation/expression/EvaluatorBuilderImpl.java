@@ -42,6 +42,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiTypesUtil;
 import com.intellij.psi.util.PsiUtil;
 import com.intellij.psi.util.TypeConversionUtil;
+import com.intellij.util.ArrayUtil;
 import com.intellij.util.IncorrectOperationException;
 import com.sun.jdi.Value;
 import org.jetbrains.annotations.NotNull;
@@ -247,14 +248,15 @@ public class EvaluatorBuilderImpl implements EvaluatorBuilder {
     }
 
     private Evaluator[] visitStatements(PsiStatement[] statements) {
-      Evaluator[] evaluators = new Evaluator[statements.length];
-      for (int i = 0; i < statements.length; i++) {
-        PsiStatement psiStatement = statements[i];
+      List<Evaluator> evaluators = new ArrayList<>();
+      for (PsiStatement psiStatement : statements) {
         psiStatement.accept(this);
-        evaluators[i] = new DisableGC(myResult);
+        if (myResult != null) { // for example declaration w/o initializer produces empty evaluator now
+          evaluators.add(new DisableGC(myResult));
+        }
         myResult = null;
       }
-      return evaluators;
+      return evaluators.toArray(new Evaluator[0]);
     }
 
     @Override
@@ -805,13 +807,15 @@ public class EvaluatorBuilderImpl implements EvaluatorBuilder {
           }
         }
         else {
-          myResult = new LocalVariableEvaluator(name, false);
+          myResult = createFallbackEvaluator(new LocalVariableEvaluator(name, false),
+                                             new FieldEvaluator(new ThisEvaluator(), FieldEvaluator.TargetClassFilter.ALL, name));
         }
       }
     }
 
     private static Evaluator createFallbackEvaluator(final Evaluator primary, final Evaluator fallback) {
       return new Evaluator() {
+        private boolean myIsFallback;
         @Override
         public Object evaluate(EvaluationContextImpl context) throws EvaluateException {
           try {
@@ -819,7 +823,9 @@ public class EvaluatorBuilderImpl implements EvaluatorBuilder {
           }
           catch (EvaluateException e) {
             try {
-              return fallback.evaluate(context);
+              Object res = fallback.evaluate(context);
+              myIsFallback = true;
+              return res;
             }
             catch (EvaluateException e1) {
               throw e;
@@ -829,7 +835,7 @@ public class EvaluatorBuilderImpl implements EvaluatorBuilder {
 
         @Override
         public Modifier getModifier() {
-          return primary.getModifier();
+          return myIsFallback ? fallback.getModifier() : primary.getModifier();
         }
       };
     }
@@ -1089,7 +1095,6 @@ public class EvaluatorBuilderImpl implements EvaluatorBuilder {
 
       if (psiMethod != null) {
         processBoxingConversions(psiMethod.getParameterList().getParameters(), argExpressions, resolveResult.getSubstitutor(), argumentEvaluators);
-        argumentEvaluators = wrapVarargs(psiMethod.getParameterList().getParameters(), argExpressions, resolveResult.getSubstitutor(), argumentEvaluators);
         defaultInterfaceMethod = psiMethod.hasModifierProperty(PsiModifier.DEFAULT);
         mustBeVararg = psiMethod.isVarArgs();
       }
@@ -1319,11 +1324,22 @@ public class EvaluatorBuilderImpl implements EvaluatorBuilder {
 
         if (constructor != null) {
           processBoxingConversions(constructor.getParameterList().getParameters(), argExpressions, constructorResolveResult.getSubstitutor(), argumentEvaluators);
-          argumentEvaluators = wrapVarargs(constructor.getParameterList().getParameters(), argExpressions, constructorResolveResult.getSubstitutor(), argumentEvaluators);
         }
 
-        if (aClass != null && aClass.getContainingClass() != null && !aClass.hasModifierProperty(PsiModifier.STATIC)) {
-          argumentEvaluators = addThisEvaluator(argumentEvaluators, aClass.getContainingClass());
+        if (aClass != null) {
+          PsiClass containingClass = aClass.getContainingClass();
+          if (containingClass != null && !aClass.hasModifierProperty(PsiModifier.STATIC)) {
+            PsiExpression qualifier = expression.getQualifier();
+            if (qualifier != null) {
+              qualifier.accept(this);
+              if (myResult != null) {
+                argumentEvaluators = ArrayUtil.prepend(myResult, argumentEvaluators);
+              }
+            }
+            else {
+              argumentEvaluators = ArrayUtil.prepend(new ThisEvaluator(calcIterationCount(containingClass, "this")), argumentEvaluators);
+            }
+          }
         }
 
         JVMName signature = JVMNameUtil.getJVMConstructorSignature(constructor, aClass);
@@ -1341,14 +1357,6 @@ public class EvaluatorBuilderImpl implements EvaluatorBuilder {
           throwEvaluateException("Unknown type for expression: " + expression.getText());
         }
       }
-    }
-
-    private Evaluator[] addThisEvaluator(Evaluator[] argumentEvaluators, PsiClass cls) {
-      Evaluator[] res = new Evaluator[argumentEvaluators.length+1];
-      int depth = calcIterationCount(cls, "this");
-      res[0] = new ThisEvaluator(depth);
-      System.arraycopy(argumentEvaluators, 0, res, 1, argumentEvaluators.length);
-      return res;
     }
 
     @Override
@@ -1408,34 +1416,6 @@ public class EvaluatorBuilderImpl implements EvaluatorBuilder {
       }
       return new ExpressionEvaluatorImpl(myResult);
     }
-  }
-
-  private static Evaluator[] wrapVarargs(final PsiParameter[] declaredParams,
-                                         final PsiExpression[] actualArgumentExpressions,
-                                         final PsiSubstitutor methodResolveSubstitutor,
-                                         final Evaluator[] argumentEvaluators) {
-    int lastParam = declaredParams.length - 1;
-    if (lastParam >= 0 && declaredParams[lastParam].isVarArgs() && argumentEvaluators.length > lastParam) {
-      // only wrap if the first varargs parameter is null for now
-      if (!TypeConversionUtil.isNullType(actualArgumentExpressions[lastParam].getType())) {
-        return argumentEvaluators;
-      }
-      // do not wrap arrays twice
-      if (argumentEvaluators.length - lastParam == 1 && actualArgumentExpressions[lastParam].getType() instanceof PsiArrayType) {
-        return argumentEvaluators;
-      }
-      PsiEllipsisType declaredParamType = (PsiEllipsisType)methodResolveSubstitutor.substitute(declaredParams[lastParam].getType());
-      ArrayInitializerEvaluator varargArrayEvaluator =
-        new ArrayInitializerEvaluator(Arrays.copyOfRange(argumentEvaluators, lastParam, argumentEvaluators.length));
-      NewArrayInstanceEvaluator evaluator =
-        new NewArrayInstanceEvaluator(new TypeEvaluator(JVMNameUtil.getJVMQualifiedName(declaredParamType.toArrayType())), null,
-                                      varargArrayEvaluator);
-      Evaluator[] res = new Evaluator[declaredParams.length];
-      System.arraycopy(argumentEvaluators, 0, res, 0, lastParam);
-      res[lastParam] = new DisableGC(evaluator);
-      return res;
-    }
-    return argumentEvaluators;
   }
 
   private static void processBoxingConversions(final PsiParameter[] declaredParams,

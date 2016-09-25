@@ -15,64 +15,40 @@
  */
 package com.intellij.codeInspection.ui;
 
-import com.intellij.codeHighlighting.HighlightDisplayLevel;
-import com.intellij.codeInsight.daemon.impl.SeverityRegistrar;
-import com.intellij.codeInspection.InspectionsBundle;
 import com.intellij.codeInspection.reference.RefElement;
 import com.intellij.codeInspection.reference.RefEntity;
-import com.intellij.lang.annotation.HighlightSeverity;
-import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vcs.FileStatus;
 import com.intellij.ui.ColoredTreeCellRenderer;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.SimpleTextAttributes;
-import com.intellij.util.containers.FactoryMap;
-import com.intellij.util.containers.SoftHashMap;
-import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
-import java.util.Comparator;
-import java.util.Locale;
-import java.util.Map;
-import java.util.TreeMap;
 
 /**
  * @author Dmitry Batkovich
  */
 class InspectionTreeCellRenderer extends ColoredTreeCellRenderer {
-  private final static int MAX_LEVEL_TYPES = 5;
-
-  private final Map<HighlightSeverity, String> myPluralizedSeverityNames = new SoftHashMap<>();
-  private final Map<HighlightSeverity, String> myUnpluralizedSeverityNames = new SoftHashMap<>();
-  private final FactoryMap<HighlightDisplayLevel, Integer> myItemCounter;
   private final InspectionResultsView myView;
-  private final SeverityRegistrar myRegistrar;
+  private final InspectionTreeTailRenderer myTailRenderer;
 
   public InspectionTreeCellRenderer(InspectionResultsView view) {
-    myRegistrar = SeverityRegistrar.getSeverityRegistrar(view.getProject());
-    myItemCounter = new FactoryMap<HighlightDisplayLevel, Integer>() {
-      @Nullable
+    myTailRenderer = new InspectionTreeTailRenderer(view.getGlobalInspectionContext()) {
       @Override
-      protected Integer create(HighlightDisplayLevel key) {
-        return 0;
+      protected void appendText(String text, SimpleTextAttributes attributes) {
+        append(text, attributes);
       }
 
       @Override
-      protected Map<HighlightDisplayLevel, Integer> createMap() {
-        return new TreeMap<>(new Comparator<Object>() {
-
-          @Override
-          public int compare(Object o1, Object o2) {
-            return -myRegistrar.compare(((HighlightDisplayLevel) o1).getSeverity(), ((HighlightDisplayLevel) o2).getSeverity());
-          }
-        });
+      protected void appendText(String text) {
+        append(text);
       }
     };
     myView = view;
   }
 
   @Override
-  public void customizeCellRenderer(JTree tree,
+  public void customizeCellRenderer(@NotNull JTree tree,
                                     Object value,
                                     boolean selected,
                                     boolean expanded,
@@ -85,45 +61,15 @@ class InspectionTreeCellRenderer extends ColoredTreeCellRenderer {
            patchMainTextAttrs(node, node.appearsBold()
                                     ? SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES
                                     : getMainForegroundAttributes(node)));
-
-    myItemCounter.clear();
-    node.visitProblemSeverities(myItemCounter);
-    append("  ");
-    final String customizedTailText = node.getCustomizedTailText();
-    if (customizedTailText != null) {
-      append(customizedTailText, SimpleTextAttributes.GRAYED_ATTRIBUTES);
-    }
-    else {
-      if (myItemCounter.size() > MAX_LEVEL_TYPES) {
-        append(InspectionsBundle.message("inspection.problem.descriptor.count",
-                                         myItemCounter.values().stream().reduce(0, (i, j) -> i + j)) + " ",
-               SimpleTextAttributes.GRAYED_ATTRIBUTES);
-      }
-      else {
-        for (Map.Entry<HighlightDisplayLevel, Integer> entry : myItemCounter.entrySet()) {
-          final HighlightDisplayLevel level = entry.getKey();
-          final Integer occur = entry.getValue();
-
-          SimpleTextAttributes attrs = SimpleTextAttributes.GRAY_ATTRIBUTES;
-          if (level == HighlightDisplayLevel.ERROR && !myView.getGlobalInspectionContext().getUIOptions().GROUP_BY_SEVERITY) {
-            attrs = attrs.derive(-1, JBColor.red.brighter(), null, null);
-          }
-          append(occur + " " + getPresentableName(level, occur > 1) + " ", attrs);
-        }
-      }
-    }
-
+    myTailRenderer.appendTailText(node);
     setIcon(node.getIcon(expanded));
-    // do not need reset model (for recalculation of prefered size) when digit number of problemCount is growth
-    // or INVALID marker appears
-    append(StringUtil.repeat(" ", 50));
   }
 
   private SimpleTextAttributes patchMainTextAttrs(InspectionTreeNode node, SimpleTextAttributes attributes) {
     if (node.isExcluded(myView.getExcludedManager())) {
       return attributes.derive(attributes.getStyle() | SimpleTextAttributes.STYLE_STRIKEOUT, null, null, null);
     }
-    if (node instanceof ProblemDescriptionNode && ((ProblemDescriptionNode)node).isQuickFixAppliedFromView()) {
+    if (node instanceof SuppressableInspectionTreeNode && ((SuppressableInspectionTreeNode)node).isQuickFixAppliedFromView()) {
       return attributes.derive(-1, SimpleTextAttributes.GRAYED_ATTRIBUTES.getFgColor(), null, null);
     }
     if (!node.isValid()) {
@@ -132,24 +78,6 @@ class InspectionTreeCellRenderer extends ColoredTreeCellRenderer {
     return attributes;
   }
 
-  private String getPresentableName(HighlightDisplayLevel level, boolean pluralize) {
-    final HighlightSeverity severity = level.getSeverity();
-    if (pluralize) {
-      String name = myPluralizedSeverityNames.get(severity);
-      if (name == null) {
-        final String lowerCaseName = level.getName().toLowerCase(Locale.ENGLISH);
-        name = myPluralizedSeverityNames
-          .put(severity, myRegistrar.isDefaultSeverity(severity) ? StringUtil.pluralize(lowerCaseName) : lowerCaseName);
-      }
-      return name;
-    } else {
-      String name = myUnpluralizedSeverityNames.get(severity);
-      if (name == null) {
-        name = myUnpluralizedSeverityNames.put(severity, level.getName().toLowerCase(Locale.ENGLISH));
-      }
-      return name;
-    }
-  }
 
   private static SimpleTextAttributes getMainForegroundAttributes(InspectionTreeNode node) {
     SimpleTextAttributes foreground = SimpleTextAttributes.REGULAR_ATTRIBUTES;

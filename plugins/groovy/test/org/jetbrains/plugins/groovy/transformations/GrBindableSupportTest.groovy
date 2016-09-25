@@ -25,7 +25,8 @@ import groovy.transform.CompileStatic
 import org.jetbrains.plugins.groovy.SetupRule
 import org.jetbrains.plugins.groovy.lang.psi.GroovyFile
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrCall
-import org.jetbrains.plugins.groovy.lang.resolve.ast.bindable.BindableTransformContributor
+import org.jetbrains.plugins.groovy.lang.resolve.ResolveUtil
+import org.jetbrains.plugins.groovy.transformations.impl.BindableTransformationSupport
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -43,7 +44,7 @@ class GrBindableSupportTest {
   }
 
   @Parameterized.Parameters(name = "{0}")
-  public static Collection<Object[]> data() {
+  static Collection<Object[]> data() {
     [
       '@Bindable on class'               : '@groovy.beans.Bindable class Person {}',
       '@Bindable on class @CompileStatic': '@groovy.transform.CompileStatic @groovy.beans.Bindable class Person {}',
@@ -85,7 +86,8 @@ class GrBindableSupportTest {
       def method = call.resolveMethod() as LightMethodBuilder
       assert method
       assert method.containingClass == clazz
-      assert method.originInfo == BindableTransformContributor.ORIGIN_INFO
+      assert method.originInfo == BindableTransformationSupport.ORIGIN_INFO
+      assert method.getUserData(ResolveUtil.DOCUMENTATION_DELEGATE_FQN)
     }
   }
 
@@ -105,7 +107,7 @@ class GrBindableSupportTest {
       def method = call.resolveMethod() as LightMethodBuilder
       assert method
       assert method.containingClass == clazz
-      assert method.originInfo == BindableTransformContributor.ORIGIN_INFO
+      assert method.originInfo == BindableTransformationSupport.ORIGIN_INFO
     }
   }
 }

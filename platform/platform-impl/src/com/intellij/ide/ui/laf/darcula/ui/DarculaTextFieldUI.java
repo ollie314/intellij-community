@@ -20,6 +20,7 @@ import com.intellij.openapi.ui.GraphicsConfig;
 import com.intellij.openapi.util.IconLoader;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.ui.Gray;
+import com.intellij.ui.paint.RectanglePainter;
 import com.intellij.util.ui.JBInsets;
 import com.intellij.util.ui.JBUI;
 
@@ -73,7 +74,7 @@ public class DarculaTextFieldUI extends TextFieldWithPopupHandlerUI {
     final JTextComponent c = myTextField;
     final JBInsets i = JBInsets.create(c.getInsets());
     final int x = i.right - JBUI.scale(4) - JBUI.scale(16);
-    final int y = i.top - 3;
+    final int y = i.top - JBUI.scale(3);
     final int w = c.getWidth() - i.width() + JBUI.scale(16*2 +7*2  - 5);
     int h = c.getBounds().height - i.height() + JBUI.scale(4*2 - 3);
     if (h%2==1) h++;
@@ -130,17 +131,19 @@ public class DarculaTextFieldUI extends TextFieldWithPopupHandlerUI {
   }
 
   protected void paintSearchField(Graphics2D g, JTextComponent c, Rectangle r) {
-    g.setColor(c.getBackground());
     final boolean noBorder = c.getClientProperty("JTextField.Search.noBorderRing") == Boolean.TRUE;
     int radius = r.height-1;
-    g.fillRoundRect(r.x, r.y+1, r.width, r.height - (noBorder ? 2 : 1), radius, radius);
-    g.setColor(c.isEnabled() ? Gray._100 : Gray._83);
-    if (!noBorder) {
-      if (c.hasFocus()) {
-          DarculaUIUtil.paintSearchFocusRing(g, r);
-      } else {
-        g.drawRoundRect(r.x, r.y, r.width, r.height-1, radius, radius);
-      }
+    if (noBorder) {
+      g.setColor(c.getBackground());
+      RectanglePainter.FILL.paint(g, r.x, r.y, r.width, r.height, radius);
+    }
+    else if (c.hasFocus()) {
+      g.setColor(c.getBackground());
+      RectanglePainter.FILL.paint(g, r.x, r.y, r.width, r.height, radius);
+      DarculaUIUtil.paintSearchFocusRing(g, r);
+    }
+    else {
+      RectanglePainter.paint(g, r.x, r.y, r.width, r.height, radius, c.getBackground(), c.isEnabled() ? Gray._100 : Gray._83);
     }
     Point p = getSearchIconCoord();
     Icon searchIcon = myTextField.getClientProperty("JTextField.Search.FindPopup") instanceof JPopupMenu ? UIManager.getIcon("TextField.darcula.searchWithHistory.icon") : UIManager.getIcon("TextField.darcula.search.icon");

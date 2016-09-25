@@ -94,7 +94,8 @@ public class SurroundWithHandler implements CodeInsightActionHandler {
   @Nullable
   public static List<AnAction> buildSurroundActions(final Project project, final Editor editor, PsiFile file, @Nullable Surrounder surrounder){
     SelectionModel selectionModel = editor.getSelectionModel();
-    if (!selectionModel.hasSelection()) {
+    boolean hasSelection = selectionModel.hasSelection();
+    if (!hasSelection) {
       selectionModel.selectLineAtCaret();
     }
     int startOffset = selectionModel.getSelectionStart();
@@ -109,7 +110,7 @@ public class SurroundWithHandler implements CodeInsightActionHandler {
 
     TextRange textRange = new TextRange(startOffset, endOffset);
     for(SurroundWithRangeAdjuster adjuster: Extensions.getExtensions(SurroundWithRangeAdjuster.EP_NAME)) {
-      textRange = adjuster.adjustSurroundWithRange(file, textRange);
+      textRange = adjuster.adjustSurroundWithRange(file, textRange, hasSelection);
       if (textRange == null) return null;
     }
     startOffset = textRange.getStartOffset();
@@ -119,14 +120,14 @@ public class SurroundWithHandler implements CodeInsightActionHandler {
     final Language baseLanguage = file.getViewProvider().getBaseLanguage();
     assert element1 != null;
     final Language l = element1.getParent().getLanguage();
-    List<SurroundDescriptor> surroundDescriptors = new ArrayList<SurroundDescriptor>();
+    List<SurroundDescriptor> surroundDescriptors = new ArrayList<>();
 
     surroundDescriptors.addAll(LanguageSurrounders.INSTANCE.allForLanguage(l));
     if (l != baseLanguage) surroundDescriptors.addAll(LanguageSurrounders.INSTANCE.allForLanguage(baseLanguage));
     surroundDescriptors.add(CustomFoldingSurroundDescriptor.INSTANCE);
 
     int exclusiveCount = 0;
-    List<SurroundDescriptor> exclusiveSurroundDescriptors = new ArrayList<SurroundDescriptor>();
+    List<SurroundDescriptor> exclusiveSurroundDescriptors = new ArrayList<>();
     for (SurroundDescriptor sd : surroundDescriptors) {
       if (sd.isExclusive()) {
         exclusiveCount++;
@@ -225,10 +226,10 @@ public class SurroundWithHandler implements CodeInsightActionHandler {
                                                      Editor editor,
                                                      PsiFile file,
                                                      Map<Surrounder, PsiElement[]> surrounders) {
-    final List<AnAction> applicable = new ArrayList<AnAction>();
+    final List<AnAction> applicable = new ArrayList<>();
     boolean hasEnabledSurrounders = false;
 
-    Set<Character> usedMnemonicsSet = new HashSet<Character>();
+    Set<Character> usedMnemonicsSet = new HashSet<>();
 
     int index = 0;
     for (Map.Entry<Surrounder, PsiElement[]> entry : surrounders.entrySet()) {

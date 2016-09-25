@@ -16,10 +16,12 @@
 package org.jetbrains.plugins.javaFX.fxml.refs;
 
 import com.intellij.psi.*;
+import com.intellij.psi.impl.source.resolve.reference.impl.providers.AttributeValueSelfReference;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.util.InheritanceUtil;
 import com.intellij.psi.xml.*;
 import com.intellij.util.ArrayUtil;
+import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.ProcessingContext;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -50,7 +52,9 @@ public class JavaFxFieldIdReferenceProvider extends JavaFxControllerBasedReferen
         }
       }
     }
-    return new PsiReference[]{new JavaFxControllerFieldRef(xmlAttributeValue, fieldOrGetterMethod, aClass)};
+    return new PsiReference[]{
+      new JavaFxControllerFieldRef(xmlAttributeValue, fieldOrGetterMethod, aClass),
+      new AttributeValueSelfReference(xmlAttributeValue)};
   }
 
   public static class JavaFxControllerFieldRef extends PsiReferenceBase<XmlAttributeValue> {
@@ -95,7 +99,7 @@ public class JavaFxFieldIdReferenceProvider extends JavaFxControllerBasedReferen
       final PsiClass exactTagClass = JavaFxPsiUtil.getTagClass(myXmlAttributeValue);
       final PsiClass guessedTagClass = exactTagClass == null ? getGuessedTagClass() : null;
 
-      final List<Object> fieldsToSuggest = new ArrayList<Object>();
+      final List<Object> fieldsToSuggest = new ArrayList<>();
       final PsiField[] fields = myAClass.getAllFields();
       for (PsiField psiField : fields) {
         if (!psiField.hasModifierProperty(PsiModifier.STATIC)) {
@@ -117,6 +121,12 @@ public class JavaFxFieldIdReferenceProvider extends JavaFxControllerBasedReferen
         }
       }
       return ArrayUtil.toObjectArray(fieldsToSuggest);
+    }
+
+    @Override
+    public PsiElement handleElementRename(String newElementName) throws IncorrectOperationException {
+      final String newPropertyName = JavaFxPsiUtil.getPropertyName(newElementName, myFieldOrMethod instanceof PsiMethod);
+      return super.handleElementRename(newPropertyName);
     }
 
     private PsiClass getGuessedTagClass() {

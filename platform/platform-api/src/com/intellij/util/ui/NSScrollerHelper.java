@@ -36,23 +36,13 @@ class NSScrollerHelper {
   private static final Callback APPEARANCE_CALLBACK = new Callback() {
     @SuppressWarnings("UnusedDeclaration")
     public void callback(ID self, Pointer selector, ID event) {
-      UIUtil.invokeLaterIfNeeded(new Runnable() {
-        @Override
-        public void run() {
-          fireStyleChanged();
-        }
-      });
+      UIUtil.invokeLaterIfNeeded(() -> fireStyleChanged());
     }
   };
   private static final Callback BEHAVIOR_CALLBACK = new Callback() {
     @SuppressWarnings("UnusedDeclaration")
     public void callback(ID self, Pointer selector, ID event) {
-      UIUtil.invokeLaterIfNeeded(new Runnable() {
-        @Override
-        public void run() {
-          updateBehaviorPreferences();
-        }
-      });
+      UIUtil.invokeLaterIfNeeded(() -> updateBehaviorPreferences());
     }
   };
 
@@ -177,7 +167,7 @@ class NSScrollerHelper {
         }
       }
       if (toAdd != null) {
-        ourStyleListeners.add(new WeakReference<ScrollbarStyleListener>(toAdd));
+        ourStyleListeners.add(new WeakReference<>(toAdd));
       }
     }
   }

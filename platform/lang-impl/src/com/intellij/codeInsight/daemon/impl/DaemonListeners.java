@@ -57,6 +57,7 @@ import com.intellij.openapi.roots.ModuleRootEvent;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.UserDataHolderEx;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.vcs.*;
 import com.intellij.openapi.vcs.changes.VcsDirtyScopeManager;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -235,8 +236,11 @@ public class DaemonListeners implements Disposable {
         Project editorProject = editor.getProject();
         // worthBothering() checks for getCachedPsiFile, so call getPsiFile here
         PsiFile file = editorProject == null ? null : PsiDocumentManager.getInstance(editorProject).getPsiFile(document);
-        if (!editor.getComponent().isShowing() || !worthBothering(document, editorProject)) {
-          LOG.debug("Not worth: " + file);
+        boolean showing = editor.getComponent().isShowing();
+        boolean worthBothering = worthBothering(document, editorProject);
+        if (!showing || !worthBothering) {
+          LOG.debug("Not worth bothering about editor created for : " + file + " because editor isShowing(): " +
+                    showing + "; project is open and file is mine: " + worthBothering);
           return;
         }
         repaintErrorStripeRenderer(editor, myProject);
@@ -275,14 +279,17 @@ public class DaemonListeners implements Disposable {
     });
 
     connection.subscribe(PowerSaveMode.TOPIC, () -> stopDaemon(true, "Power save mode change"));
-
-    editorColorsManager.addEditorColorsListener(scheme -> stopDaemonAndRestartAllFiles("Global color scheme changed"), this);
+    connection.subscribe(EditorColorsManager.TOPIC, new EditorColorsListener() {
+      @Override
+      public void globalSchemeChange(EditorColorsScheme scheme) {
+        stopDaemonAndRestartAllFiles("Editor color scheme changed");
+      }
+    });
 
     commandProcessor.addCommandListener(new MyCommandListener(), this);
     application.addApplicationListener(new MyApplicationListener(), this);
-    editorColorsManager.addEditorColorsListener(new MyEditorColorsListener(), this);
     inspectionProfileManager.addProfileChangeListener(new MyProfileChangeListener(), this);
-    inspectionProjectProfileManager.addProfilesListener(new MyProfileChangeListener(), this);
+    inspectionProjectProfileManager.addProfileChangeListener(new MyProfileChangeListener(), this);
     todoConfiguration.addPropertyChangeListener(new MyTodoListener(), this);
     todoConfiguration.colorSettingsChanged();
     actionManagerEx.addAnActionListener(new MyAnActionListener(), this);
@@ -322,8 +329,8 @@ public class DaemonListeners implements Disposable {
 
     ModalityStateListener modalityStateListener = entering -> {
       // before showing dialog we are in non-modal context yet, and before closing dialog we are still in modal context
-      boolean inModalContext = LaterInvocator.isInModalContext();
-      stopDaemon(inModalContext, "Modality change. Was modal: "+inModalContext);
+      boolean inModalContext = Registry.is("ide.perProjectModality") || LaterInvocator.isInModalContext();
+      stopDaemon(inModalContext, "Modality change. Was modal: " + inModalContext);
       myDaemonCodeAnalyzer.setUpdateByTimerEnabled(inModalContext);
     };
     LaterInvocator.addModalityStateListener(modalityStateListener,this);
@@ -340,7 +347,7 @@ public class DaemonListeners implements Disposable {
       });
     }
   }
-  
+
   static boolean isUnderIgnoredAction(@Nullable Object action) {
     return action instanceof DocumentRunnable.IgnoreDocumentRunnable ||
            action == DocumentRunnable.IgnoreDocumentRunnable.class ||
@@ -420,7 +427,7 @@ public class DaemonListeners implements Disposable {
   }
 
   private class MyCommandListener extends CommandAdapter {
-    private final Object myCutActionName = myActionManager.getAction(IdeActions.ACTION_EDITOR_CUT).getTemplatePresentation().getText();
+    private final String myCutActionName = myActionManager.getAction(IdeActions.ACTION_EDITOR_CUT).getTemplatePresentation().getText();
 
     @Override
     public void commandStarted(CommandEvent event) {
@@ -472,14 +479,6 @@ public class DaemonListeners implements Disposable {
     }
   }
 
-  private class MyEditorColorsListener implements EditorColorsListener {
-    @Override
-    public void globalSchemeChange(EditorColorsScheme scheme) {
-      TodoConfiguration.getInstance().colorSettingsChanged();
-      stopDaemonAndRestartAllFiles("Editor color scheme changed");
-    }
-  }
-
   private class MyTodoListener implements PropertyChangeListener {
     @Override
     public void propertyChange(@NotNull PropertyChangeEvent evt) {
@@ -489,14 +488,14 @@ public class DaemonListeners implements Disposable {
     }
   }
 
-  private class MyProfileChangeListener extends ProfileChangeAdapter {
+  private class MyProfileChangeListener implements ProfileChangeAdapter {
     @Override
     public void profileChanged(Profile profile) {
       stopDaemonAndRestartAllFiles("Profile changed");
     }
 
     @Override
-    public void profileActivated(Profile oldProfile, Profile profile) {
+    public void profileActivated(Profile oldProfile, @Nullable Profile profile) {
       stopDaemonAndRestartAllFiles("Profile activated");
     }
 

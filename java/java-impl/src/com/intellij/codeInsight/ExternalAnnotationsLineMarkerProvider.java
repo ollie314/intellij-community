@@ -53,28 +53,25 @@ import java.util.Collection;
 import java.util.List;
 
 public class ExternalAnnotationsLineMarkerProvider extends LineMarkerProviderDescriptor {
-  private static final Function<PsiElement, String> ourTooltipProvider = new Function<PsiElement, String>() {
-    @Override
-    public String fun(PsiElement nameIdentifier) {
-      PsiModifierListOwner owner = (PsiModifierListOwner)nameIdentifier.getParent();
-      
-      boolean hasInferred = false;
-      boolean hasExternal = false;
-      for (PsiAnnotation annotation : findSignatureNonCodeAnnotations(owner, true)) {
-        hasExternal |= AnnotationUtil.isExternalAnnotation(annotation);
-        hasInferred |= AnnotationUtil.isInferredAnnotation(annotation);
-      }
-      
-      String header;
-      if (hasInferred && hasExternal) {
-        header = "External and <i>inferred</i>";
-      } else if (hasInferred) {
-        header = "<i>Inferred</i>";
-      } else {
-        header = "External";
-      }
-      return XmlStringUtil.wrapInHtml(header + " annotations available. Full signature:<p>\n" + JavaDocInfoGenerator.generateSignature(owner));
+  private static final Function<PsiElement, String> ourTooltipProvider = nameIdentifier -> {
+    PsiModifierListOwner owner = (PsiModifierListOwner)nameIdentifier.getParent();
+
+    boolean hasInferred = false;
+    boolean hasExternal = false;
+    for (PsiAnnotation annotation : findSignatureNonCodeAnnotations(owner, true)) {
+      hasExternal |= AnnotationUtil.isExternalAnnotation(annotation);
+      hasInferred |= AnnotationUtil.isInferredAnnotation(annotation);
     }
+
+    String header;
+    if (hasInferred && hasExternal) {
+      header = "External and <i>inferred</i>";
+    } else if (hasInferred) {
+      header = "<i>Inferred</i>";
+    } else {
+      header = "External";
+    }
+    return XmlStringUtil.wrapInHtml(header + " annotations available. Full signature:<p>\n" + JavaDocInfoGenerator.generateSignature(owner));
   };
 
   @Nullable
@@ -88,7 +85,7 @@ public class ExternalAnnotationsLineMarkerProvider extends LineMarkerProviderDes
 
     return new LineMarkerInfo<PsiElement>(element, element.getTextRange(),
                                           AllIcons.Gutter.ExtAnnotation,
-                                          Pass.UPDATE_ALL,
+                                          Pass.LINE_MARKERS,
                                           ourTooltipProvider, MyIconGutterHandler.INSTANCE,
                                           GutterIconRenderer.Alignment.RIGHT);
   }

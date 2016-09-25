@@ -36,6 +36,9 @@ import java.util.*;
 
 public class MavenModelConverter {
   public static MavenModel convertModel(Model model, File localRepository) throws RemoteException {
+    if(model.getBuild() == null) {
+      model.setBuild(new Build());
+    }
     Build build = model.getBuild();
     return convertModel(model,
                         asSourcesList(build.getSourceDirectory()),
@@ -148,11 +151,11 @@ public class MavenModelConverter {
                                                      File localRepository) {
     if (artifacts == null) return new ArrayList<MavenArtifact>();
 
-    List<MavenArtifact> result = new ArrayList<MavenArtifact>(artifacts.size());
+    Set<MavenArtifact> result = new LinkedHashSet<MavenArtifact>(artifacts.size());
     for (Artifact each : artifacts) {
       result.add(convertArtifact(each, nativeToConvertedMap, localRepository));
     }
-    return result;
+    return new ArrayList<MavenArtifact>(result);
   }
 
   public static List<MavenArtifactNode> convertDependencyNodes(MavenArtifactNode parent,

@@ -17,8 +17,6 @@ package com.intellij.openapi.updateSettings.impl;
 
 import com.intellij.CommonBundle;
 import com.intellij.ide.IdeBundle;
-import com.intellij.openapi.application.ex.ApplicationEx;
-import com.intellij.openapi.application.ex.ApplicationManagerEx;
 import com.intellij.openapi.options.ShowSettingsUtil;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.ui.ColorUtil;
@@ -38,16 +36,8 @@ import java.awt.*;
 public abstract class AbstractUpdateDialog extends DialogWrapper {
   private final boolean myEnableLink;
 
-  protected String myLicenseInfo = null;
-
   protected AbstractUpdateDialog(boolean enableLink) {
     super(true);
-    myEnableLink = enableLink;
-    setTitle(IdeBundle.message("update.notifications.title"));
-  }
-
-  protected AbstractUpdateDialog(Component parent, boolean enableLink) {
-    super(parent, true);
     myEnableLink = enableLink;
     setTitle(IdeBundle.message("update.notifications.title"));
   }
@@ -65,12 +55,6 @@ public abstract class AbstractUpdateDialog extends DialogWrapper {
 
   protected String getCancelButtonText() {
     return CommonBundle.getCancelButtonText();
-  }
-
-  protected void restart() {
-    // do not stack several modal dialogs (native & swing)
-    ApplicationEx app = ApplicationManagerEx.getApplicationEx();
-    app.invokeLater(() -> app.restart(true));
   }
 
   protected void configureMessageArea(@NotNull JEditorPane area) {

@@ -16,8 +16,8 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.plugins.github.api.GithubApiUtil;
 import org.jetbrains.plugins.github.api.GithubConnection;
-import org.jetbrains.plugins.github.api.GithubIssue;
-import org.jetbrains.plugins.github.api.GithubIssueComment;
+import org.jetbrains.plugins.github.api.data.GithubIssue;
+import org.jetbrains.plugins.github.api.data.GithubIssueComment;
 import org.jetbrains.plugins.github.exceptions.*;
 import org.jetbrains.plugins.github.util.GithubAuthData;
 import org.jetbrains.plugins.github.util.GithubUtil;
@@ -146,9 +146,7 @@ public class GithubRepository extends BaseRepositoryImpl {
           GithubApiUtil.getIssuesQueried(connection, getRepoAuthor(), getRepoName(), assigned, query, withClosed);
       }
 
-      return ContainerUtil.map2Array(issues, Task.class, issue -> {
-        return createTask(issue);
-      });
+      return ContainerUtil.map2Array(issues, Task.class, issue -> createTask(issue));
     }
     finally {
       connection.close();
@@ -242,11 +240,11 @@ public class GithubRepository extends BaseRepositoryImpl {
     try {
       List<GithubIssueComment> result = GithubApiUtil.getIssueComments(connection, getRepoAuthor(), getRepoName(), id);
 
-      return ContainerUtil.map2Array(result, Comment.class, comment -> {
-        return new GithubComment(comment.getCreatedAt(), comment.getUser().getLogin(), comment.getBodyHtml(),
-                                 comment.getUser().getAvatarUrl(),
-                                 comment.getUser().getHtmlUrl());
-      });
+      return ContainerUtil.map2Array(result, Comment.class, comment -> new GithubComment(comment.getCreatedAt(),
+                                                                                         comment.getUser().getLogin(),
+                                                                                         comment.getBodyHtml(),
+                                                                                         comment.getUser().getAvatarUrl(),
+                                                                                         comment.getUser().getHtmlUrl()));
     }
     finally {
       connection.close();

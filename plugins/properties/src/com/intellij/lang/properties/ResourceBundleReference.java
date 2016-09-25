@@ -41,12 +41,7 @@ import java.util.Set;
 public class ResourceBundleReference extends PsiReferenceBase<PsiElement>
   implements PsiPolyVariantReference, BundleNameEvaluator, ResolvingHint {
   private static final Function<PropertiesFile, PsiElement> PROPERTIES_FILE_PSI_ELEMENT_FUNCTION =
-    new Function<PropertiesFile, PsiElement>() {
-      @Override
-      public PsiElement fun(PropertiesFile propertiesFile) {
-        return propertiesFile.getContainingFile();
-      }
-    };
+    PropertiesFile::getContainingFile;
   private final String myBundleName;
 
   public ResourceBundleReference(final PsiElement element) {
@@ -105,7 +100,7 @@ public class ResourceBundleReference extends PsiReferenceBase<PsiElement>
       throw new IncorrectOperationException();
     }
     final String name = ResourceBundleManager.getInstance(element.getProject()).getFullName((PropertiesFile)element);
-    return super.handleElementRename(name);
+    return name != null ? super.handleElementRename(name) : element;
   }
 
 
@@ -124,8 +119,8 @@ public class ResourceBundleReference extends PsiReferenceBase<PsiElement>
     final ProjectFileIndex projectFileIndex = ProjectFileIndex.SERVICE.getInstance(getElement().getProject());
     final PropertiesReferenceManager referenceManager = PropertiesReferenceManager.getInstance(getElement().getProject());
 
-    final Set<String> bundleNames = new HashSet<String>();
-    final List<LookupElement> variants = new SmartList<LookupElement>();
+    final Set<String> bundleNames = new HashSet<>();
+    final List<LookupElement> variants = new SmartList<>();
     PropertiesFileProcessor processor = new PropertiesFileProcessor() {
       @Override
       public boolean process(String baseName, PropertiesFile propertiesFile) {

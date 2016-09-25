@@ -21,12 +21,15 @@ import com.intellij.openapi.editor.LogicalPosition;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.testFramework.EditorTestUtil;
+import com.intellij.testFramework.EdtTestUtil;
 import com.jetbrains.env.PyEnvTestCase;
+import com.jetbrains.env.Staging;
 import com.jetbrains.env.python.debug.PyDebuggerTask;
 import com.jetbrains.python.PyBundle;
 import com.jetbrains.python.codeInsight.PyCodeInsightSettings;
 import com.jetbrains.python.debugger.PyDebuggerOptionsProvider;
 import com.jetbrains.python.debugger.PySignatureCacheManagerImpl;
+import org.junit.Test;
 
 import java.io.IOException;
 
@@ -35,16 +38,15 @@ import java.io.IOException;
  */
 
 public class PyDynamicTypesTest extends PyEnvTestCase {
+  
+  @Staging
+  @Test
   public void test1() throws Exception {
     doTest(getTestName(true) + ".py");
   }
 
   private void doTest(final String scriptName) {
     runPythonTest(new PyDebuggerTask("/" + "dynamicTypes", scriptName) {
-      @Override
-      public void setUp(String testName) throws Exception {
-        super.setUp(testName);
-      }
 
       @Override
       public void before() throws Exception {
@@ -73,7 +75,7 @@ public class PyDynamicTypesTest extends PyEnvTestCase {
       public void testing() throws Exception {
         waitForTerminate();
 
-        edt(() -> {
+        EdtTestUtil.runInEdtAndWait(() -> {
           myFixture.configureByFile("dynamicTypes/" + scriptName);
 
           try {

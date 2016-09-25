@@ -4,7 +4,6 @@ import com.google.common.collect.Lists;
 import com.google.gson.*;
 import com.google.gson.annotations.SerializedName;
 import com.google.gson.stream.JsonWriter;
-import com.intellij.execution.ExecutionException;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.module.Module;
@@ -16,7 +15,7 @@ import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.text.VersionComparatorUtil;
 import com.jetbrains.python.packaging.PyPackage;
-import com.jetbrains.python.packaging.PyPackageManager;
+import com.jetbrains.python.packaging.PyPackageUtil;
 import com.jetbrains.python.sdk.PythonSdkType;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -54,7 +53,7 @@ public class IpnbParser {
       int nbformat = isIpythonNewFormat(virtualFile) ? 4 : 3;
       return new IpnbFile(Collections.emptyMap(), nbformat, Lists.newArrayList(), path);
     }
-    List<IpnbCell> cells = new ArrayList<IpnbCell>();
+    List<IpnbCell> cells = new ArrayList<>();
     final IpnbWorksheet[] worksheets = rawFile.worksheets;
     if (worksheets == null) {
       for (IpnbCellRaw rawCell : rawFile.cells) {
@@ -79,14 +78,12 @@ public class IpnbParser {
       if (module != null) {
         final Sdk sdk = PythonSdkType.findPythonSdk(module);
         if (sdk != null) {
-          try {
-            final PyPackage ipython = PyPackageManager.getInstance(sdk).findPackage("ipython", true);
-            final PyPackage jupyter = PyPackageManager.getInstance(sdk).findPackage("jupyter", true);
-            if (jupyter == null && ipython != null && VersionComparatorUtil.compare(ipython.getVersion(), "3.0") <= 0) {
-              return false;
-            }
-          }
-          catch (ExecutionException ignored) {
+          // It should be called first before IpnbConnectionManager#startIpythonServer()
+          final List<PyPackage> packages = PyPackageUtil.refreshAndGetPackagesModally(sdk);
+          final PyPackage ipython = packages != null ? PyPackageUtil.findPackage(packages, "ipython") : null;
+          final PyPackage jupyter = packages != null ? PyPackageUtil.findPackage(packages, "jupyter") : null;
+          if (jupyter == null && ipython != null && VersionComparatorUtil.compare(ipython.getVersion(), "3.0") <= 0) {
+            return false;
           }
         }
       }
@@ -164,21 +161,21 @@ public class IpnbParser {
   @SuppressWarnings("unused")
   public static class IpnbFileRaw {
     IpnbWorksheet[] worksheets;
-    List<IpnbCellRaw> cells = new ArrayList<IpnbCellRaw>();
-    Map<String, Object> metadata = new HashMap<String, Object>();
+    List<IpnbCellRaw> cells = new ArrayList<>();
+    Map<String, Object> metadata = new HashMap<>();
     int nbformat = 4;
     int nbformat_minor;
   }
 
   private static class IpnbWorksheet {
-    List<IpnbCellRaw> cells = new ArrayList<IpnbCellRaw>();
+    List<IpnbCellRaw> cells = new ArrayList<>();
   }
 
   @SuppressWarnings("unused")
   private static class IpnbCellRaw {
     String cell_type;
     Integer execution_count;
-    Map<String, Object> metadata = new HashMap<String, Object>();
+    Map<String, Object> metadata = new HashMap<>();
     Integer level;
     List<CellOutputRaw> outputs;
     List<String> source;
@@ -197,7 +194,7 @@ public class IpnbParser {
       }
       else if (cell instanceof IpnbCodeCell) {
         raw.cell_type = "code";
-        final ArrayList<CellOutputRaw> outputRaws = new ArrayList<CellOutputRaw>();
+        final ArrayList<CellOutputRaw> outputRaws = new ArrayList<>();
         for (IpnbOutputCell outputCell : ((IpnbCodeCell)cell).getCellOutputs()) {
           outputRaws.add(CellOutputRaw.fromOutput(outputCell, nbformat));
         }
@@ -231,7 +228,7 @@ public class IpnbParser {
         cell = new IpnbMarkdownCell(source, metadata);
       }
       else if (cell_type.equals("code")) {
-        final List<IpnbOutputCell> outputCells = new ArrayList<IpnbOutputCell>();
+        final List<IpnbOutputCell> outputCells = new ArrayList<>();
         for (CellOutputRaw outputRaw : outputs) {
           outputCells.add(outputRaw.createOutput());
         }

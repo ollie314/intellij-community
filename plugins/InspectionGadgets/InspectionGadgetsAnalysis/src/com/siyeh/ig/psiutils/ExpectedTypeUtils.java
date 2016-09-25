@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2015 Dave Griffith, Bas Leijdekkers
+ * Copyright 2003-2016 Dave Griffith, Bas Leijdekkers
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,13 +60,13 @@ public class ExpectedTypeUtils {
     /**
      * @noinspection StaticCollection
      */
-    private static final Set<IElementType> arithmeticOps = new THashSet<IElementType>(5);
+    private static final Set<IElementType> arithmeticOps = new THashSet<>(5);
 
-    private static final Set<IElementType> booleanOps = new THashSet<IElementType>(5);
+    private static final Set<IElementType> booleanOps = new THashSet<>(5);
 
-    private static final Set<IElementType> shiftOps = new THashSet<IElementType>(3);
+    private static final Set<IElementType> shiftOps = new THashSet<>(3);
 
-    private static final Set<IElementType> operatorAssignmentOps = new THashSet<IElementType>(11);
+    private static final Set<IElementType> operatorAssignmentOps = new THashSet<>(11);
 
     static {
       arithmeticOps.add(JavaTokenType.PLUS);
@@ -439,8 +439,8 @@ public class ExpectedTypeUtils {
     @NotNull
     private static JavaResolveResult findCalledMethod(PsiExpressionList expressionList) {
       final PsiElement parent = expressionList.getParent();
-      if (parent instanceof PsiCallExpression) {
-        final PsiCallExpression call = (PsiCallExpression)parent;
+      if (parent instanceof PsiCall) {
+        final PsiCall call = (PsiCall)parent;
         return call.resolveMethodGenerics();
       }
       else if (parent instanceof PsiAnonymousClass) {

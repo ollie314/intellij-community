@@ -61,8 +61,8 @@ import java.util.Set;
 public class PsiReferenceExpressionImpl extends PsiReferenceExpressionBase implements PsiReferenceExpression, SourceJavaCodeReference {
   private static final Logger LOG = Logger.getInstance("#com.intellij.psi.impl.source.tree.java.PsiReferenceExpressionImpl");
 
-  private volatile String myCachedQName = null;
-  private volatile String myCachedNormalizedText = null;
+  private volatile String myCachedQName;
+  private volatile String myCachedNormalizedText;
 
   public PsiReferenceExpressionImpl() {
     super(JavaElementType.REFERENCE_EXPRESSION);
@@ -91,6 +91,7 @@ public class PsiReferenceExpressionImpl extends PsiReferenceExpressionBase imple
     boolean doImportStatic;
     if (containingFile instanceof PsiJavaFile) {
       importList = ((PsiJavaFile)containingFile).getImportList();
+      assert importList != null : containingFile;
       PsiImportStatementBase singleImportStatement = importList.findSingleImportStatement(staticName);
       doImportStatic = singleImportStatement == null;
       if (singleImportStatement instanceof PsiImportStaticStatement) {
@@ -116,8 +117,8 @@ public class PsiReferenceExpressionImpl extends PsiReferenceExpressionBase imple
     return this;
   }
 
-  public static void bindToElementViaStaticImport(final PsiClass qualifierClass, final String staticName, final PsiImportList importList)
-    throws IncorrectOperationException {
+  public static void bindToElementViaStaticImport(PsiClass qualifierClass, String staticName, PsiImportList importList) throws IncorrectOperationException {
+    assert importList != null;
     final String qualifiedName  = qualifierClass.getQualifiedName();
     final List<PsiJavaCodeReferenceElement> refs = getImportsFromClass(importList, qualifiedName);
     if (refs.size() < JavaCodeStyleSettingsFacade.getInstance(qualifierClass.getProject()).getNamesCountToUseImportOnDemand()) {
@@ -349,7 +350,7 @@ public class PsiReferenceExpressionImpl extends PsiReferenceExpressionBase imple
   @NotNull
   public String getCanonicalText() {
     final PsiElement element = resolve();
-    if (element instanceof PsiClass && !(element instanceof PsiTypeParameter)) {
+    if (element instanceof PsiClass) {
       final String fqn = ((PsiClass)element).getQualifiedName();
       if (fqn != null) return fqn;
     }

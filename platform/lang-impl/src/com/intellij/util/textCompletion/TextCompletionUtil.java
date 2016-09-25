@@ -58,7 +58,7 @@ public class TextCompletionUtil {
       KeymapUtil.getFirstKeyboardShortcutText(ActionManager.getInstance().getAction(IdeActions.ACTION_CODE_COMPLETION));
     if (!StringUtil.isEmpty(completionShortcutText)) {
 
-      final Ref<Boolean> toShowHintRef = new Ref<Boolean>(true);
+      final Ref<Boolean> toShowHintRef = new Ref<>(true);
       editor.getDocument().addDocumentListener(new DocumentAdapter() {
         @Override
         public void documentChanged(DocumentEvent e) {
@@ -70,12 +70,8 @@ public class TextCompletionUtil {
         @Override
         public void focusGained(final Editor editor) {
           if (toShowHintRef.get() && editor.getDocument().getText().isEmpty()) {
-            ApplicationManager.getApplication().invokeLater(new Runnable() {
-              @Override
-              public void run() {
-                HintManager.getInstance().showInformationHint(editor, "Code completion available ( " + completionShortcutText + " )");
-              }
-            });
+            ApplicationManager.getApplication().invokeLater(
+              () -> HintManager.getInstance().showInformationHint(editor, "Code completion available ( " + completionShortcutText + " )"));
           }
         }
 

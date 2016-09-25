@@ -18,7 +18,6 @@ package com.intellij.openapi.vfs.newvfs.impl;
 import com.intellij.ide.ui.UISettings;
 import com.intellij.openapi.fileEditor.impl.LoadTextUtil;
 import com.intellij.openapi.util.Key;
-import com.intellij.openapi.util.ThrowableComputable;
 import com.intellij.openapi.util.io.FileTooBigException;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.vfs.LocalFileSystem;
@@ -98,7 +97,11 @@ public abstract class VirtualFileSystemEntry extends NewVirtualFile {
   @NotNull
   @Override
   public CharSequence getNameSequence() {
-    return FileNameCache.getVFileName(mySegment.getNameId(myId));
+    return FileNameCache.getVFileName(getNameId());
+  }
+
+  public final int getNameId() {
+    return mySegment.getNameId(myId);
   }
 
   @Override
@@ -250,12 +253,7 @@ public abstract class VirtualFileSystemEntry extends NewVirtualFile {
       throw new IOException(VfsBundle.message("file.copy.target.must.be.directory"));
     }
 
-    return EncodingRegistry.doActionAndRestoreEncoding(this, new ThrowableComputable<VirtualFile, IOException>() {
-      @Override
-      public VirtualFile compute() throws IOException {
-        return ourPersistence.copyFile(requestor, VirtualFileSystemEntry.this, newParent, copyName);
-      }
-    });
+    return EncodingRegistry.doActionAndRestoreEncoding(this, () -> ourPersistence.copyFile(requestor, this, newParent, copyName));
   }
 
   @Override
@@ -264,12 +262,9 @@ public abstract class VirtualFileSystemEntry extends NewVirtualFile {
       throw new IOException(VfsBundle.message("file.move.error", newParent.getPresentableUrl()));
     }
 
-    EncodingRegistry.doActionAndRestoreEncoding(this, new ThrowableComputable<VirtualFile, IOException>() {
-      @Override
-      public VirtualFile compute() throws IOException {
-        ourPersistence.moveFile(requestor, VirtualFileSystemEntry.this, newParent);
-        return VirtualFileSystemEntry.this;
-      }
+    EncodingRegistry.doActionAndRestoreEncoding(this, () -> {
+      ourPersistence.moveFile(requestor, this, newParent);
+      return this;
     });
   }
 

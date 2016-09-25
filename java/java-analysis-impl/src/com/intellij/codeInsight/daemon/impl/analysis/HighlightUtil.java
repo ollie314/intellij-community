@@ -32,10 +32,14 @@ import com.intellij.lang.findUsages.LanguageFindUsages;
 import com.intellij.lang.java.JavaLanguage;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.extensions.Extensions;
+import com.intellij.openapi.module.EffectiveLanguageLevelUtil;
 import com.intellij.openapi.module.Module;
+import com.intellij.openapi.module.ModuleUtilCore;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.JavaSdkVersion;
 import com.intellij.openapi.roots.ProjectFileIndex;
+import com.intellij.openapi.roots.impl.FilePropertyPusher;
+import com.intellij.openapi.roots.impl.JavaLanguageLevelPusher;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.Ref;
@@ -278,14 +282,6 @@ public class HighlightUtil extends HighlightUtilBase {
     PsiType checkType = typeElement.getType();
     PsiType operandType = operand.getType();
     if (operandType == null) return null;
-    if (operandType instanceof PsiLambdaExpressionType) {
-      return HighlightInfo
-        .newHighlightInfo(HighlightInfoType.ERROR).range(expression).descriptionAndTooltip("Lambda expression is not expected here").create();
-    }
-    if (operandType instanceof PsiMethodReferenceType) {
-      return HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(expression).descriptionAndTooltip(
-        "Method reference expression is not expected here").create();
-    }
     if (TypeConversionUtil.isPrimitiveAndNotNull(operandType)
         || TypeConversionUtil.isPrimitiveAndNotNull(checkType)
         || !TypeConversionUtil.areTypesConvertible(operandType, checkType)) {
@@ -1521,6 +1517,9 @@ public class HighlightUtil extends HighlightUtilBase {
     }
     else {
       aClass = PsiTreeUtil.getParentOfType(expr, PsiClass.class);
+      if (aClass instanceof PsiAnonymousClass && PsiTreeUtil.isAncestor(((PsiAnonymousClass)aClass).getArgumentList(), expr, false)) {
+        aClass = PsiTreeUtil.getParentOfType(aClass, PsiClass.class, true);
+      }
     }
     if (aClass == null) return null;
 
@@ -1784,7 +1783,8 @@ public class HighlightUtil extends HighlightUtilBase {
       return HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(expression).descriptionAndTooltip(text).create();
     }
 
-    return null;
+    String text = JavaErrorMessages.message("declaration.or.variable.expected");
+    return HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(expression).descriptionAndTooltip(text).create();
   }
 
   @Nullable
@@ -2752,12 +2752,11 @@ public class HighlightUtil extends HighlightUtilBase {
       highlightInfo = HighlightControlFlowUtil.checkVariableMustBeFinal((PsiVariable)resolved, ref, languageLevel);
     }
     else if (resolved instanceof PsiClass) {
-      if (Comparing.strEqual(((PsiClass)resolved).getQualifiedName(), ((PsiClass)resolved).getName())) {
-        final PsiElement parent = ref.getParent();
-        if (parent instanceof PsiImportStaticReferenceElement || parent instanceof PsiImportStatementBase) {
-          String description = JavaErrorMessages.message("cannot.resolve.symbol", refName.getText());
-          return HighlightInfo.newHighlightInfo(HighlightInfoType.WRONG_REF).range(refName).descriptionAndTooltip(description).create();
-        }
+      if (((PsiClass)resolved).getContainingClass() == null &&
+          PsiTreeUtil.getParentOfType(ref, PsiImportStatementBase.class) != null &&
+          PsiUtil.isFromDefaultPackage((PsiClass)resolved)) {
+        String description = JavaErrorMessages.message("cannot.resolve.symbol", refName.getText());
+        return HighlightInfo.newHighlightInfo(HighlightInfoType.WRONG_REF).range(refName).descriptionAndTooltip(description).create();
       }
     }
     return highlightInfo;
@@ -2981,7 +2980,8 @@ public class HighlightUtil extends HighlightUtilBase {
     LAMBDA_EXPRESSIONS(LanguageLevel.JDK_1_8, "feature.lambda.expressions"),
     TYPE_ANNOTATIONS(LanguageLevel.JDK_1_8, "feature.type.annotations"),
     RECEIVERS(LanguageLevel.JDK_1_8, "feature.type.receivers"),
-    REFS_AS_RESOURCE(LanguageLevel.JDK_1_9, "feature.try.with.resources.refs");
+    REFS_AS_RESOURCE(LanguageLevel.JDK_1_9, "feature.try.with.resources.refs"),
+    MODULES(LanguageLevel.JDK_1_9, "feature.modules");
 
     private final LanguageLevel level;
     private final String key;
@@ -2999,6 +2999,22 @@ public class HighlightUtil extends HighlightUtilBase {
                                     @NotNull PsiFile file) {
     if (file.getManager().isInProject(file) && !level.isAtLeast(feature.level)) {
       String message = JavaErrorMessages.message("insufficient.language.level", JavaErrorMessages.message(feature.key));
+
+      Module module = ModuleUtilCore.findModuleForPsiElement(element);
+      if (module != null) {
+        LanguageLevel moduleLanguageLevel = EffectiveLanguageLevelUtil.getEffectiveLanguageLevel(module);
+        if (moduleLanguageLevel.isAtLeast(feature.level)) {
+          for (FilePropertyPusher pusher : FilePropertyPusher.EP_NAME.getExtensions()) {
+            if (pusher instanceof JavaLanguageLevelPusher) {
+              String newMessage = ((JavaLanguageLevelPusher)pusher).getInconsistencyLanguageLevelMessage(message, element, level, file);
+              if (newMessage != null) {
+                message = newMessage;
+                break;
+              }
+            }
+          }
+        }
+      }
       HighlightInfo info = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(element).descriptionAndTooltip(message).create();
       QuickFixAction.registerQuickFixAction(info, QUICK_FIX_FACTORY.createIncreaseLanguageLevelFix(feature.level));
       QuickFixAction.registerQuickFixAction(info, QUICK_FIX_FACTORY.createShowModulePropertiesFix(element));

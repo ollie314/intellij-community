@@ -91,7 +91,7 @@ public class DuplexConsoleView<S extends ConsoleView, T extends ConsoleView> ext
   public static <S extends ConsoleView, T extends ConsoleView> DuplexConsoleView<S, T> create(@NotNull S primary,
                                                                                               @NotNull T secondary,
                                                                                               @Nullable String stateStorageKey) {
-    return new DuplexConsoleView<S, T>(primary, secondary, stateStorageKey);
+    return new DuplexConsoleView<>(primary, secondary, stateStorageKey);
   }
 
   private void setStoredState(boolean primary) {
@@ -330,12 +330,7 @@ public class DuplexConsoleView<S extends ConsoleView, T extends ConsoleView> ext
     public void setSelected(final AnActionEvent event, final boolean flag) {
       enableConsole(!flag);
       setStoredState(!flag);
-      ApplicationManager.getApplication().invokeLater(new Runnable() {
-        @Override
-        public void run() {
-          update(event);
-        }
-      });
+      ApplicationManager.getApplication().invokeLater(() -> update(event));
     }
 
     @Override

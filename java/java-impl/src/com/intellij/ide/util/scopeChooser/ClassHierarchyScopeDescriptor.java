@@ -72,17 +72,14 @@ public class ClassHierarchyScopeDescriptor extends ScopeDescriptor {
       if (aClass == null) {
         myCachedScope = GlobalSearchScope.EMPTY_SCOPE;
       } else {
-        final List<PsiElement> classesToSearch = new LinkedList<PsiElement>();
+        final List<PsiElement> classesToSearch = new LinkedList<>();
         classesToSearch.add(aClass);
 
         classesToSearch.addAll(ClassInheritorsSearch.search(aClass).findAll());
 
-        FunctionalExpressionSearch.search(aClass).forEach(new Processor<PsiFunctionalExpression>() {
-          @Override
-          public boolean process(PsiFunctionalExpression expression) {
-            classesToSearch.add(expression);
-            return true;
-          }
+        FunctionalExpressionSearch.search(aClass).forEach(expression -> {
+          classesToSearch.add(expression);
+          return true;
         });
 
         myCachedScope = new LocalSearchScope(PsiUtilCore.toPsiElementArray(classesToSearch),

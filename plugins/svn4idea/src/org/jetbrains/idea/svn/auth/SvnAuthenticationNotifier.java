@@ -110,7 +110,7 @@ public class SvnAuthenticationNotifier extends GenericNotifierImpl<SvnAuthentica
     }
     myVerificationInProgress = true;
 
-    final Ref<Boolean> resultRef = new Ref<Boolean>();
+    final Ref<Boolean> resultRef = new Ref<>();
 
     final Runnable checker = new Runnable() {
       @Override
@@ -160,7 +160,7 @@ public class SvnAuthenticationNotifier extends GenericNotifierImpl<SvnAuthentica
     myCopiesPassiveResults.put(getKey(obj), true);
     myVcs.invokeRefreshSvnRoots();
 
-    final List<SVNURL> outdatedRequests = new LinkedList<SVNURL>();
+    final List<SVNURL> outdatedRequests = new LinkedList<>();
     final Collection<SVNURL> keys = getAllCurrentKeys();
     for (SVNURL key : keys) {
       final SVNURL commonURLAncestor = SVNURLUtil.getCommonURLAncestor(key, obj.getUrl());
@@ -346,7 +346,7 @@ public class SvnAuthenticationNotifier extends GenericNotifierImpl<SvnAuthentica
     Proxy proxyToRelease = null;
     if (! interactive && configuration.isIsUseDefaultProxy()) {
       final HttpConfigurable instance = HttpConfigurable.getInstance();
-      if (instance.USE_HTTP_PROXY && instance.PROXY_AUTHENTICATION && (StringUtil.isEmptyOrSpaces(instance.PROXY_LOGIN) ||
+      if (instance.USE_HTTP_PROXY && instance.PROXY_AUTHENTICATION && (StringUtil.isEmptyOrSpaces(instance.getProxyLogin()) ||
                                                                        StringUtil.isEmptyOrSpaces(instance.getPlainProxyPassword()))) {
         return false;
       }

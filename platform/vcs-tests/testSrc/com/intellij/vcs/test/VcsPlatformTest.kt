@@ -19,6 +19,7 @@ import com.intellij.ide.highlighter.ProjectFileType
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vcs.changes.ChangeListManager
+import com.intellij.openapi.vcs.changes.ChangeListManagerImpl
 import com.intellij.openapi.vcs.changes.VcsDirtyScopeManager
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtil
@@ -39,6 +40,8 @@ abstract class VcsPlatformTest : PlatformTestCase() {
 
   private lateinit var myTestStartedIndicator: String
 
+  protected lateinit var changeListManager: ChangeListManagerImpl
+
   @Throws(Exception::class)
   override fun setUp() {
     myTestRoot = File(FileUtil.getTempDirectory(), "testRoot")
@@ -53,6 +56,8 @@ abstract class VcsPlatformTest : PlatformTestCase() {
 
     myProjectRoot = myProject.baseDir
     myProjectPath = myProjectRoot.path
+
+    changeListManager = ChangeListManager.getInstance(myProject) as ChangeListManagerImpl
   }
 
   @Throws(Exception::class)
@@ -84,7 +89,7 @@ abstract class VcsPlatformTest : PlatformTestCase() {
     // we don't need a module in Git tests
   }
 
-  override fun isRunInEdt(): Boolean {
+  override fun runInDispatchThread(): Boolean {
     return false
   }
 
@@ -129,7 +134,7 @@ abstract class VcsPlatformTest : PlatformTestCase() {
   }
 
   private fun enableDebugLogging(): String {
-    TestLoggerFactory.enableDebugLogging(myTestRootDisposable, *ArrayUtil.toStringArray(getDebugLogCategories()))
+    TestLoggerFactory.enableDebugLogging(testRootDisposable, *ArrayUtil.toStringArray(getDebugLogCategories()))
     val testStartedIndicator = createTestStartedIndicator()
     LOG.info(testStartedIndicator)
     return testStartedIndicator

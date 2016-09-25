@@ -43,6 +43,7 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrField;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrVariable;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrExpression;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrReferenceExpression;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.params.GrParameter;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrAccessorMethod;
 import org.jetbrains.plugins.groovy.lang.psi.api.toplevel.imports.GrImportStatement;
 import org.jetbrains.plugins.groovy.lang.psi.api.types.GrTypeArgumentList;
@@ -73,7 +74,7 @@ public class GrReferenceExpressionImpl extends GrReferenceElementImpl<GrExpressi
 
   @NotNull
   private static List<GroovyResolveResult> filterMembersFromSuperClasses(GroovyResolveResult[] results) {
-    List<GroovyResolveResult> filtered = new ArrayList<GroovyResolveResult>();
+    List<GroovyResolveResult> filtered = new ArrayList<>();
     for (GroovyResolveResult result : results) {
       final PsiElement element = result.getElement();
       if (element instanceof PsiMember) {
@@ -196,12 +197,6 @@ public class GrReferenceExpressionImpl extends GrReferenceElementImpl<GrExpressi
 
   public String toString() {
     return "Reference expression";
-  }
-
-  @Override
-  @Nullable
-  public final PsiElement resolve() {
-    return advancedResolve().getElement();
   }
 
   private static final PolyVariantResolver<GrReferenceExpressionImpl> POLY_RESOLVER = new PolyVariantResolver<GrReferenceExpressionImpl>() {
@@ -392,6 +387,9 @@ public class GrReferenceExpressionImpl extends GrReferenceElementImpl<GrExpressi
         if (resolvedF instanceof GrField) {
           type = ((GrField)resolvedF).getType();
         }
+        else if (resolvedF instanceof GrVariable && !(resolvedF instanceof GrParameter)) {
+          type = ((GrVariable)resolvedF).getDeclaredType();
+        }
         else if (resolvedF instanceof GrAccessorMethod) {
           type = ((GrAccessorMethod)resolvedF).getProperty().getType();
         }
@@ -465,7 +463,7 @@ public class GrReferenceExpressionImpl extends GrReferenceElementImpl<GrExpressi
   }
 
   @NotNull
-  private GroovyResolveResult[] doPolyResolve(@SuppressWarnings("UnusedParameters") boolean incompleteCode) {
+  private GroovyResolveResult[] doPolyResolve(boolean incompleteCode) {
     final PsiElement nameElement = getReferenceNameElement();
     final String name = getReferenceName();
     if (name == null || nameElement == null) return GroovyResolveResult.EMPTY_ARRAY;
@@ -517,7 +515,7 @@ public class GrReferenceExpressionImpl extends GrReferenceElementImpl<GrExpressi
       .setAllVariants(allVariants)
       .setUpToArgument(upToArgument)
       .build(this);
-    new GrReferenceResolveRunner(this, processor).resolveImpl();
+    GrReferenceResolveRunnerKt.resolveReferenceExpression(this, processor);
     return processor.getCandidatesArray();
   }
 
@@ -599,12 +597,6 @@ public class GrReferenceExpressionImpl extends GrReferenceElementImpl<GrExpressi
   public IElementType getDotTokenType() {
     PsiElement dot = getDotToken();
     return dot == null ? null : dot.getNode().getElementType();
-  }
-
-  @Override
-  public GroovyResolveResult advancedResolve() {
-    ResolveResult[] results = TypeInferenceHelper.getCurrentContext().multiResolve(this, false, POLY_RESOLVER);
-    return results.length == 1 ? (GroovyResolveResult)results[0] : GroovyResolveResult.EMPTY_RESULT;
   }
 
   @Override

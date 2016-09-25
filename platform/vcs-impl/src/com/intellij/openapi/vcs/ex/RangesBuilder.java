@@ -15,17 +15,21 @@
  */
 package com.intellij.openapi.vcs.ex;
 
+import com.intellij.diff.comparison.ByLine;
+import com.intellij.diff.comparison.ComparisonPolicy;
+import com.intellij.diff.comparison.TrimUtil;
+import com.intellij.diff.comparison.iterables.DiffIterableUtil;
+import com.intellij.diff.comparison.iterables.FairDiffIterable;
 import com.intellij.diff.util.DiffUtil;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.util.ArrayUtil;
-import com.intellij.util.diff.Diff;
+import com.intellij.openapi.progress.DumbProgressIndicator;
+import com.intellij.openapi.util.Pair;
+import com.intellij.openapi.vcs.ex.Range.InnerRange;
 import com.intellij.util.diff.FilesTooBigForDiffException;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 public class RangesBuilder {
@@ -45,131 +49,124 @@ public class RangesBuilder {
   @NotNull
   public static List<Range> createRanges(@NotNull List<String> current,
                                          @NotNull List<String> vcs,
-                                         int shift,
+                                         int currentShift,
                                          int vcsShift,
                                          boolean innerWhitespaceChanges) throws FilesTooBigForDiffException {
-    Diff.Change ch = Diff.buildChanges(ArrayUtil.toStringArray(vcs), ArrayUtil.toStringArray(current));
+    if (innerWhitespaceChanges) {
+      return createRangesSmart(current, vcs, currentShift, vcsShift);
+    }
+    else {
+      return createRangesSimple(current, vcs, currentShift, vcsShift);
+    }
+  }
 
-    List<Range> result = new ArrayList<Range>();
-    while (ch != null) {
-      if (innerWhitespaceChanges) {
-        result.add(createOnSmart(ch, shift, vcsShift, current, vcs));
-      }
-      else {
-        result.add(createOn(ch, shift, vcsShift));
-      }
-      ch = ch.link;
+  @NotNull
+  private static List<Range> createRangesSimple(@NotNull List<String> current,
+                                                @NotNull List<String> vcs,
+                                                int currentShift,
+                                                int vcsShift) throws FilesTooBigForDiffException {
+    FairDiffIterable iterable = ByLine.compare(vcs, current, ComparisonPolicy.DEFAULT, DumbProgressIndicator.INSTANCE);
+
+    List<Range> result = new ArrayList<>();
+    for (com.intellij.diff.util.Range range : iterable.iterateChanges()) {
+      int vcsLine1 = vcsShift + range.start1;
+      int vcsLine2 = vcsShift + range.end1;
+      int currentLine1 = currentShift + range.start2;
+      int currentLine2 = currentShift + range.end2;
+
+      result.add(new Range(currentLine1, currentLine2, vcsLine1, vcsLine2));
     }
     return result;
   }
 
-  private static Range createOn(@NotNull Diff.Change change, int shift, int vcsShift) {
-    int offset1 = shift + change.line1;
-    int offset2 = offset1 + change.inserted;
+  @NotNull
+  private static List<Range> createRangesSmart(@NotNull List<String> current,
+                                               @NotNull List<String> vcs,
+                                               int currentShift,
+                                               int vcsShift) throws FilesTooBigForDiffException {
+    FairDiffIterable iwIterable = ByLine.compare(vcs, current, ComparisonPolicy.IGNORE_WHITESPACES, DumbProgressIndicator.INSTANCE);
 
-    int uOffset1 = vcsShift + change.line0;
-    int uOffset2 = uOffset1 + change.deleted;
+    RangeBuilder rangeBuilder = new RangeBuilder(current, vcs, currentShift, vcsShift);
 
-    return new Range(offset1, offset2, uOffset1, uOffset2);
-  }
-
-  private static Range createOnSmart(@NotNull Diff.Change change,
-                                     int shift,
-                                     int vcsShift,
-                                     @NotNull List<String> current,
-                                     @NotNull List<String> vcs) throws FilesTooBigForDiffException {
-    byte type = getChangeType(change);
-
-    int offset1 = shift + change.line1;
-    int offset2 = offset1 + change.inserted;
-
-    int uOffset1 = vcsShift + change.line0;
-    int uOffset2 = uOffset1 + change.deleted;
-
-    if (type != Range.MODIFIED) {
-      return new Range(offset1, offset2, uOffset1, uOffset2, Collections.singletonList(new Range.InnerRange(offset1, offset2, type)));
-    }
-
-    LineWrapper[] lines1 = new LineWrapper[change.deleted];
-    LineWrapper[] lines2 = new LineWrapper[change.inserted];
-    for (int i = 0; i < change.deleted; i++) {
-      lines1[i] = new LineWrapper(vcs.get(i + change.line0));
-    }
-    for (int i = 0; i < change.inserted; i++) {
-      lines2[i] = new LineWrapper(current.get(i + change.line1));
-    }
-
-    Diff.Change ch = Diff.buildChanges(lines1, lines2);
-
-    List<Range.InnerRange> inner = new ArrayList<Range.InnerRange>();
-
-    int last0 = 0;
-    int last1 = 0;
-    while (ch != null) {
-      if (ch.line0 != last0 && ch.line1 != last1) {
-        byte innerType = Range.EQUAL;
-        int innerStart = shift + change.line1 + last1;
-        int innerEnd = shift + change.line1 + ch.line1;
-        inner.add(new Range.InnerRange(innerStart, innerEnd, innerType));
+    for (com.intellij.diff.util.Range range : iwIterable.iterateUnchanged()) {
+      int count = range.end1 - range.start1;
+      for (int i = 0; i < count; i++) {
+        int vcsIndex = range.start1 + i;
+        int currentIndex = range.start2 + i;
+        if (vcs.get(vcsIndex).equals(current.get(currentIndex))) {
+          rangeBuilder.markEqual(vcsIndex, currentIndex);
+        }
       }
-
-      byte innerType = getChangeType(ch);
-      int innerStart = shift + change.line1 + ch.line1;
-      int innerEnd = innerStart + ch.inserted;
-      inner.add(new Range.InnerRange(innerStart, innerEnd, innerType));
-
-      last0 = ch.line0 + ch.deleted;
-      last1 = ch.line1 + ch.inserted;
-
-      ch = ch.link;
-    }
-    if (change.deleted != last0 && change.inserted != last1) {
-      byte innerType = Range.EQUAL;
-      int innerStart = shift + change.line1 + last1;
-      int innerEnd = shift + change.line1 + change.inserted;
-      inner.add(new Range.InnerRange(innerStart, innerEnd, innerType));
     }
 
-    return new Range(offset1, offset2, uOffset1, uOffset2, inner);
+    return rangeBuilder.finish();
   }
 
-  private static byte getChangeType(@NotNull Diff.Change change) {
-    if ((change.deleted > 0) && (change.inserted > 0)) return Range.MODIFIED;
-    if ((change.deleted > 0)) return Range.DELETED;
-    if ((change.inserted > 0)) return Range.INSERTED;
-    LOG.error("Unknown change type");
-    return Range.EQUAL;
-  }
+  private static class RangeBuilder extends DiffIterableUtil.ChangeBuilderBase {
+    @NotNull private final List<String> myCurrent;
+    @NotNull private final List<String> myVcs;
+    private final int myCurrentShift;
+    private final int myVcsShift;
 
-  private static class LineWrapper {
-    @NotNull private final String myLine;
-    private final int myHash;
+    @NotNull private final List<Range> myResult = new ArrayList<>();
 
-    public LineWrapper(@NotNull String line) {
-      myLine = line;
-      myHash = StringUtil.stringHashCodeIgnoreWhitespaces(line);
+    public RangeBuilder(@NotNull List<String> current,
+                        @NotNull List<String> vcs,
+                        int currentShift,
+                        int vcsShift) {
+      super(vcs.size(), current.size());
+      myCurrent = current;
+      myVcs = vcs;
+      myCurrentShift = currentShift;
+      myVcsShift = vcsShift;
     }
 
     @NotNull
-    public String getLine() {
-      return myLine;
+    public List<Range> finish() {
+      doFinish();
+      return myResult;
     }
 
     @Override
-    public boolean equals(Object o) {
-      if (this == o) return true;
-      if (o == null || getClass() != o.getClass()) return false;
+    protected void addChange(int vcsStart, int currentStart, int vcsEnd, int currentEnd) {
+      com.intellij.diff.util.Range range = TrimUtil.expand(myVcs, myCurrent, vcsStart, currentStart, vcsEnd, currentEnd);
+      if (range.isEmpty()) return;
 
-      LineWrapper wrapper = (LineWrapper)o;
+      List<InnerRange> innerRanges = calcInnerRanges(range);
+      Range newRange = new Range(range.start2, range.end2, range.start1, range.end1, innerRanges);
+      newRange.shift(myCurrentShift);
+      newRange.vcsShift(myVcsShift);
 
-      if (myHash != wrapper.myHash) return false;
-
-      return StringUtil.equalsIgnoreWhitespaces(myLine, wrapper.myLine);
+      myResult.add(newRange);
     }
 
-    @Override
-    public int hashCode() {
-      return myHash;
+    @NotNull
+    private List<InnerRange> calcInnerRanges(@NotNull com.intellij.diff.util.Range blockRange) {
+      List<String> vcs = myVcs.subList(blockRange.start1, blockRange.end1);
+      List<String> current = myCurrent.subList(blockRange.start2, blockRange.end2);
+
+      ArrayList<InnerRange> result = new ArrayList<>();
+      FairDiffIterable iwIterable = ByLine.compare(vcs, current, ComparisonPolicy.IGNORE_WHITESPACES, DumbProgressIndicator.INSTANCE);
+      for (Pair<com.intellij.diff.util.Range, Boolean> pair : DiffIterableUtil.iterateAll(iwIterable)) {
+        com.intellij.diff.util.Range range = pair.first;
+        Boolean equals = pair.second;
+
+        byte type = equals ? Range.EQUAL : getChangeType(range.start1, range.end1, range.start2, range.end2);
+        result.add(new InnerRange(range.start2 + blockRange.start2, range.end2 + blockRange.start2,
+                                  type));
+      }
+      result.trimToSize();
+      return result;
     }
+  }
+
+  private static byte getChangeType(int vcsStart, int vcsEnd, int currentStart, int currentEnd) {
+    int deleted = vcsEnd - vcsStart;
+    int inserted = currentEnd - currentStart;
+    if (deleted > 0 && inserted > 0) return Range.MODIFIED;
+    if (deleted > 0) return Range.DELETED;
+    if (inserted > 0) return Range.INSERTED;
+    LOG.error("Unknown change type");
+    return Range.EQUAL;
   }
 }

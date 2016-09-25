@@ -11,7 +11,6 @@ import com.intellij.psi.xml.XmlDocument;
 import com.intellij.psi.xml.XmlFile;
 import com.intellij.psi.xml.XmlTag;
 import com.intellij.util.ArrayUtil;
-import com.intellij.util.Processor;
 import com.intellij.xml.XmlElementDescriptor;
 import com.intellij.xml.XmlNSDescriptor;
 import org.jetbrains.annotations.NotNull;
@@ -51,18 +50,15 @@ public class JavaFxNamespaceDescriptor implements XmlNSDescriptor, Validator<Xml
       final Project project = document.getProject();
       final PsiClass paneClass = JavaPsiFacade.getInstance(project).findClass(JavaFxCommonNames.JAVAFX_SCENE_LAYOUT_PANE, GlobalSearchScope.allScope(project));
       if (paneClass != null) {
-        final ArrayList<XmlElementDescriptor> result = new ArrayList<XmlElementDescriptor>();
-        ClassInheritorsSearch.search(paneClass, paneClass.getUseScope(), true, true, false).forEach(new Processor<PsiClass>() {
-          @Override
-          public boolean process(PsiClass psiClass) {
-            result.add(new JavaFxClassTagDescriptor(psiClass.getName(), psiClass));
-            return true;
-          }
+        final ArrayList<XmlElementDescriptor> result = new ArrayList<>();
+        ClassInheritorsSearch.search(paneClass, paneClass.getUseScope(), true, true, false).forEach(psiClass -> {
+          result.add(new JavaFxClassTagDescriptor(psiClass.getName(), psiClass));
+          return true;
         });
         return result.toArray(new XmlElementDescriptor[result.size()]);
       }
     }
-    return new XmlElementDescriptor[0];
+    return XmlElementDescriptor.EMPTY_ARRAY;
   }
 
   @Nullable

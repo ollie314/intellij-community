@@ -46,6 +46,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
+import static com.intellij.ui.components.JBScrollPane.isScrollEvent;
 import static java.awt.event.MouseEvent.*;
 
 /**
@@ -65,6 +66,16 @@ public final class IdeMouseEventDispatcher {
   private int myModifiers;
   @JdkConstants.InputEventMask
   private int myModifiersEx;
+
+  private static boolean myForceTouchIsAllowed = true;
+
+  public static void forbidForceTouch () {
+    myForceTouchIsAllowed = false;
+  }
+
+  public static boolean isForceTouchAllowed () {
+    return myForceTouchIsAllowed;
+  }
 
   // Don't compare MouseEvent ids. Swing has wrong sequence of events: first is mouse_clicked(500)
   // then mouse_pressed(501), mouse_released(502) etc. Here, mouse events sorted so we can compare
@@ -144,14 +155,22 @@ public final class IdeMouseEventDispatcher {
       }
     }
 
-    if (SystemInfo.isXWindow && e.isPopupTrigger() && e.getButton() != 3) {
-      // we can do better than silly triggering popup on everything but left click
-      resetPopupTrigger(e);
+    if (e.isPopupTrigger()) {
+      if (BUTTON3 == e.getButton()) {
+        if (Registry.is("ide.mouse.popup.trigger.modifiers.disabled") && (~BUTTON3_DOWN_MASK & e.getModifiersEx()) != 0) {
+          // it allows to use our mouse shortcuts for Ctrl+Button3, for example
+          resetPopupTrigger(e);
+        }
+      }
+      else if (SystemInfo.isXWindow) {
+        // we can do better than silly triggering popup on everything but left click
+        resetPopupTrigger(e);
+      }
     }
 
     boolean ignore = false;
-    if (!(e.getID() == MouseEvent.MOUSE_PRESSED ||
-          e.getID() == MouseEvent.MOUSE_RELEASED ||
+    if (!(e.getID() == MOUSE_PRESSED ||
+          e.getID() == MOUSE_RELEASED ||
           e.getID() == MOUSE_WHEEL && 0 < e.getModifiersEx() ||
           e.getID() == MOUSE_CLICKED)) {
       ignore = true;
@@ -183,6 +202,7 @@ public final class IdeMouseEventDispatcher {
       myModifiersEx = modifiersEx;
     }
     else if (e.getID() == MOUSE_RELEASED) {
+      myForceTouchIsAllowed = true;
       if (myPressedModifiersStored) {
         myPressedModifiersStored = false;
         modifiers = myModifiers;
@@ -260,8 +280,6 @@ public final class IdeMouseEventDispatcher {
           e.consume();
         }
       }
-      if (actions.length > 0 && e.isConsumed())
-        return true;
     }
     return e.getButton() > 3;
   }
@@ -303,19 +321,17 @@ public final class IdeMouseEventDispatcher {
   }
 
   private static int getScrollAmount(Component c, MouseWheelEvent me, JScrollBar scrollBar) {
-    final int scrollBarWidth = scrollBar.getWidth();
-    final int ratio = Registry.is("ide.smart.horizontal.scrolling") && scrollBarWidth > 0
-                      ? Math.max((int)Math.pow(c.getWidth() / scrollBarWidth, 2), 10) : 10; // do annoying scrolling faster if smart scrolling is on
-    return me.getUnitsToScroll() * scrollBar.getUnitIncrement() * ratio;
+    return me.getUnitsToScroll() * scrollBar.getUnitIncrement();
   }
 
   private static boolean isHorizontalScrolling(Component c, MouseEvent e) {
     if ( c != null
          && e instanceof MouseWheelEvent
-         && (!SystemInfo.isMac || isDiagramViewComponent(c.getParent()))) {
+         && isDiagramViewComponent(c.getParent())) {
       final MouseWheelEvent mwe = (MouseWheelEvent)e;
       return mwe.isShiftDown()
              && mwe.getScrollType() == MouseWheelEvent.WHEEL_UNIT_SCROLL
+             && isScrollEvent(mwe)
              && findHorizontalScrollBar(c) != null;
     }
     return false;

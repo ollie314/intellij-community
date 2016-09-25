@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,12 +38,15 @@ import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.openapi.util.InvalidDataException;
 import com.intellij.openapi.util.JDOMExternalizer;
 import com.intellij.openapi.util.WriteExternalException;
+import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
+import com.intellij.psi.search.DelegatingGlobalSearchScope;
+import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.refactoring.listeners.RefactoringElementAdapter;
 import com.intellij.refactoring.listeners.RefactoringElementListener;
 import com.intellij.util.ObjectUtils;
@@ -57,7 +60,6 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.plugins.groovy.GroovyBundle;
 import org.jetbrains.plugins.groovy.lang.psi.GroovyFile;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrTypeDefinition;
-import org.jetbrains.plugins.groovy.lang.psi.impl.synthetic.GroovyScriptClass;
 import org.jetbrains.plugins.groovy.lang.psi.util.GroovyRunnerPsiUtil;
 
 import java.util.ArrayList;
@@ -77,7 +79,7 @@ public class GroovyScriptRunConfiguration extends ModuleBasedConfiguration<RunCo
   private boolean isDebugEnabled;
   @Nullable private String scriptParams;
   @Nullable private String scriptPath;
-  private final Map<String, String> envs = new LinkedHashMap<String, String>();
+  private final Map<String, String> envs = new LinkedHashMap<>();
   public boolean passParentEnv = true;
 
   public GroovyScriptRunConfiguration(final String name, final Project project, final ConfigurationFactory factory) {
@@ -107,7 +109,7 @@ public class GroovyScriptRunConfiguration extends ModuleBasedConfiguration<RunCo
     }
 
 
-    ArrayList<Module> res = new ArrayList<Module>();
+    ArrayList<Module> res = new ArrayList<>();
     for (Module module : modules) {
       if (scriptRunner.isValidModule(module)) {
         res.add(module);
@@ -257,6 +259,7 @@ public class GroovyScriptRunConfiguration extends ModuleBasedConfiguration<RunCo
     return null;
   }
 
+  @SuppressWarnings("Duplicates")
   @Nullable
   private static String getPathByElement(@NotNull PsiElement element) {
     PsiFile file = element.getContainingFile();
@@ -310,10 +313,10 @@ public class GroovyScriptRunConfiguration extends ModuleBasedConfiguration<RunCo
     }
     if (toRun instanceof GrTypeDefinition) {
       if (!GroovyRunnerPsiUtil.canBeRunByGroovy(toRun)) {
-        throw new RuntimeConfigurationWarning(GroovyBundle.message("class.can't be executed"));
+        throw new RuntimeConfigurationWarning(GroovyBundle.message("class.cannot.be.executed"));
       }
     }
-    else if (!(toRun instanceof GroovyScriptClass)) {
+    else {
       throw new RuntimeConfigurationWarning(GroovyBundle.message("script.file.is.not.groovy.file"));
     }
   }
@@ -330,7 +333,7 @@ public class GroovyScriptRunConfiguration extends ModuleBasedConfiguration<RunCo
 
   @Override
   public boolean isAlternativeJrePathEnabled() {
-    throw new UnsupportedOperationException();
+    return false;
   }
 
   @Override
@@ -421,5 +424,28 @@ public class GroovyScriptRunConfiguration extends ModuleBasedConfiguration<RunCo
 
   public void setScriptPath(@Nullable String scriptPath) {
     this.scriptPath = scriptPath;
+  }
+
+  @Override
+  public GlobalSearchScope getSearchScope() {
+    GlobalSearchScope superScope = super.getSearchScope();
+
+    String path = getScriptPath();
+    if (path == null) return superScope;
+
+    VirtualFile scriptFile = LocalFileSystem.getInstance().findFileByPath(path);
+    if (scriptFile == null) return superScope;
+
+    GlobalSearchScope fileScope = GlobalSearchScope.fileScope(getProject(), scriptFile);
+    if (superScope == null) return fileScope;
+
+    return new DelegatingGlobalSearchScope(fileScope.union(superScope)) {
+      @Override
+      public int compare(@NotNull VirtualFile file1, @NotNull VirtualFile file2) {
+        if (file1.equals(scriptFile)) return 1;
+        if (file2.equals(scriptFile)) return -1;
+        return super.compare(file1, file2);
+      }
+    };
   }
 }

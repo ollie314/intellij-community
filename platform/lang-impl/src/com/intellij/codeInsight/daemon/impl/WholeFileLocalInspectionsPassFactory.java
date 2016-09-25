@@ -29,6 +29,7 @@ import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.ProperTextRange;
 import com.intellij.profile.Profile;
 import com.intellij.profile.ProfileChangeAdapter;
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager;
@@ -76,11 +77,11 @@ public class WholeFileLocalInspectionsPassFactory extends AbstractProjectCompone
       }
 
       @Override
-      public void profileActivated(Profile oldProfile, Profile profile) {
+      public void profileActivated(Profile oldProfile, @Nullable Profile profile) {
         myFileToolsCache.clear();
       }
     };
-    myProfileManager.addProfilesListener(myProfilesListener, myProject);
+    myProfileManager.addProfileChangeListener(myProfilesListener, myProject);
     Disposer.register(myProject, myFileToolsCache::clear);
   }
 
@@ -92,12 +93,11 @@ public class WholeFileLocalInspectionsPassFactory extends AbstractProjectCompone
       return null; //optimization
     }
 
-    if (!InspectionProjectProfileManager.getInstance(file.getProject()).isProfileLoaded() ||
-        myFileToolsCache.containsKey(file) && !myFileToolsCache.get(file)) {
+    if (myFileToolsCache.containsKey(file) && !myFileToolsCache.get(file)) {
       return null;
     }
-
-    return new LocalInspectionsPass(file, editor.getDocument(), 0, file.getTextLength(), LocalInspectionsPass.EMPTY_PRIORITY_RANGE, true,
+    ProperTextRange visibleRange = VisibleHighlightingPassFactory.calculateVisibleRange(editor);
+    return new LocalInspectionsPass(file, editor.getDocument(), 0, file.getTextLength(), visibleRange, true,
                                     new DefaultHighlightInfoProcessor()) {
       @NotNull
       @Override

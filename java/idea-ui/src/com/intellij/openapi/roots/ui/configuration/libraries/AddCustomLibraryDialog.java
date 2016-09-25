@@ -49,7 +49,7 @@ public class AddCustomLibraryDialog extends DialogWrapper {
   private final Module myModule;
   private final ModifiableRootModel myModifiableRootModel;
   private final @Nullable ParameterizedRunnable<ModifiableRootModel> myBeforeLibraryAdded;
-  private final List<Library> myAddedLibraries = new ArrayList<Library>();
+  private final List<Library> myAddedLibraries = new ArrayList<>();
 
   private AddCustomLibraryDialog(CustomLibraryDescription description, LibrariesContainer librariesContainer,
                                  Module module,
@@ -89,27 +89,24 @@ public class AddCustomLibraryDialog extends DialogWrapper {
   @Override
   protected void doOKAction() {
     final LibraryCompositionSettings settings = myPanel.apply();
-    DumbService.allowStartingDumbModeInside(DumbModePermission.MAY_START_BACKGROUND, new Runnable() {
-      @Override
-      public void run() {
-        if (settings != null && settings.downloadFiles(myPanel.getMainPanel())) {
-          if (myModifiableRootModel == null) {
-            final ModifiableRootModel model = ModuleRootManager.getInstance(myModule).getModifiableModel();
-            new WriteAction() {
-              @Override
-              protected void run(@NotNull final Result result) {
-                addLibraries(model, settings);
-                model.commit();
-              }
-            }.execute();
-          }
-          else {
-            addLibraries(myModifiableRootModel, settings);
-          }
-
+    DumbService.allowStartingDumbModeInside(DumbModePermission.MAY_START_BACKGROUND, () -> {
+      if (settings != null && settings.downloadFiles(myPanel.getMainPanel())) {
+        if (myModifiableRootModel == null) {
+          final ModifiableRootModel model = ModuleRootManager.getInstance(myModule).getModifiableModel();
+          new WriteAction() {
+            @Override
+            protected void run(@NotNull final Result result) {
+              addLibraries(model, settings);
+              model.commit();
+            }
+          }.execute();
         }
-        AddCustomLibraryDialog.super.doOKAction();
+        else {
+          addLibraries(myModifiableRootModel, settings);
+        }
+
       }
+      super.doOKAction();
     });
   }
 

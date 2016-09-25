@@ -17,13 +17,12 @@ package com.intellij.openapi.vcs.ex;
 
 import com.intellij.diff.DiffContentFactory;
 import com.intellij.diff.DiffManager;
-import com.intellij.diff.actions.DocumentFragmentContent;
 import com.intellij.diff.contents.DiffContent;
 import com.intellij.diff.contents.DocumentContent;
 import com.intellij.diff.requests.DiffRequest;
 import com.intellij.diff.requests.SimpleDiffRequest;
-import com.intellij.icons.AllIcons;
 import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.ex.ActionUtil;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
@@ -35,7 +34,8 @@ import org.jetbrains.annotations.Nullable;
 
 public class ShowLineStatusRangeDiffAction extends BaseLineStatusRangeAction {
   public ShowLineStatusRangeDiffAction(@NotNull LineStatusTracker lineStatusTracker, @NotNull Range range, @Nullable Editor editor) {
-    super(VcsBundle.message("action.name.show.difference"), AllIcons.Actions.Diff, lineStatusTracker, range);
+    super(lineStatusTracker, range);
+    ActionUtil.copyFrom(this, "ChangesView.Diff");
   }
 
   @Override
@@ -69,7 +69,7 @@ public class ShowLineStatusRangeDiffAction extends BaseLineStatusRangeAction {
   private DiffContent createDiffContent(@NotNull Document document, @NotNull TextRange textRange, @Nullable VirtualFile file) {
     final Project project = myLineStatusTracker.getProject();
     DocumentContent content = DiffContentFactory.getInstance().create(project, document, file);
-    return new DocumentFragmentContent(project, content, textRange);
+    return DiffContentFactory.getInstance().createFragment(project, content, textRange);
   }
 
   @NotNull

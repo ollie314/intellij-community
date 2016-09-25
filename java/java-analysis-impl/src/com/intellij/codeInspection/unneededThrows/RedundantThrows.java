@@ -46,7 +46,7 @@ import java.util.List;
 public class RedundantThrows extends GlobalJavaBatchInspectionTool {
   private static final Logger LOG = Logger.getInstance("#com.intellij.codeInspection.unneededThrows.RedundantThrows");
   private static final String DISPLAY_NAME = InspectionsBundle.message("inspection.redundant.throws.display.name");
-  private final BidirectionalMap<String, QuickFix> myQuickFixes = new BidirectionalMap<String, QuickFix>();
+  private final BidirectionalMap<String, QuickFix> myQuickFixes = new BidirectionalMap<>();
   @NonNls private static final String SHORT_NAME = "RedundantThrows";
 
   @Override
@@ -83,7 +83,7 @@ public class RedundantThrows extends GlobalJavaBatchInspectionTool {
         for (PsiClass s : unThrown) {
           final PsiClass throwsResolvedType = throwsType.resolve();
           if (psiManager.areElementsEquivalent(s, throwsResolvedType)) {
-            if (problems == null) problems = new ArrayList<ProblemDescriptor>(1);
+            if (problems == null) problems = new ArrayList<>(1);
 
             if (refMethod.isAbstract() || refMethod.getOwnerClass().isInterface()) {
               problems.add(manager.createProblemDescriptor(throwsRef, InspectionsBundle.message(
@@ -244,7 +244,7 @@ public class RedundantThrows extends GlobalJavaBatchInspectionTool {
         if (psiMethod == null) return; //invalid refMethod
         final Project project = psiMethod.getProject();
         final PsiManager psiManager = PsiManager.getInstance(project);
-        final List<PsiJavaCodeReferenceElement> refsToDelete = new ArrayList<PsiJavaCodeReferenceElement>();
+        final List<PsiJavaCodeReferenceElement> refsToDelete = new ArrayList<>();
         for (CommonProblemDescriptor problem : problems) {
           final PsiElement psiElement = ((ProblemDescriptor)problem).getPsiElement();
           if (psiElement instanceof PsiJavaCodeReferenceElement) {
@@ -301,14 +301,11 @@ public class RedundantThrows extends GlobalJavaBatchInspectionTool {
         }
       } else {
         final Query<Pair<PsiMethod,PsiMethod>> query = AllOverridingMethodsSearch.search(psiMethod.getContainingClass());
-        query.forEach(new Processor<Pair<PsiMethod, PsiMethod>>(){
-          @Override
-          public boolean process(final Pair<PsiMethod, PsiMethod> pair) {
-            if (pair.first == psiMethod) {
-              removeException(null, exceptionType, refsToDelete, pair.second);
-            }
-            return true;
+        query.forEach(pair -> {
+          if (pair.first == psiMethod) {
+            removeException(null, exceptionType, refsToDelete, pair.second);
           }
+          return true;
         });
       }
     }

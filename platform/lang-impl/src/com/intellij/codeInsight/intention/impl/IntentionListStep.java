@@ -16,6 +16,7 @@
 
 package com.intellij.codeInsight.intention.impl;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
 import com.intellij.codeInsight.daemon.impl.ShowIntentionsPass;
 import com.intellij.codeInsight.hint.HintManager;
@@ -157,7 +158,7 @@ public class IntentionListStep implements ListPopupStep<IntentionActionWithTextC
       }
 
       Set<IntentionActionWithTextCaching> wrappedNew =
-        new THashSet<IntentionActionWithTextCaching>(newDescriptors.size(), ACTION_TEXT_AND_CLASS_EQUALS);
+        new THashSet<>(newDescriptors.size(), ACTION_TEXT_AND_CLASS_EQUALS);
       for (HighlightInfo.IntentionActionDescriptor descriptor : newDescriptors) {
         final IntentionAction action = descriptor.getAction();
         if (element != null &&
@@ -195,10 +196,20 @@ public class IntentionListStep implements ListPopupStep<IntentionActionWithTextC
     final List<IntentionAction> options = descriptor.getOptions(element, containingEditor);
     if (options == null) return cachedAction;
     for (IntentionAction option : options) {
-      if (!option.isAvailable(myProject, containingEditor, containingFile)) {
-        // if option is not applicable in injected fragment, check in host file context
-        if (containingEditor == myEditor || !option.isAvailable(myProject, myEditor, myFile)) {
-          continue;
+      if (containingFile != null && containingEditor != null && myEditor != null) {
+        if (!ShowIntentionActionsHandler.availableFor(containingFile, containingEditor, option)) {
+          //if option is not applicable in injected fragment, check in host file context
+          if (containingEditor == myEditor || !ShowIntentionActionsHandler.availableFor(myFile, myEditor, option)) {
+            continue;
+          }
+        }
+      }
+      else {
+        if (!option.isAvailable(myProject, containingEditor, containingFile)) {
+          // if option is not applicable in injected fragment, check in host file context
+          if (containingEditor == myEditor || !option.isAvailable(myProject, myEditor, myFile)) {
+            continue;
+          }
         }
       }
       IntentionActionWithTextCaching textCaching = new IntentionActionWithTextCaching(option);
@@ -291,6 +302,16 @@ public class IntentionListStep implements ListPopupStep<IntentionActionWithTextC
     return optionIntention instanceof Iconable ? ((Iconable)optionIntention).getIcon(0) : null;
   }
 
+  @VisibleForTesting
+  public Map<IntentionAction, List<IntentionAction>> getActionsWithSubActions() {
+    Map<IntentionAction, List<IntentionAction>> result = ContainerUtil.newLinkedHashMap();
+    for (IntentionActionWithTextCaching action : getValues()) {
+      List<IntentionActionWithTextCaching> subActions = getSubStep(action, action.getToolName()).getValues();
+      result.put(action.getAction(), ContainerUtil.map(subActions, IntentionActionWithTextCaching::getAction));
+    }
+    return result;
+  }
+
   @Override
   public boolean hasSubstep(final IntentionActionWithTextCaching action) {
     return action.getOptionIntentions().size() + action.getOptionErrorFixes().size() > 0;
@@ -299,22 +320,19 @@ public class IntentionListStep implements ListPopupStep<IntentionActionWithTextC
   @Override
   @NotNull
   public List<IntentionActionWithTextCaching> getValues() {
-    List<IntentionActionWithTextCaching> result = new ArrayList<IntentionActionWithTextCaching>(myCachedErrorFixes);
+    List<IntentionActionWithTextCaching> result = new ArrayList<>(myCachedErrorFixes);
     result.addAll(myCachedInspectionFixes);
     result.addAll(myCachedIntentions);
     result.addAll(myCachedGutters);
     result.addAll(myCachedNotifications);
     result = DumbService.getInstance(myProject).filterByDumbAwareness(result);
-    Collections.sort(result, new Comparator<IntentionActionWithTextCaching>() {
-      @Override
-      public int compare(final IntentionActionWithTextCaching o1, final IntentionActionWithTextCaching o2) {
-        int weight1 = getWeight(o1);
-        int weight2 = getWeight(o2);
-        if (weight1 != weight2) {
-          return weight2 - weight1;
-        }
-        return o1.compareTo(o2);
+    Collections.sort(result, (o1, o2) -> {
+      int weight1 = getWeight(o1);
+      int weight2 = getWeight(o2);
+      if (weight1 != weight2) {
+        return weight2 - weight1;
       }
+      return o1.compareTo(o2);
     });
     return result;
   }
@@ -364,12 +382,8 @@ public class IntentionListStep implements ListPopupStep<IntentionActionWithTextC
     if (myCachedGutters.contains(action)) {
       return 5;
     }
-    final IntentionAction underlyingAction = action.getAction();
-    if (underlyingAction instanceof EmptyIntentionAction) {
+    if (action.getAction() instanceof EmptyIntentionAction) {
       return -10;
-    }
-    if (underlyingAction instanceof SuppressIntentionActionFromFix && ((SuppressIntentionActionFromFix)underlyingAction).isSuppressAll()) {
-      return -15;
     }
     return 0;
   }

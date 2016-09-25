@@ -33,7 +33,6 @@ import com.intellij.psi.xml.XmlAttribute;
 import com.intellij.psi.xml.XmlAttributeValue;
 import com.intellij.ui.awt.RelativePoint;
 import com.intellij.util.Function;
-import com.intellij.util.Processor;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.plugins.javaFX.fxml.FxmlConstants;
 import org.jetbrains.plugins.javaFX.fxml.JavaFxFileTypeFactory;
@@ -68,16 +67,11 @@ public class JavaFxRelatedItemLineMarkerProvider extends RelatedItemLineMarkerPr
           }
           if (!defaultConstructor) return;
           final ArrayList<GotoRelatedItem> targets = new ArrayList<GotoRelatedItem>();
-          collectTargets(field, targets, new Function<PsiElement, GotoRelatedItem>() {
-            @Override
-            public GotoRelatedItem fun(PsiElement element) {
-              return new GotoRelatedItem(element);
-            }
-          }, true);
+          collectTargets(field, targets, element1 -> new GotoRelatedItem(element1), true);
           if (targets.isEmpty()) return;
 
           result.add(new RelatedItemLineMarkerInfo<PsiField>(field, field.getNameIdentifier().getTextRange(),
-                                                             AllIcons.FileTypes.Xml, Pass.UPDATE_OVERRIDDEN_MARKERS, null,
+                                                             AllIcons.FileTypes.Xml, Pass.LINE_MARKERS, null,
                                                              new JavaFXIdIconNavigationHandler(), GutterIconRenderer.Alignment.LEFT,
                                                              targets));
         }
@@ -93,23 +87,20 @@ public class JavaFxRelatedItemLineMarkerProvider extends RelatedItemLineMarkerPr
     final List<VirtualFile> fxmls = JavaFxControllerClassIndex.findFxmlsWithController(field.getProject(), qualifiedName);
     if (fxmls.isEmpty()) return;
     ReferencesSearch.search(field, GlobalSearchScope.filesScope(field.getProject(), fxmls)).forEach(
-      new Processor<PsiReference>() {
-        @Override
-        public boolean process(PsiReference reference) {
-          final PsiElement referenceElement = reference.getElement();
-          if (referenceElement == null) return true;
-          final PsiFile containingFile = referenceElement.getContainingFile();
-          if (containingFile == null) return true;
-          if (!JavaFxFileTypeFactory.isFxml(containingFile)) return true;
-          if (!(referenceElement instanceof XmlAttributeValue)) return true;
-          final XmlAttributeValue attributeValue = (XmlAttributeValue)referenceElement;
-          final PsiElement parent = attributeValue.getParent();
-          if (!(parent instanceof XmlAttribute)) return true;
-          if (!FxmlConstants.FX_ID.equals(((XmlAttribute)parent).getName())) return true;
-          targets.add(fun.fun(parent));
-          return !stopAtFirst;
-        }
-    });
+      reference -> {
+        final PsiElement referenceElement = reference.getElement();
+        if (referenceElement == null) return true;
+        final PsiFile containingFile = referenceElement.getContainingFile();
+        if (containingFile == null) return true;
+        if (!JavaFxFileTypeFactory.isFxml(containingFile)) return true;
+        if (!(referenceElement instanceof XmlAttributeValue)) return true;
+        final XmlAttributeValue attributeValue = (XmlAttributeValue)referenceElement;
+        final PsiElement parent = attributeValue.getParent();
+        if (!(parent instanceof XmlAttribute)) return true;
+        if (!FxmlConstants.FX_ID.equals(((XmlAttribute)parent).getName())) return true;
+        targets.add(fun.fun(parent));
+        return !stopAtFirst;
+      });
   }
 
   private static class JavaFXIdIconNavigationHandler implements GutterIconNavigationHandler<PsiField> {

@@ -21,13 +21,11 @@ import com.intellij.codeInsight.completion.JavaCompletionUtil;
 import com.intellij.codeInsight.completion.PrefixMatcher;
 import com.intellij.lang.Language;
 import com.intellij.lang.StdLanguages;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.*;
 import com.intellij.psi.search.GlobalSearchScope;
@@ -41,6 +39,7 @@ import com.intellij.util.FilteredQuery;
 import com.intellij.util.Processor;
 import com.intellij.util.Query;
 import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.containers.JBTreeTraverser;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -140,7 +139,7 @@ public class CodeInsightUtil {
 */
 
     PsiElement[] children = parent.getChildren();
-    ArrayList<PsiElement> array = new ArrayList<PsiElement>();
+    ArrayList<PsiElement> array = new ArrayList<>();
     boolean flag = false;
     for (PsiElement child : children) {
       if (child.equals(element1)) {
@@ -201,7 +200,7 @@ public class CodeInsightUtil {
   }
 
   public static PsiExpression[] findExpressionOccurrences(PsiElement scope, PsiExpression expr) {
-    List<PsiExpression> array = new ArrayList<PsiExpression>();
+    List<PsiExpression> array = new ArrayList<>();
     addExpressionOccurrences(RefactoringUtil.unparenthesizeExpression(expr), array, scope);
     if (expr.isPhysical()) {
       boolean found = false;
@@ -230,7 +229,7 @@ public class CodeInsightUtil {
   }
 
   public static PsiExpression[] findReferenceExpressions(PsiElement scope, PsiElement referee) {
-    ArrayList<PsiElement> array = new ArrayList<PsiElement>();
+    ArrayList<PsiElement> array = new ArrayList<>();
     if (scope != null) {
       addReferenceExpressions(array, scope, referee);
     }
@@ -293,19 +292,17 @@ public class CodeInsightUtil {
     if (baseClass.hasModifierProperty(PsiModifier.FINAL)) return;
 
     if (matcher.getPrefix().length() > 2) {
+      JBTreeTraverser<PsiClass> traverser = new JBTreeTraverser<>(c -> Arrays.asList(c.getInnerClasses()));
       AllClassesGetter.processJavaClasses(matcher, context.getProject(), scope, psiClass -> {
-        if (psiClass.isInheritor(baseClass, true)) {
-          return inheritorsProcessor.process(psiClass);
-        }
-        return true;
+        Iterable<PsiClass> inheritors = traverser.withRoot(psiClass).filter(c -> c.isInheritor(baseClass, true));
+        return ContainerUtil.process(inheritors, inheritorsProcessor);
       });
     }
     else {
       Query<PsiClass> baseQuery = ClassInheritorsSearch.search(baseClass, scope, true, true, false);
-      Query<PsiClass> query = new FilteredQuery<>(baseQuery, psiClass -> {
-        String name = ApplicationManager.getApplication().runReadAction((Computable<String>)psiClass::getName);
-        return !(psiClass instanceof PsiTypeParameter) && name != null && matcher.prefixMatches(name);
-      });
+      Query<PsiClass> query = new FilteredQuery<>(baseQuery, psiClass ->
+        !(psiClass instanceof PsiTypeParameter) &&
+        ContainerUtil.exists(JavaCompletionUtil.getAllLookupStrings(psiClass), matcher::prefixMatches));
       query.forEach(inheritorsProcessor);
     }
   }
@@ -373,7 +370,7 @@ public class CodeInsightUtil {
                                                                                arg,
                                                                                true,
                                                                                PsiUtil.getLanguageLevel(context));
-          if (PsiType.NULL.equals(substitution) || substitution instanceof PsiWildcardType) continue;
+          if (PsiType.NULL.equals(substitution) || substitution != null && substitution.equalsToText(CommonClassNames.JAVA_LANG_OBJECT) || substitution instanceof PsiWildcardType) continue;
           if (substitution == null) {
             result.consume(createType(inheritor, facade.getElementFactory().createRawSubstitutor(inheritor), arrayDim));
             return true;

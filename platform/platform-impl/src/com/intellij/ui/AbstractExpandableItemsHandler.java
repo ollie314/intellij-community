@@ -223,12 +223,7 @@ public abstract class AbstractExpandableItemsHandler<KeyType, ComponentType exte
     if (!selected.equals(myKey)) {
       hideHint();
     }
-    myUpdateAlarm.addRequest(new Runnable() {
-      @Override
-      public void run() {
-        doHandleSelectionChange(selected, processIfUnfocused);
-      }
-    }, 10);
+    myUpdateAlarm.addRequest(() -> doHandleSelectionChange(selected, processIfUnfocused), 10);
   }
 
   private boolean isHandleSelectionEnabled(@NotNull KeyType selected, boolean processIfUnfocused) {
@@ -352,7 +347,7 @@ public abstract class AbstractExpandableItemsHandler<KeyType, ComponentType exte
     Point location = new Point(visMaxX, cellBounds.y);
     SwingUtilities.convertPointToScreen(location, myComponent);
 
-    Rectangle screen = getScreenRectangle(location);
+    Rectangle screen = ScreenUtil.getScreenRectangle(location);
 
     int borderWidth = isPaintBorder() ? 1 : 0;
     int width = Math.min(screen.width + screen.x - location.x - borderWidth, cellMaxX - visMaxX);
@@ -383,12 +378,6 @@ public abstract class AbstractExpandableItemsHandler<KeyType, ComponentType exte
     myTipComponent.setBorder(border);
     myTipComponent.setPreferredSize(size);
     return location;
-  }
-
-  public static Rectangle getScreenRectangle(Point location) {
-    return !Registry.is("ide.expansion.hints.on.all.screens")
-                         ? ScreenUtil.getScreenRectangle(location)
-                         : ScreenUtil.getAllScreensRectangle();
   }
 
   protected boolean isPaintBorder() {

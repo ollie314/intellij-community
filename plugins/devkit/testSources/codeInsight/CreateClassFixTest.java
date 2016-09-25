@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -54,7 +54,7 @@ public class CreateClassFixTest extends UsefulTestCase{
 
   @Before
   public void setUp() throws Exception {
-    final Ref<Exception> ex = new Ref<Exception>();
+    final Ref<Exception> ex = new Ref<>();
     Runnable runnable = new Runnable() {
       public void run() {
         try {
@@ -83,20 +83,17 @@ public class CreateClassFixTest extends UsefulTestCase{
 
   @After
   public void tearDown() throws Exception {
-    final Ref<Exception> ex = new Ref<Exception>();
-    Runnable runnable = new Runnable() {
-      public void run() {
-        try {
-          myFixture.tearDown();
-          myFixture = null;
-          CreateClassFixTest.super.tearDown();
-        }
-        catch (Exception e) {
-          ex.set(e);
-        }
+    final Ref<Exception> ex = new Ref<>();
+    invokeTestRunnable(() -> {
+      try {
+        myFixture.tearDown();
+        myFixture = null;
+        super.tearDown();
       }
-    };
-    invokeTestRunnable(runnable);
+      catch (Exception e) {
+        ex.set(e);
+      }
+    });
     final Exception exception = ex.get();
     if (exception != null) {
       throw exception;
@@ -118,23 +115,20 @@ public class CreateClassFixTest extends UsefulTestCase{
 
   @Test
   public void runSingle() throws Throwable {
-    Runnable runnable = new Runnable() {
-      public void run() {
-        IntentionAction resultAction = null;
-        final String createAction = QuickFixBundle.message(myCreateClass ? "create.class.text" : "create.interface.text", myTestName);
-        final List<IntentionAction> actions = myFixture.getAvailableIntentions(getSourceRoot() + "/plugin" + myTestName + ".xml");
-        for (IntentionAction action : actions) {
-          if (Comparing.strEqual(action.getText(), createAction)) {
-            resultAction = action;
-            break;
-          }
+    invokeTestRunnable(() -> {
+      IntentionAction resultAction = null;
+      final String createAction = QuickFixBundle.message(myCreateClass ? "create.class.text" : "create.interface.text", myTestName);
+      final List<IntentionAction> actions = myFixture.getAvailableIntentions(getSourceRoot() + "/plugin" + myTestName + ".xml");
+      for (IntentionAction action : actions) {
+        if (Comparing.strEqual(action.getText(), createAction)) {
+          resultAction = action;
+          break;
         }
-        Assert.assertNotNull(resultAction);
-        myFixture.launchAction(resultAction);
-        final Project project = myFixture.getProject();
-        Assert.assertNotNull(JavaPsiFacade.getInstance(project).findClass(myTestName, GlobalSearchScope.allScope(project)));
       }
-    };
-    invokeTestRunnable(runnable);
+      Assert.assertNotNull(resultAction);
+      myFixture.launchAction(resultAction);
+      final Project project = myFixture.getProject();
+      Assert.assertNotNull(JavaPsiFacade.getInstance(project).findClass(myTestName, GlobalSearchScope.allScope(project)));
+    });
   }
 }

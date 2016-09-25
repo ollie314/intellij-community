@@ -150,7 +150,7 @@ abstract class UndoRedo {
 
   private Collection<Document> collectReadOnlyDocuments() {
     Collection<DocumentReference> affectedDocument = myUndoableGroup.getAffectedDocuments();
-    Collection<Document> readOnlyDocs = new ArrayList<Document>();
+    Collection<Document> readOnlyDocs = new ArrayList<>();
     for (DocumentReference ref : affectedDocument) {
       if (ref instanceof DocumentReferenceByDocument) {
         Document doc = ref.getDocument();
@@ -162,7 +162,7 @@ abstract class UndoRedo {
 
   private Collection<VirtualFile> collectReadOnlyAffectedFiles() {
     Collection<DocumentReference> affectedDocument = myUndoableGroup.getAffectedDocuments();
-    Collection<VirtualFile> readOnlyFiles = new ArrayList<VirtualFile>();
+    Collection<VirtualFile> readOnlyFiles = new ArrayList<>();
     for (DocumentReference documentReference : affectedDocument) {
       VirtualFile file = documentReference.getFile();
       if ((file != null) && file.isValid() && !file.isWritable()) {
@@ -192,7 +192,9 @@ abstract class UndoRedo {
   }
 
   private boolean restore(EditorAndState pair) {
-    if (myEditor == null || pair == null || pair.getEditor() == null) {
+    if (myEditor == null ||
+        !myEditor.isValid() || // editor can be invalid if underlying file is deleted during undo (e.g. after undoing scratch file creation)
+        pair == null || pair.getEditor() == null) {
       return false;
     }
 

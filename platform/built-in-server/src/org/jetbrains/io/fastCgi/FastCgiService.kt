@@ -18,8 +18,9 @@ package org.jetbrains.io.fastCgi
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.util.Consumer
-import com.intellij.util.containers.ConcurrentIntObjectMap
 import com.intellij.util.containers.ContainerUtil
+import com.intellij.util.io.addChannelListener
+import com.intellij.util.io.handler
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.ByteBuf
 import io.netty.channel.Channel
@@ -27,15 +28,16 @@ import io.netty.handler.codec.http.*
 import org.jetbrains.builtInWebServer.SingleConnectionNetService
 import org.jetbrains.concurrency.Promise
 import org.jetbrains.concurrency.doneRun
+import org.jetbrains.concurrency.errorIfNotMessage
 import org.jetbrains.io.*
 import java.util.concurrent.atomic.AtomicInteger
 
-val LOG: Logger = Logger.getInstance(FastCgiService::class.java)
+val LOG = Logger.getInstance(FastCgiService::class.java)
 
 // todo send FCGI_ABORT_REQUEST if client channel disconnected
 abstract class FastCgiService(project: Project) : SingleConnectionNetService(project) {
   private val requestIdCounter = AtomicInteger()
-  protected val requests: ConcurrentIntObjectMap<Channel> = ContainerUtil.createConcurrentIntObjectMap<Channel>()
+  private val requests = ContainerUtil.createConcurrentIntObjectMap<ClientInfo>()
 
   override fun configureBootstrap(bootstrap: Bootstrap, errorOutputConsumer: Consumer<String>) {
     bootstrap.handler {
@@ -47,8 +49,8 @@ abstract class FastCgiService(project: Project) : SingleConnectionNetService(pro
         if (!requests.isEmpty) {
           val waitingClients = requests.elements().toList()
           requests.clear()
-          for (channel in waitingClients) {
-            sendBadGateway(channel)
+          for (client in waitingClients) {
+            sendBadGateway(client.channel, client.extraHeaders)
           }
         }
       }
@@ -86,7 +88,7 @@ abstract class FastCgiService(project: Project) : SingleConnectionNetService(pro
       promise
         .doneRun { fastCgiRequest.writeToServerChannel(notEmptyContent, processChannel.get()!!) }
         .rejected {
-          Promise.logError(LOG, it)
+          LOG.errorIfNotMessage(it)
           handleError(fastCgiRequest, notEmptyContent)
         }
     }
@@ -103,30 +105,30 @@ abstract class FastCgiService(project: Project) : SingleConnectionNetService(pro
       }
     }
     finally {
-      val channel = requests.remove(fastCgiRequest.requestId)
-      if (channel != null) {
-        sendBadGateway(channel)
+      requests.remove(fastCgiRequest.requestId)?.let {
+        sendBadGateway(it.channel, it.extraHeaders)
       }
     }
   }
 
-  fun allocateRequestId(channel: Channel): Int {
+  fun allocateRequestId(channel: Channel, extraHeaders: HttpHeaders): Int {
     var requestId = requestIdCounter.getAndIncrement()
     if (requestId >= java.lang.Short.MAX_VALUE) {
       requestIdCounter.set(0)
       requestId = requestIdCounter.getAndDecrement()
     }
-    requests.put(requestId, channel)
+    requests.put(requestId, ClientInfo(channel, extraHeaders))
     return requestId
   }
 
   fun responseReceived(id: Int, buffer: ByteBuf?) {
-    val channel = requests.remove(id)
-    if (channel == null || !channel.isActive) {
+    val client = requests.remove(id)
+    if (client == null || !client.channel.isActive) {
       buffer?.release()
       return
     }
 
+    val channel = client.channel
     if (buffer == null) {
       HttpResponseStatus.BAD_GATEWAY.send(channel)
       return
@@ -139,6 +141,7 @@ abstract class FastCgiService(project: Project) : SingleConnectionNetService(pro
       if (!HttpUtil.isContentLengthSet(httpResponse)) {
         HttpUtil.setContentLength(httpResponse, buffer.readableBytes().toLong())
       }
+      httpResponse.headers().add(client.extraHeaders)
     }
     catch (e: Throwable) {
       buffer.release()
@@ -155,10 +158,10 @@ abstract class FastCgiService(project: Project) : SingleConnectionNetService(pro
   }
 }
 
-private fun sendBadGateway(channel: Channel) {
+private fun sendBadGateway(channel: Channel, extraHeaders: HttpHeaders) {
   try {
     if (channel.isActive) {
-      HttpResponseStatus.BAD_GATEWAY.send(channel)
+      HttpResponseStatus.BAD_GATEWAY.send(channel, extraHeaders = extraHeaders)
     }
   }
   catch (e: Throwable) {
@@ -219,3 +222,5 @@ private fun parseHeaders(response: HttpResponse, buffer: ByteBuf) {
     }
   }
 }
+
+private class ClientInfo(val channel: Channel, val extraHeaders: HttpHeaders)

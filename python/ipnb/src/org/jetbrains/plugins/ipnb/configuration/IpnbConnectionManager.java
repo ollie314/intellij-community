@@ -8,6 +8,7 @@ import com.intellij.execution.configurations.GeneralCommandLine;
 import com.intellij.execution.process.KillableColoredProcessHandler;
 import com.intellij.execution.process.UnixProcessManager;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.components.ProjectComponent;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.module.Module;
@@ -27,12 +28,14 @@ import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.ui.GuiUtils;
 import com.intellij.ui.HyperlinkAdapter;
 import com.intellij.util.TimeoutUtil;
 import com.intellij.util.ui.UIUtil;
 import com.jetbrains.python.PythonHelper;
 import com.jetbrains.python.packaging.PyPackage;
 import com.jetbrains.python.packaging.PyPackageManager;
+import com.jetbrains.python.packaging.PyPackageUtil;
 import com.jetbrains.python.sdk.PythonSdkType;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -57,8 +60,8 @@ import java.util.Map;
 public final class IpnbConnectionManager implements ProjectComponent {
   private static final Logger LOG = Logger.getInstance(IpnbConnectionManager.class);
   private final Project myProject;
-  private Map<String, IpnbConnection> myKernels = new HashMap<String, IpnbConnection>();
-  private Map<String, IpnbCodePanel> myUpdateMap = new HashMap<String, IpnbCodePanel>();
+  private Map<String, IpnbConnection> myKernels = new HashMap<>();
+  private Map<String, IpnbCodePanel> myUpdateMap = new HashMap<>();
   private static final int MAX_ATTEMPTS = 10;
 
   public IpnbConnectionManager(final Project project) {
@@ -269,15 +272,12 @@ public final class IpnbConnectionManager implements ProjectComponent {
       showWarning(fileEditor, "Please check Python Interpreter in Settings->Python Interpreter", null);
       return false;
     }
-    try {
-      final PyPackage ipythonPackage = PyPackageManager.getInstance(sdk).findPackage("ipython", false);
-      final PyPackage jupyterPackage = PyPackageManager.getInstance(sdk).findPackage("jupyter", false);
-      if (ipythonPackage == null && jupyterPackage == null) {
-        showWarning(fileEditor, "Add Jupyter to the interpreter of the current project.", null);
-        return false;
-      }
-    }
-    catch (ExecutionException ignored) {
+    final List<PyPackage> packages = PyPackageManager.getInstance(sdk).getPackages();
+    final PyPackage ipythonPackage = packages != null ? PyPackageUtil.findPackage(packages, "ipython") : null;
+    final PyPackage jupyterPackage = packages != null ? PyPackageUtil.findPackage(packages, "jupyter") : null;
+    if (ipythonPackage == null && jupyterPackage == null) {
+      showWarning(fileEditor, "Add Jupyter to the interpreter of the current project.", null);
+      return false;
     }
 
     String url = showDialogUrl(initUrl);
@@ -350,7 +350,7 @@ public final class IpnbConnectionManager implements ProjectComponent {
         }
       };
       processHandler.setShouldDestroyProcessRecursively(true);
-      UIUtil.invokeLaterIfNeeded(new Runnable() {
+      GuiUtils.invokeLaterIfNeeded(new Runnable() {
         @Override
         public void run() {
           new RunContentExecutor(myProject, processHandler)
@@ -377,7 +377,7 @@ public final class IpnbConnectionManager implements ProjectComponent {
             .withHelpId("reference.manage.py")
             .run();
         }
-      });
+      }, ModalityState.defaultModalityState());
       int countAttempt = 0;
       while (!serverStarted[0] && countAttempt < MAX_ATTEMPTS) {
         countAttempt += 1;

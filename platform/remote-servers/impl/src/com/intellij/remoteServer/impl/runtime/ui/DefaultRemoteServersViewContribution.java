@@ -61,7 +61,7 @@ public class DefaultRemoteServersViewContribution extends RemoteServersViewContr
   @NotNull
   @Override
   public List<AbstractTreeNode<?>> createServerNodes(Project project) {
-    List<AbstractTreeNode<?>> result = new ArrayList<AbstractTreeNode<?>>();
+    List<AbstractTreeNode<?>> result = new ArrayList<>();
     for (RemoteServersViewContributor contributor : RemoteServersViewContributor.EP_NAME.getExtensions()) {
       result.addAll(contributor.createServerNodes(project));
     }
@@ -82,11 +82,6 @@ public class DefaultRemoteServersViewContribution extends RemoteServersViewContr
 
   @Override
   public List<RemoteServer<?>> getRemoteServers() {
-    return ContainerUtil.filter(RemoteServersManager.getInstance().getServers(), new Condition<RemoteServer<?>>() {
-      @Override
-      public boolean value(RemoteServer<?> server) {
-        return server.getType().getCustomToolWindowId() == null;
-      }
-    });
+    return ContainerUtil.filter(RemoteServersManager.getInstance().getServers(), server -> server.getType().getCustomToolWindowId() == null);
   }
 }

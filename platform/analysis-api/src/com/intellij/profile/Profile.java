@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 package com.intellij.profile;
 
 import com.intellij.openapi.options.Scheme;
+import com.intellij.util.xmlb.annotations.Transient;
 import org.jdom.Element;
 import org.jetbrains.annotations.NotNull;
 
@@ -26,14 +27,7 @@ import org.jetbrains.annotations.NotNull;
 public interface Profile extends Comparable, Scheme {
   void copyFrom(@NotNull Profile profile);
 
-  void setLocal(boolean isLocal);
-
-  @Deprecated
-  /**
-   * @deprecated Use !{@link #isProjectLevel()}
-   */
-  boolean isLocal();
-
+  @Transient
   boolean isProjectLevel();
 
   void setProjectLevel(boolean isProjectLevel);

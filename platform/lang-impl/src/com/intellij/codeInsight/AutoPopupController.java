@@ -36,6 +36,7 @@ import com.intellij.openapi.application.TransactionId;
 import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.DumbService;
+import com.intellij.openapi.project.IndexNotReadyException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.Key;
@@ -86,19 +87,18 @@ public class AutoPopupController implements Disposable {
       }
     }, this);
 
-    IdeEventQueue.getInstance().addActivityListener(new Runnable() {
-      @Override
-      public void run() {
-        cancelAllRequest();
-      }
-    }, this);
+    IdeEventQueue.getInstance().addActivityListener(() -> cancelAllRequest(), this);
   }
 
   public void autoPopupMemberLookup(final Editor editor, @Nullable final Condition<PsiFile> condition){
-    scheduleAutoPopup(editor, condition);
+    autoPopupMemberLookup(editor, CompletionType.BASIC, condition);
   }
 
-  public void scheduleAutoPopup(final Editor editor, @Nullable final Condition<PsiFile> condition) {
+  public void autoPopupMemberLookup(final Editor editor, CompletionType completionType, @Nullable final Condition<PsiFile> condition){
+    scheduleAutoPopup(editor, completionType, condition);
+  }
+
+  public void scheduleAutoPopup(final Editor editor, CompletionType completionType, @Nullable final Condition<PsiFile> condition) {
     if (ApplicationManager.getApplication().isUnitTestMode() && !CompletionAutoPopupHandler.ourTestingAutopopup) {
       return;
     }
@@ -133,21 +133,16 @@ public class AutoPopupController implements Disposable {
         return;
       }
 
-      CompletionAutoPopupHandler.invokeCompletion(CompletionType.BASIC, true, myProject, editor, 0, false);
+      CompletionAutoPopupHandler.invokeCompletion(completionType, true, myProject, editor, 0, false);
     });
   }
 
   public void scheduleAutoPopup(final Editor editor) {
-    scheduleAutoPopup(editor, null);
+    scheduleAutoPopup(editor, CompletionType.BASIC, null);
   }
 
   private void addRequest(final Runnable request, final int delay) {
-    Runnable runnable = new Runnable() {
-      @Override
-      public void run() {
-        myAlarm.addRequest(request, delay);
-      }
-    };
+    Runnable runnable = () -> myAlarm.addRequest(request, delay);
     if (ApplicationManager.getApplication().isUnitTestMode()) {
       runnable.run();
     } else {
@@ -180,7 +175,11 @@ public class AutoPopupController implements Disposable {
       Runnable request = () -> {
         if (!myProject.isDisposed() && !DumbService.isDumb(myProject) && !editor.isDisposed() && editor.getComponent().isShowing()) {
           int lbraceOffset = editor.getCaretModel().getOffset() - 1;
-          ShowParameterInfoHandler.invoke(myProject, editor, file1, lbraceOffset, highlightedMethod, false);
+          try {
+            ShowParameterInfoHandler.invoke(myProject, editor, file1, lbraceOffset, highlightedMethod, false);
+          }
+          catch (IndexNotReadyException ignored) { //anything can happen on alarm
+          }
         }
       };
 
@@ -196,16 +195,14 @@ public class AutoPopupController implements Disposable {
     TransactionGuard guard = TransactionGuard.getInstance();
     TransactionId id = guard.getContextTransaction();
     final PsiDocumentManager pdm = PsiDocumentManager.getInstance(project);
-    pdm.performLaterWhenAllCommitted(() -> {
-      guard.submitTransaction(project, id, () -> {
-        if (pdm.hasUncommitedDocuments()) {
-          // no luck, will try later
-          runTransactionWithEverythingCommitted(project, runnable);
-        }
-        else {
-          runnable.run();
-        }
-      });
-    });
+    pdm.performLaterWhenAllCommitted(() -> guard.submitTransaction(project, id, () -> {
+      if (pdm.hasUncommitedDocuments()) {
+        // no luck, will try later
+        runTransactionWithEverythingCommitted(project, runnable);
+      }
+      else {
+        runnable.run();
+      }
+    }));
   }
 }

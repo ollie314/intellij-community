@@ -49,9 +49,9 @@ import static com.jetbrains.python.psi.PyUtil.as;
  */
 public class PyMakeMethodTopLevelProcessor extends PyBaseMakeFunctionTopLevelProcessor {
 
-  private final LinkedHashMap<String, String> myAttributeToParameterName = new LinkedHashMap<String, String>();
+  private final LinkedHashMap<String, String> myAttributeToParameterName = new LinkedHashMap<>();
   private final MultiMap<String, PyReferenceExpression> myAttributeReferences = MultiMap.create();
-  private final Set<PsiElement> myReadsOfSelfParam = new HashSet<PsiElement>();
+  private final Set<PsiElement> myReadsOfSelfParam = new HashSet<>();
 
   public PyMakeMethodTopLevelProcessor(@NotNull PyFunction targetFunction, @NotNull Editor editor) {
     super(targetFunction, editor);
@@ -120,12 +120,7 @@ public class PyMakeMethodTopLevelProcessor extends PyBaseMakeFunctionTopLevelPro
               }
               else {
                 final String instanceExprText = instanceExpr.getText();
-                addArguments(argumentList, ContainerUtil.map(attrNames, new Function<String, String>() {
-                  @Override
-                  public String fun(String attribute) {
-                    return instanceExprText + "." + attribute;
-                  }
-                }));
+                addArguments(argumentList, ContainerUtil.map(attrNames, attribute -> instanceExprText + "." + attribute));
               }
             }
             // Class().method() -> method(Class().foo)
@@ -142,12 +137,7 @@ public class PyMakeMethodTopLevelProcessor extends PyBaseMakeFunctionTopLevelPro
                                                                                   assignmentText);
               //noinspection ConstantConditions
               anchor.getParent().addBefore(assignment, anchor);
-              addArguments(argumentList, ContainerUtil.map(attrNames, new Function<String, String>() {
-                @Override
-                public String fun(String attribute) {
-                  return targetName + "." + attribute;
-                }
-              }));
+              addArguments(argumentList, ContainerUtil.map(attrNames, attribute -> targetName + "." + attribute));
             }
           }
         }
@@ -245,7 +235,7 @@ public class PyMakeMethodTopLevelProcessor extends PyBaseMakeFunctionTopLevelPro
   @NotNull
   @Override
   protected List<String> collectNewParameterNames() {
-    final Set<String> attributeNames = new LinkedHashSet<String>();
+    final Set<String> attributeNames = new LinkedHashSet<>();
     for (ScopeOwner owner : PsiTreeUtil.collectElementsOfType(myFunction, ScopeOwner.class)) {
       final AnalysisResult result =  analyseScope(owner);
       if (!result.nonlocalWritesToEnclosingScope.isEmpty()) {

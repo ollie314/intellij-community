@@ -106,7 +106,7 @@ public class GrIntroduceParameterDialog extends DialogWrapper {
                                     findStringPart() != null;
 
     TObjectIntHashMap<GrParameter> parametersToRemove = GroovyIntroduceParameterUtil.findParametersToRemove(info);
-    toRemoveCBs = new TObjectIntHashMap<JCheckBox>(parametersToRemove.size());
+    toRemoveCBs = new TObjectIntHashMap<>(parametersToRemove.size());
     for (Object p : parametersToRemove.keys()) {
       JCheckBox cb = new JCheckBox(GroovyRefactoringBundle.message("remove.parameter.0.no.longer.used", ((GrParameter)p).getName()));
       toRemoveCBs.put(cb, parametersToRemove.get((GrParameter)p));
@@ -352,7 +352,7 @@ public class GrIntroduceParameterDialog extends DialogWrapper {
   }
 
   private NameSuggestionsField createNameField(GrVariable var) {
-    List<String> names = new ArrayList<String>();
+    List<String> names = new ArrayList<>();
     if (var != null) {
       names.add(var.getName());
     }
@@ -400,7 +400,7 @@ public class GrIntroduceParameterDialog extends DialogWrapper {
     }
 
     if (myTypeComboBox.isClosureSelected()) {
-      final Ref<ValidationInfo> info = new Ref<ValidationInfo>();
+      final Ref<ValidationInfo> info = new Ref<>();
       toRemoveCBs.forEachEntry(new TObjectIntProcedure<JCheckBox>() {
         @Override
         public boolean execute(JCheckBox checkbox, int index) {
@@ -514,12 +514,7 @@ public class GrIntroduceParameterDialog extends DialogWrapper {
   }
 
   protected void invokeRefactoring(BaseRefactoringProcessor processor) {
-    final Runnable prepareSuccessfulCallback = new Runnable() {
-      @Override
-      public void run() {
-        close(DialogWrapper.OK_EXIT_CODE);
-      }
-    };
+    final Runnable prepareSuccessfulCallback = () -> close(DialogWrapper.OK_EXIT_CODE);
     processor.setPrepareSuccessfulSwingThreadCallback(prepareSuccessfulCallback);
     processor.setPreviewUsages(false);
     processor.run();

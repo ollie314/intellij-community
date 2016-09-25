@@ -262,7 +262,6 @@ public class BaseOSProcessHandler extends ProcessHandler implements TaskExecutor
     return myCharset;
   }
 
-  @SuppressWarnings("unused")
   public static class ExecutorServiceHolder {
     /** @deprecated use {@link BaseOSProcessHandler#executeTask(Runnable)} instead (to be removed in IDEA 17) */
     public static Future<?> submit(@NotNull Runnable task) {
@@ -274,7 +273,7 @@ public class BaseOSProcessHandler extends ProcessHandler implements TaskExecutor
   private class SimpleOutputReader extends BaseOutputReader {
     private final Key myProcessOutputType;
 
-    private SimpleOutputReader(Reader reader, Key outputType, Options options, String presentableName) {
+    private SimpleOutputReader(Reader reader, Key outputType, Options options, @NotNull String presentableName) {
       super(reader, options);
       myProcessOutputType = outputType;
       start(presentableName);

@@ -17,6 +17,7 @@ package com.intellij.ui;
 
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.ScalableIcon;
+import org.intellij.lang.annotations.MagicConstant;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
@@ -47,20 +48,6 @@ public class LayeredIcon extends AbstractSizeAdjustingIcon {
     for (int i = 0; i < icons.length; i++) {
       setIcon(icons[i], i);
     }
-  }
-
-  public static LayeredIcon createHorizontalIcon(@NotNull Icon... icons) {
-    LayeredIcon result = new LayeredIcon(icons.length);
-    int maxHeight = 0;
-    for (Icon icon : icons) {
-      maxHeight = Math.max(maxHeight, icon.getIconHeight());
-    }
-    int hShift = 0;
-    for (int i = 0; i < icons.length; i++) {
-      result.setIcon(icons[i], i, hShift, (maxHeight - icons[i].getIconHeight()) / 2);
-      hShift += icons[i].getIconWidth() + 1;
-    }
-    return result;
   }
 
   @Override
@@ -109,7 +96,11 @@ public class LayeredIcon extends AbstractSizeAdjustingIcon {
     adjustSize();
   }
 
-  public void setIcon(Icon icon, int layer, int constraint) {
+  /**
+   *
+   * @param constraint is expected to be one of compass-directions or CENTER
+   */
+  public void setIcon(Icon icon, int layer, @MagicConstant(valuesFromClass = SwingConstants.class) int constraint) {
     int width = getIconWidth();
     int height = getIconHeight();
     int w = icon.getIconWidth();
@@ -121,6 +112,10 @@ public class LayeredIcon extends AbstractSizeAdjustingIcon {
     int x;
     int y;
     switch (constraint) {
+      case SwingConstants.CENTER:
+        x = (width - w) / 2;
+        y = (height - h) /2;
+        break;
       case SwingConstants.NORTH:
         x = (width - w) / 2;
         y = 0;
@@ -155,7 +150,7 @@ public class LayeredIcon extends AbstractSizeAdjustingIcon {
         break;
       default:
         throw new IllegalArgumentException(
-          "The constraint should be one of SwingConstants [NORTH...NORTH_WEST], actual value is " + constraint);
+          "The constraint should be one of SwingConstants' compass-directions [1..8] or CENTER [0], actual value is " + constraint);
     }
     setIcon(icon, layer, x, y);
   }

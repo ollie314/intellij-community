@@ -16,9 +16,7 @@
 package com.intellij.xdebugger.impl.breakpoints;
 
 import com.intellij.openapi.Disposable;
-import com.intellij.openapi.application.AccessToken;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -123,7 +121,7 @@ public class XBreakpointManagerImpl implements XBreakpointManager, PersistentSta
                                                                                       boolean defaultBreakpoint) {
     BreakpointState<?,T,?> state = new BreakpointState<>(enabled,
                                                          type.getId(),
-                                                         defaultBreakpoint ? 0 : myTime++);
+                                                         defaultBreakpoint ? 0 : myTime++, type.getDefaultSuspendPolicy());
     getBreakpointDefaults(type).applyDefaults(state);
     state.setGroup(myDefaultGroup);
     return new XBreakpointBase<XBreakpoint<T>,T, BreakpointState<?,T,?>>(type, this, properties, state);
@@ -219,7 +217,7 @@ public class XBreakpointManagerImpl implements XBreakpointManager, PersistentSta
                                                                                 boolean temporary) {
     ApplicationManager.getApplication().assertWriteAccessAllowed();
     LineBreakpointState<T> state = new LineBreakpointState<>(true, type.getId(), fileUrl, line, temporary,
-                                                             myTime++);
+                                                             myTime++, type.getDefaultSuspendPolicy());
     getBreakpointDefaults(type).applyDefaults(state);
     state.setGroup(myDefaultGroup);
     XLineBreakpointImpl<T> breakpoint = new XLineBreakpointImpl<>(type, this, properties,
@@ -240,15 +238,16 @@ public class XBreakpointManagerImpl implements XBreakpointManager, PersistentSta
   @NotNull
   public <B extends XBreakpoint<?>> Collection<? extends B> getBreakpoints(@NotNull final XBreakpointType<B,?> type) {
     ApplicationManager.getApplication().assertReadAccessAllowed();
-    Collection<? extends XBreakpointBase<?,?,?>> breakpoints = myBreakpoints.get(type);
-    Collection<? extends B> regular = breakpoints != null ? Collections.unmodifiableCollection((Collection<? extends B>)breakpoints) : Collections.emptyList();
-
-    final XBreakpointBase<?, ?, ?> defaultBreakpoint = myDefaultBreakpoints.get(type);
-    if (defaultBreakpoint == null) return regular;
     List<B> result = new ArrayList<>();
-    result.add((B)defaultBreakpoint);
-    result.addAll(regular);
-    return result;
+    B defaultBreakpoint = getDefaultBreakpoint(type);
+    if (defaultBreakpoint != null) {
+      result.add(defaultBreakpoint);
+    }
+    Collection<XBreakpointBase<?, ?, ?>> breakpoints = myBreakpoints.get(type);
+    if (breakpoints != null) {
+      result.addAll((Collection<? extends B>)breakpoints);
+    }
+    return Collections.unmodifiableList(result);
   }
 
   @NotNull
@@ -401,8 +400,7 @@ public class XBreakpointManagerImpl implements XBreakpointManager, PersistentSta
     myDefaultBreakpoints.clear();
     myBreakpointsDefaults.clear();
 
-    AccessToken token = ReadAction.start();
-    try {
+    ApplicationManager.getApplication().runReadAction(() -> {
       for (BreakpointState breakpointState : state.getDefaultBreakpoints()) {
         loadBreakpoint(breakpointState, true);
       }
@@ -430,10 +428,7 @@ public class XBreakpointManagerImpl implements XBreakpointManager, PersistentSta
       }
 
       myDependentBreakpointManager.loadState();
-    }
-    finally {
-      token.finish();
-    }
+    });
     myLineBreakpointManager.updateBreakpointsUI();
     myTime = state.getTime();
     myDefaultGroup = state.getDefaultGroup();
@@ -513,6 +508,7 @@ public class XBreakpointManagerImpl implements XBreakpointManager, PersistentSta
   private static BreakpointState createBreakpointDefaults(@NotNull XBreakpointType type) {
     BreakpointState state = new BreakpointState();
     state.setTypeId(type.getId());
+    state.setSuspendPolicy(type.getDefaultSuspendPolicy());
     return state;
   }
 

@@ -42,7 +42,9 @@ import git4idea.util.GitUIUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -59,7 +61,7 @@ public class GitFetcher {
   private final boolean myFetchAll;
   private final GitVcs myVcs;
 
-  private final Collection<Exception> myErrors = new ArrayList<Exception>();
+  private final Collection<Exception> myErrors = new ArrayList<>();
 
   /**
    * @param fetchAll Pass {@code true} to fetch all remotes and all branches (like {@code git fetch} without parameters does).
@@ -265,7 +267,7 @@ public class GitFetcher {
         additionalInfo.append(repository.getRoot(), ai);
       }
       if (!result.isSuccess()) {
-        Collection<Exception> errors = new ArrayList<Exception>(getErrors());
+        Collection<Exception> errors = new ArrayList<>(getErrors());
         errors.addAll(result.getErrors());
         displayFetchResult(myProject, result, errorNotificationTitle, errors);
         return false;
@@ -286,7 +288,7 @@ public class GitFetcher {
 
     private static final Pattern PRUNE_PATTERN = Pattern.compile("\\s*x\\s*\\[deleted\\].*->\\s*(\\S*)");
 
-    @NotNull private final Collection<String> myPrunedRefs = new ArrayList<String>();
+    @NotNull private final Collection<String> myPrunedRefs = new ArrayList<>();
 
     @Override
     public void onLineAvailable(String line, Key outputType) {

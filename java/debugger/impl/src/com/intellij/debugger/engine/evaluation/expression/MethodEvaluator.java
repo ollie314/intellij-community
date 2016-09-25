@@ -73,11 +73,6 @@ public class MethodEvaluator implements Evaluator {
   }
 
   @Override
-  public Modifier getModifier() {
-    return null;
-  }
-
-  @Override
   public Object evaluate(EvaluationContextImpl context) throws EvaluateException {
     if(!context.getDebugProcess().isAttached()) return null;
     DebugProcessImpl debugProcess = context.getDebugProcess();
@@ -108,7 +103,7 @@ public class MethodEvaluator implements Evaluator {
         referenceType = ((ObjectReference)object).referenceType();
       }
       else if (isInvokableType(object)) {
-        referenceType = debugProcess.findClass(context, ((ReferenceType)object).name(), context.getClassLoader());
+        referenceType = (ReferenceType)object;
       }
       else {
         final String className = myClassName != null? myClassName.getName(debugProcess) : null;

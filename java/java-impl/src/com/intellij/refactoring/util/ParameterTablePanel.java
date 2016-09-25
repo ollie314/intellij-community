@@ -67,7 +67,7 @@ public abstract class ParameterTablePanel extends AbstractParameterTablePanel<Va
       getVariableData()[i].type = myParameterTypeSelectors[i].getSelectedType(); //reverse order
     }
 
-    myTypeRendererCombo = new ComboBox<VariableData>(getVariableData());
+    myTypeRendererCombo = new ComboBox<>(getVariableData());
     myTypeRendererCombo.setOpaque(true);
     myTypeRendererCombo.setBorder(null);
     myTypeRendererCombo.setRenderer(new ListCellRendererWrapper<VariableData>() {
@@ -84,9 +84,13 @@ public abstract class ParameterTablePanel extends AbstractParameterTablePanel<Va
     typeColumn.setCellEditor(new AbstractTableCellEditor() {
       TypeSelector myCurrentSelector;
       final JBComboBoxTableCellEditorComponent myEditorComponent = new JBComboBoxTableCellEditorComponent();
+      final JLabel myTypeLabel = new JLabel();
 
       @Nullable
       public Object getCellEditorValue() {
+        if (myCurrentSelector.getComponent() instanceof JLabel) {
+          return myCurrentSelector.getSelectedType();
+        }
         return myEditorComponent.getEditorValue();
       }
 
@@ -95,12 +99,19 @@ public abstract class ParameterTablePanel extends AbstractParameterTablePanel<Va
                                                    final boolean isSelected,
                                                    final int row,
                                                    final int column) {
+        myCurrentSelector = myParameterTypeSelectors[row];
+        if (myParameterTypeSelectors[row].getComponent() instanceof JLabel) {
+          PsiType selectedType = myCurrentSelector.getSelectedType();
+          if (selectedType != null) {
+            myTypeLabel.setText(selectedType.getPresentableText());
+          }
+          return myTypeLabel;
+        }
         myEditorComponent.setCell(table, row, column);
-        myEditorComponent.setOptions(myParameterTypeSelectors[row].getTypes());
+        myEditorComponent.setOptions(myCurrentSelector.getTypes());
         myEditorComponent.setDefaultValue(getVariableData()[row].type);
         myEditorComponent.setToString(o -> ((PsiType)o).getPresentableText());
 
-        myCurrentSelector = myParameterTypeSelectors[row];
         return myEditorComponent;
       }
     });
@@ -115,14 +126,16 @@ public abstract class ParameterTablePanel extends AbstractParameterTablePanel<Va
                                                      boolean hasFocus,
                                                      int row,
                                                      int column) {
-        myLabel.setText(((PsiType)value).getPresentableText());
-        myLabel.setBackground(isSelected ? table.getSelectionBackground() : table.getBackground());
-        myLabel.setForeground(isSelected ? table.getSelectionForeground() : table.getForeground());
-        if (isSelected) {
-          myLabel.setSelectionIcon();
-        }
-        else {
-          myLabel.setRegularIcon();
+        if (value != null) {
+          myLabel.setText(((PsiType)value).getPresentableText());
+          myLabel.setBackground(isSelected ? table.getSelectionBackground() : table.getBackground());
+          myLabel.setForeground(isSelected ? table.getSelectionForeground() : table.getForeground());
+          if (isSelected) {
+            myLabel.setSelectionIcon();
+          }
+          else {
+            myLabel.setRegularIcon();
+          }
         }
         return myLabel;
       }
@@ -147,7 +160,7 @@ public abstract class ParameterTablePanel extends AbstractParameterTablePanel<Va
   }
 
   public static PsiExpression[] findVariableOccurrences(final PsiElement[] scopeElements, final PsiVariable variable) {
-    final ArrayList<PsiExpression> result = new ArrayList<PsiExpression>();
+    final ArrayList<PsiExpression> result = new ArrayList<>();
     for (final PsiElement element : scopeElements) {
       element.accept(new JavaRecursiveElementWalkingVisitor() {
         @Override public void visitReferenceExpression(final PsiReferenceExpression expression) {
@@ -167,7 +180,7 @@ public abstract class ParameterTablePanel extends AbstractParameterTablePanel<Va
     TypeSelector currentSelector = myParameterTypeSelectors[row];
     myParameterTypeSelectors[row] = myParameterTypeSelectors[targetRow];
     myParameterTypeSelectors[targetRow] = currentSelector;
-    myTypeRendererCombo.setModel(new DefaultComboBoxModel<VariableData>(getVariableData()));
+    myTypeRendererCombo.setModel(new DefaultComboBoxModel<>(getVariableData()));
   }
 
   private static class TypeColumnInfo extends ColumnInfo<VariableData, PsiType> {

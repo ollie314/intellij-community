@@ -29,7 +29,6 @@ import com.intellij.psi.scope.JavaScopeProcessorEvent;
 import com.intellij.psi.scope.NameHint;
 import com.intellij.psi.scope.PsiScopeProcessor;
 import com.intellij.psi.util.*;
-import com.intellij.util.PairProcessor;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -63,6 +62,7 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMe
 import org.jetbrains.plugins.groovy.lang.psi.api.toplevel.imports.GrImportStatement;
 import org.jetbrains.plugins.groovy.lang.psi.api.types.GrCodeReferenceElement;
 import org.jetbrains.plugins.groovy.lang.psi.api.util.GrStatementOwner;
+import org.jetbrains.plugins.groovy.lang.psi.impl.GrAnnotationUtil;
 import org.jetbrains.plugins.groovy.lang.psi.impl.GrClosureType;
 import org.jetbrains.plugins.groovy.lang.psi.impl.GroovyMethodResult;
 import org.jetbrains.plugins.groovy.lang.psi.impl.GroovyResolveResultImpl;
@@ -87,6 +87,7 @@ public class ResolveUtil {
   private static final Logger LOG = Logger.getInstance(ResolveUtil.class);
 
   public static final PsiScopeProcessor.Event DECLARATION_SCOPE_PASSED = new PsiScopeProcessor.Event() {};
+  public static final Key<String> DOCUMENTATION_DELEGATE_FQN = Key.create("groovy.documentation.delegate.fqn");
 
   private ResolveUtil() {
   }
@@ -133,16 +134,13 @@ public class ResolveUtil {
                                      @NotNull final ResolveState state) {
     final GrClosableBlock maxScope = nonCodeProcessor != null ? PsiTreeUtil.getParentOfType(place, GrClosableBlock.class, true, PsiFile.class) : null;
 
-    return PsiTreeUtil.treeWalkUp(place, maxScope, new PairProcessor<PsiElement, PsiElement>() {
-      @Override
-      public boolean process(PsiElement scope, PsiElement lastParent) {
-        ProgressManager.checkCanceled();
-        if (!doProcessDeclarations(originalPlace, lastParent, scope, substituteProcessor(processor, scope), nonCodeProcessor, state)) {
-          return false;
-        }
-        issueLevelChangeEvents(processor, scope);
-        return true;
+    return PsiTreeUtil.treeWalkUp(place, maxScope, (scope, lastParent) -> {
+      ProgressManager.checkCanceled();
+      if (!doProcessDeclarations(originalPlace, lastParent, scope, substituteProcessor(processor, scope), nonCodeProcessor, state)) {
+        return false;
       }
+      issueLevelChangeEvents(processor, scope);
+      return true;
     });
   }
 
@@ -205,6 +203,7 @@ public class ResolveUtil {
       PsiClassType categoryType = GdkMethodUtil.getCategoryType((PsiClass)scope);
       if (categoryType != null) {
         if (!processNonCodeMembers(categoryType, processor, place, state)) return false;
+        if (!GdkMethodUtil.processCategoryMethods(place, processor, state, (PsiClass)scope)) return false;
       }
 
     }
@@ -311,13 +310,7 @@ public class ResolveUtil {
     if (type instanceof PsiEllipsisType) {
       type = ((PsiEllipsisType)type).toArrayType();
     }
-    for (PsiScopeProcessor each : GroovyResolverProcessor.allProcessors(processor)) {
-      if (!NonCodeMembersContributor.runContributors(type, each, place, state)) {
-        return false;
-      }
-    }
-
-    return true;
+    return NonCodeMembersContributor.runContributors(type, processor, place, state);
   }
 
   private static final Key<PsiType> COMPARABLE = Key.create(CommonClassNames.JAVA_LANG_COMPARABLE);
@@ -361,12 +354,9 @@ public class ResolveUtil {
 
   public static Set<String> getAllSuperTypes(@NotNull PsiType base, final Project project) {
     final Map<String, Set<String>> cache =
-      CachedValuesManager.getManager(project).getCachedValue(project, new CachedValueProvider<Map<String, Set<String>>>() {
-        @Override
-        public Result<Map<String, Set<String>>> compute() {
-          final Map<String, Set<String>> result = ContainerUtil.newConcurrentMap();
-          return Result.create(result, PsiModificationTracker.JAVA_STRUCTURE_MODIFICATION_COUNT);
-        }
+      CachedValuesManager.getManager(project).getCachedValue(project, () -> {
+        final Map<String, Set<String>> result = ContainerUtil.newConcurrentMap();
+        return CachedValueProvider.Result.create(result, PsiModificationTracker.JAVA_STRUCTURE_MODIFICATION_COUNT);
       });
 
     final PsiClass cls = PsiUtil.resolveClassInType(base);
@@ -434,17 +424,17 @@ public class ResolveUtil {
   public static Pair<GrStatement, GrLabeledStatement> resolveLabelTargets(@Nullable String labelName,
                                                                           @Nullable PsiElement element,
                                                                           boolean isBreak) {
-    if (element == null) return new Pair<GrStatement, GrLabeledStatement>(null, null);
+    if (element == null) return new Pair<>(null, null);
 
     if (labelName == null) {
       do {
         element = element.getContext();
         if (element == null || element instanceof GrClosableBlock || element instanceof GrMember || element instanceof GroovyFile) {
-          return new Pair<GrStatement, GrLabeledStatement>(null, null);
+          return new Pair<>(null, null);
         }
       }
       while (!(element instanceof GrLoopStatement) && !(isBreak && element instanceof GrSwitchStatement));
-      return new Pair<GrStatement, GrLabeledStatement>(((GrStatement)element), null);
+      return new Pair<>(((GrStatement)element), null);
     }
 
     GrStatement statement = null;
@@ -466,7 +456,7 @@ public class ResolveUtil {
       if (element instanceof GrClosableBlock) break;
     }
     while (true);
-    return new Pair<GrStatement, GrLabeledStatement>(null, null);
+    return new Pair<>(null, null);
   }
 
   private static boolean isApplicableLabelStatement(PsiElement element, String labelName) {
@@ -556,7 +546,7 @@ public class ResolveUtil {
     if (candidates.size() == 0) return GroovyResolveResult.EMPTY_ARRAY;
     if (candidates.size() == 1) return candidates.toArray(new GroovyResolveResult[candidates.size()]);
 
-    final List<GroovyResolveResult> result = new ArrayList<GroovyResolveResult>();
+    final List<GroovyResolveResult> result = new ArrayList<>();
 
     final Iterator<? extends GroovyResolveResult> allIterator = candidates.iterator();
     result.add(allIterator.next());
@@ -767,7 +757,7 @@ public class ResolveUtil {
                                                           @Nullable String methodName,
                                                           @NotNull PsiElement place,
                                                           @Nullable PsiType... argumentTypes) {
-    return getMethodCandidates(thisType, methodName, place, true, false, false, argumentTypes);
+    return getMethodCandidates(thisType, methodName, place, true, false, argumentTypes);
   }
 
   @NotNull
@@ -776,7 +766,6 @@ public class ResolveUtil {
                                                           @NotNull PsiElement place,
                                                           boolean resolveClosures,
                                                           boolean allVariants,
-                                                          boolean byShape,
                                                           @Nullable PsiType... argumentTypes) {
     if (methodName == null) return GroovyResolveResult.EMPTY_ARRAY;
     thisType = TypesUtil.boxPrimitiveType(thisType, place.getManager(), place.getResolveScope());
@@ -798,7 +787,7 @@ public class ResolveUtil {
       allPropertyCandidates = GroovyResolveResult.EMPTY_ARRAY;
     }
 
-    List<GroovyResolveResult> propertyCandidates = new ArrayList<GroovyResolveResult>(allPropertyCandidates.length);
+    List<GroovyResolveResult> propertyCandidates = new ArrayList<>(allPropertyCandidates.length);
     for (GroovyResolveResult candidate : allPropertyCandidates) {
       final PsiElement resolved = candidate.getElement();
       if (!(resolved instanceof GrField)) continue;
@@ -818,7 +807,7 @@ public class ResolveUtil {
       }
     }
 
-    List<GroovyResolveResult> allCandidates = new ArrayList<GroovyResolveResult>();
+    List<GroovyResolveResult> allCandidates = new ArrayList<>();
     if (hasApplicableMethods) {
       ContainerUtil.addAll(allCandidates, methodCandidates);
     }
@@ -830,7 +819,7 @@ public class ResolveUtil {
         new AccessorResolverProcessor(getterName, methodName, place, true, thisType, PsiType.EMPTY_ARRAY);
       processAllDeclarations(thisType, getterResolver, state, place);
       final GroovyResolveResult[] candidates = getterResolver.getCandidates(); //can be only one candidate
-      final List<GroovyResolveResult> applicable = new ArrayList<GroovyResolveResult>();
+      final List<GroovyResolveResult> applicable = new ArrayList<>();
       for (GroovyResolveResult candidate : candidates) {
         PsiMethod method = (PsiMethod)candidate.getElement();
         assert method != null;
@@ -899,11 +888,24 @@ public class ResolveUtil {
   }
 
   public static boolean isScriptField(GrVariable var) {
-    PsiClass context = org.jetbrains.plugins.groovy.lang.psi.util.PsiUtil.getContextClass(var.getParent());
-    final GrModifierList modifierList = var.getModifierList();
-    return context instanceof GroovyScriptClass &&
-           modifierList != null &&
-           modifierList.findAnnotation(GroovyCommonClassNames.GROOVY_TRANSFORM_FIELD) != null;
+    return findScriptField(var) != null;
+  }
+
+  @Nullable
+  public static GrScriptField findScriptField(@NotNull GrVariable var) {
+    return CachedValuesManager.getCachedValue(var, () -> {
+      PsiFile file = var.getContainingFile();
+      if (file instanceof GroovyFile && ((GroovyFile)file).isScript()) {
+        PsiClass scriptClass = ((GroovyFile)file).getScriptClass();
+        assert scriptClass != null;
+        for (PsiField field : scriptClass.getFields()) {
+          if (field instanceof GrScriptField) {
+            if (((GrScriptField)field).getOriginalVariable() == var) return CachedValueProvider.Result.create(((GrScriptField)field), var);
+          }
+        }
+      }
+      return CachedValueProvider.Result.create(null, var);
+    });
   }
 
   @Nullable
@@ -918,31 +920,20 @@ public class ResolveUtil {
     return null;
   }
 
-  @NotNull
-  public static String inferExpectedPackageName(PsiElement place) {
-    PsiFile file = place.getContainingFile();
-    PsiDirectory psiDirectory = file.getContainingDirectory();
-    if (psiDirectory != null && file instanceof GroovyFile) {
-      PsiPackage aPackage = JavaDirectoryService.getInstance().getPackage(psiDirectory);
-      if (aPackage != null) {
-        return aPackage.getQualifiedName();
-      }
-    }
-    return "";
-  }
-
   public static PsiNamedElement findDuplicate(@NotNull GrVariable variable) {
     if (isScriptField(variable)) {
       final String name = variable.getName();
 
-      int count = 0;
       final GroovyScriptClass script = (GroovyScriptClass)((GroovyFile)variable.getContainingFile()).getScriptClass();
       assert script != null;
-      for (GrScriptField field : GrScriptField.getScriptFields(script)) {
-        if (name.equals(field.getName())) count++;
-      }
+      List<GrField> duplicates = ContainerUtil.filter(script.getFields(), (GrField f) -> {
+        if (!(f instanceof GrScriptField)) return false;
+        if (!name.equals(f.getName())) return false;
+        if (((GrScriptField)f).getOriginalVariable() == variable) return false;
+        return true;
+      });
 
-      return count > 1 ? GrScriptField.getScriptField(variable) : null;
+      return duplicates.size() > 0 ? duplicates.get(0) : null;
     }
     else {
       PsiNamedElement duplicate = resolveExistingElement(variable, new DuplicateVariablesProcessor(variable), GrVariable.class);

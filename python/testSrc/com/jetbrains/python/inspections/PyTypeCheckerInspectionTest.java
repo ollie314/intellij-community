@@ -24,6 +24,7 @@ public class PyTypeCheckerInspectionTest extends PyTestCase {
   public static final String TEST_DIRECTORY = "inspections/PyTypeCheckerInspection/";
 
   private void doTest() {
+    myFixture.copyDirectoryToProject("typing", "");
     myFixture.configureByFile(TEST_DIRECTORY + getTestName(false) + ".py");
     myFixture.enableInspections(PyTypeCheckerInspection.class);
     myFixture.checkHighlighting(true, false, true);
@@ -283,6 +284,36 @@ public class PyTypeCheckerInspectionTest extends PyTestCase {
 
   // PY-18275
   public void testStrFormat() {
+    doTest();
+  }
+
+  // PY-9924
+  public void testTupleGetItemWithSlice() {
+    doTest();
+  }
+
+  // PY-9924
+  public void testListGetItemWithSlice() {
+    doTest();
+  }
+
+  // PY-19884
+  public void testAbsSetAndMutableSet() {
+    doTest();
+  }
+
+  // PY-19884
+  public void testSetMethods() {
+    doTest();
+  }
+
+  // PY-11943
+  public void testMutableMapping() {
+    doTest();
+  }
+
+  // PY-16055
+  public void testFunctionReturnType() {
     doTest();
   }
 }

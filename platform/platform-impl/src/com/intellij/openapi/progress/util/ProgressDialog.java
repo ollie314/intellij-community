@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import com.intellij.openapi.ui.impl.DialogWrapperPeerImpl;
 import com.intellij.openapi.ui.impl.FocusTrackbackProvider;
 import com.intellij.openapi.ui.impl.GlassPaneDialogWrapperPeer;
 import com.intellij.openapi.util.SystemInfo;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.wm.WindowManager;
 import com.intellij.openapi.wm.ex.WindowManagerEx;
 import com.intellij.ui.FocusTrackback;
@@ -33,6 +34,7 @@ import com.intellij.ui.TitlePanel;
 import com.intellij.ui.awt.RelativePoint;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.util.Alarm;
+import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -87,12 +89,7 @@ class ProgressDialog implements Disposable {
     return fullText;
   }
 
-  private final Runnable myUpdateRequest = new Runnable() {
-    @Override
-    public void run() {
-      update();
-    }
-  };
+  private final Runnable myUpdateRequest = () -> update();
   JPanel myPanel;
 
   private JLabel myTextLabel;
@@ -132,7 +129,7 @@ class ProgressDialog implements Disposable {
     if (SystemInfo.isMac) {
       UIUtil.applyStyle(UIUtil.ComponentStyle.SMALL, myText2Label);
     }
-    myInnerPanel.setPreferredSize(new Dimension(SystemInfo.isMac ? 350 : 450, -1));
+    myInnerPanel.setPreferredSize(new Dimension(SystemInfo.isMac ? 350 : JBUI.scale(450), -1));
 
     myCancelButton.addActionListener(new ActionListener() {
       @Override
@@ -199,12 +196,9 @@ class ProgressDialog implements Disposable {
 
   void setShouldShowBackground(final boolean shouldShowBackground) {
     myShouldShowBackground = shouldShowBackground;
-    SwingUtilities.invokeLater(new Runnable() {
-      @Override
-      public void run() {
-        myBackgroundButton.setVisible(shouldShowBackground);
-        myPanel.revalidate();
-      }
+    SwingUtilities.invokeLater(() -> {
+      myBackgroundButton.setVisible(shouldShowBackground);
+      myPanel.revalidate();
     });
   }
 
@@ -224,12 +218,7 @@ class ProgressDialog implements Disposable {
 
   void enableCancelButtonIfNeeded(final boolean enable) {
     if (myProgressWindow.myShouldShowCancel) {
-      ApplicationManager.getApplication().invokeLater(new Runnable() {
-        @Override
-        public void run() {
-          myCancelButton.setEnabled(enable);
-        }
-      }, ModalityState.any());
+      ApplicationManager.getApplication().invokeLater(() -> myCancelButton.setEnabled(enable), ModalityState.any());
     }
   }
 
@@ -265,12 +254,9 @@ class ProgressDialog implements Disposable {
       else {
         // later to avoid concurrent dispose/addRequest
         if (!myUpdateAlarm.isDisposed() && myUpdateAlarm.getActiveRequestCount() == 0) {
-          SwingUtilities.invokeLater(new Runnable() {
-            @Override
-            public void run() {
-              if (!myUpdateAlarm.isDisposed() && myUpdateAlarm.getActiveRequestCount() == 0) {
-                myUpdateAlarm.addRequest(myUpdateRequest, 500, myProgressWindow.getModalityState());
-              }
+          SwingUtilities.invokeLater(() -> {
+            if (!myUpdateAlarm.isDisposed() && myUpdateAlarm.getActiveRequestCount() == 0) {
+              myUpdateAlarm.addRequest(myUpdateRequest, 500, myProgressWindow.getModalityState());
             }
           });
         }
@@ -287,13 +273,10 @@ class ProgressDialog implements Disposable {
   }
 
   void hide() {
-    SwingUtilities.invokeLater(new Runnable() {
-      @Override
-      public void run() {
-        if (myPopup != null) {
-          myPopup.close(DialogWrapper.CANCEL_EXIT_CODE);
-          myPopup = null;
-        }
+    SwingUtilities.invokeLater(() -> {
+      if (myPopup != null) {
+        myPopup.close(DialogWrapper.CANCEL_EXIT_CODE);
+        myPopup = null;
       }
     });
   }
@@ -320,19 +303,16 @@ class ProgressDialog implements Disposable {
     }
     myPopup.pack();
 
-    SwingUtilities.invokeLater(new Runnable() {
-      @Override
-      public void run() {
-        if (myPopup != null) {
-          if (myPopup.getPeer() instanceof FocusTrackbackProvider) {
-            final FocusTrackback focusTrackback = ((FocusTrackbackProvider)myPopup.getPeer()).getFocusTrackback();
-            if (focusTrackback != null) {
-              focusTrackback.consume();
-            }
+    SwingUtilities.invokeLater(() -> {
+      if (myPopup != null) {
+        if (myPopup.getPeer() instanceof FocusTrackbackProvider) {
+          final FocusTrackback focusTrackback = ((FocusTrackbackProvider)myPopup.getPeer()).getFocusTrackback();
+          if (focusTrackback != null) {
+            focusTrackback.consume();
           }
-
-          myProgressWindow.getFocusManager().requestFocus(myCancelButton, true).doWhenDone(myRepaintRunnable);
         }
+
+        myProgressWindow.getFocusManager().requestFocus(myCancelButton, true).doWhenDone(myRepaintRunnable);
       }
     });
 
@@ -423,7 +403,10 @@ class ProgressDialog implements Disposable {
     protected void init() {
       super.init();
       setUndecorated(true);
-      myPanel.setBorder(PopupBorder.Factory.create(true, true));
+      getRootPane().setWindowDecorationStyle(JRootPane.NONE);
+      if (! (SystemInfo.isWindows && UIUtil.isUnderIntelliJLaF() && Registry.is("ide.intellij.laf.win10.ui"))) {
+        myPanel.setBorder(PopupBorder.Factory.create(true, true));
+      }
     }
 
     @Override

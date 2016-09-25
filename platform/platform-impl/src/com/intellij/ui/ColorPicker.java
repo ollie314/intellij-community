@@ -30,7 +30,6 @@ import com.intellij.ui.picker.ColorPipette;
 import com.intellij.ui.picker.ColorPipetteBase;
 import com.intellij.ui.picker.MacColorPipette;
 import com.intellij.util.Alarm;
-import com.intellij.util.Consumer;
 import com.intellij.util.ObjectUtils;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.JBUI;
@@ -98,7 +97,7 @@ public class ColorPicker extends JPanel implements ColorListener, DocumentListen
     this(parent, color, true, enableOpacity, Collections.emptyList(), false);
   }
 
-  private ColorPicker(Disposable parent,
+  private ColorPicker(@NotNull Disposable parent,
                       @Nullable Color color,
                       boolean restoreColors, boolean enableOpacity,
                       List<ColorPickerListener> listeners, boolean opacityInPercent) {
@@ -231,7 +230,12 @@ public class ColorPicker extends JPanel implements ColorListener, DocumentListen
   }
 
   public Color getColor() {
-    return myColor;
+    if (myColorWheelPanel.myColorWheel.myOpacity == 255) {
+      return myColor;
+    } else {
+      //noinspection UseJBColor
+      return new Color(myColor.getRed(), myColor.getGreen(), myColor.getBlue(), myColorWheelPanel.myColorWheel.myOpacity);
+    }
   }
 
   @Override
@@ -241,12 +245,7 @@ public class ColorPicker extends JPanel implements ColorListener, DocumentListen
 
   private void update(final JTextField src) {
     myUpdateQueue.cancelAllRequests();
-    myUpdateQueue.addRequest(new Runnable() {
-      @Override
-      public void run() {
-        validateAndUpdatePreview(src);
-      }
-    }, 300);
+    myUpdateQueue.addRequest(() -> validateAndUpdatePreview(src), 300);
   }
 
   @Override
@@ -454,12 +453,9 @@ public class ColorPicker extends JPanel implements ColorListener, DocumentListen
 
       myBrightnessComponent = new SlideComponent("Brightness", true);
       myBrightnessComponent.setToolTipText("Brightness");
-      myBrightnessComponent.addListener(new Consumer<Integer>() {
-        @Override
-        public void consume(Integer value) {
-          myColorWheel.setBrightness(1f - (value / 255f));
-          myColorWheel.repaint();
-        }
+      myBrightnessComponent.addListener(value -> {
+        myColorWheel.setBrightness(1f - (value / 255f));
+        myColorWheel.repaint();
       });
 
       add(myBrightnessComponent, BorderLayout.EAST);
@@ -468,12 +464,9 @@ public class ColorPicker extends JPanel implements ColorListener, DocumentListen
         myOpacityComponent = new SlideComponent("Opacity", false);
         myOpacityComponent.setUnits(opacityInPercent ? SlideComponent.Unit.PERCENT : SlideComponent.Unit.LEVEL);
         myOpacityComponent.setToolTipText("Opacity");
-        myOpacityComponent.addListener(new Consumer<Integer>() {
-          @Override
-          public void consume(Integer integer) {
-            myColorWheel.setOpacity(integer.intValue());
-            myColorWheel.repaint();
-          }
+        myOpacityComponent.addListener(integer -> {
+          myColorWheel.setOpacity(integer.intValue());
+          myColorWheel.repaint();
         });
 
         add(myOpacityComponent, BorderLayout.SOUTH);
@@ -767,7 +760,7 @@ public class ColorPicker extends JPanel implements ColorListener, DocumentListen
     private static final int WIDTH = 10 * 30 + 13;
     private static final int HEIGHT = 62 + 3;
 
-    private List<Color> myRecentColors = new ArrayList<Color>();
+    private List<Color> myRecentColors = new ArrayList<>();
 
     private RecentColorsComponent(final ColorListener listener, boolean restoreColors) {
       addMouseListener(new MouseAdapter() {
@@ -837,7 +830,7 @@ public class ColorPicker extends JPanel implements ColorListener, DocumentListen
     }
 
     public void saveColors() {
-      final List<String> values = new ArrayList<String>();
+      final List<String> values = new ArrayList<>();
       for (Color recentColor : myRecentColors) {
         if (recentColor == null) break;
         values
@@ -853,7 +846,7 @@ public class ColorPicker extends JPanel implements ColorListener, DocumentListen
       }
 
       if (myRecentColors.size() > 20) {
-        myRecentColors = new ArrayList<Color>(myRecentColors.subList(myRecentColors.size() - 20, myRecentColors.size()));
+        myRecentColors = new ArrayList<>(myRecentColors.subList(myRecentColors.size() - 20, myRecentColors.size()));
       }
     }
 

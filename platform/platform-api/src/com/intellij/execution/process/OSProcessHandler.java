@@ -17,7 +17,6 @@ package com.intellij.execution.process;
 
 import com.intellij.execution.ExecutionException;
 import com.intellij.execution.configurations.GeneralCommandLine;
-import com.intellij.execution.configurations.PtyCommandLine;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.Key;
@@ -35,7 +34,7 @@ import java.util.concurrent.Future;
 public class OSProcessHandler extends BaseOSProcessHandler {
   private static final Logger LOG = Logger.getInstance("#com.intellij.execution.process.OSProcessHandler");
 
-  public static Key<Set<File>> DELETE_FILES_ON_TERMINATION = Key.create("OSProcessHandler.FileToDelete");
+  public static final Key<Set<File>> DELETE_FILES_ON_TERMINATION = Key.create("OSProcessHandler.FileToDelete");
 
   private boolean myHasErrorStream = true;
   private boolean myHasPty;
@@ -45,7 +44,6 @@ public class OSProcessHandler extends BaseOSProcessHandler {
   public OSProcessHandler(@NotNull GeneralCommandLine commandLine) throws ExecutionException {
     this(commandLine.createProcess(), commandLine.getCommandLineString(), commandLine.getCharset());
     myHasErrorStream = !commandLine.isRedirectErrorStream();
-    setHasPty(commandLine instanceof PtyCommandLine);
     myFilesToDelete = commandLine.getUserData(DELETE_FILES_ON_TERMINATION);
   }
 
@@ -67,6 +65,20 @@ public class OSProcessHandler extends BaseOSProcessHandler {
    */
   public OSProcessHandler(@NotNull Process process, /*@NotNull*/ String commandLine, @Nullable Charset charset) {
     super(process, commandLine, charset);
+    setHasPty(isPtyProcess(process));
+  }
+
+  private static boolean isPtyProcess(Process process) {
+    Class c = process.getClass();
+    
+    while (c != null) {
+      if ("com.pty4j.unix.UnixPtyProcess".equals(c.getName()) || "com.pty4j.windows.WinPtyProcess".equals(c.getName())) {
+        return true;
+      }
+      c = c.getSuperclass();
+    }
+    
+    return false;
   }
 
   @NotNull
@@ -128,12 +140,7 @@ public class OSProcessHandler extends BaseOSProcessHandler {
       killProcessTreeSync(process);
     }
     else {
-      executeOnPooledThread(new Runnable() {
-        @Override
-        public void run() {
-          killProcessTreeSync(process);
-        }
-      });
+      executeOnPooledThread(() -> killProcessTreeSync(process));
     }
   }
 
@@ -141,23 +148,13 @@ public class OSProcessHandler extends BaseOSProcessHandler {
     LOG.debug("killing process tree");
     final boolean destroyed = OSProcessManager.getInstance().killProcessTree(process);
     if (!destroyed) {
-      if (isTerminated(process)) {
+      if (!process.isAlive()) {
         LOG.warn("Process has been already terminated: " + myCommandLine);
       }
       else {
         LOG.warn("Cannot kill process tree. Trying to destroy process using Java API. Cmdline:\n" + myCommandLine);
         process.destroy();
       }
-    }
-  }
-
-  private static boolean isTerminated(@NotNull Process process) {
-    try {
-      process.exitValue();
-      return true;
-    }
-    catch (IllegalThreadStateException e) {
-      return false;
     }
   }
 

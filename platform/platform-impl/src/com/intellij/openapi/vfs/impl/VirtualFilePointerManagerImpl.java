@@ -26,6 +26,7 @@ import com.intellij.openapi.vfs.*;
 import com.intellij.openapi.vfs.ex.temp.TempFileSystem;
 import com.intellij.openapi.vfs.newvfs.BulkFileListener;
 import com.intellij.openapi.vfs.newvfs.events.*;
+import com.intellij.openapi.vfs.newvfs.persistent.PersistentFS;
 import com.intellij.openapi.vfs.pointers.VirtualFilePointer;
 import com.intellij.openapi.vfs.pointers.VirtualFilePointerContainer;
 import com.intellij.openapi.vfs.pointers.VirtualFilePointerListener;
@@ -37,7 +38,6 @@ import com.intellij.util.io.URLUtil;
 import com.intellij.util.messages.MessageBus;
 import gnu.trove.THashMap;
 import gnu.trove.TObjectIntHashMap;
-import gnu.trove.TObjectIntProcedure;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -52,24 +52,14 @@ public class VirtualFilePointerManagerImpl extends VirtualFilePointerManager imp
   private final LocalFileSystem LOCAL_FILE_SYSTEM;
   private final JarFileSystem JAR_FILE_SYSTEM;
   // guarded by this
-  private final Map<VirtualFilePointerListener, FilePointerPartNode> myPointers = new LinkedHashMap<VirtualFilePointerListener, FilePointerPartNode>();
+  private final Map<VirtualFilePointerListener, FilePointerPartNode> myPointers = new LinkedHashMap<>();
 
   // compare by identity because VirtualFilePointerContainer has too smart equals
   // guarded by myContainers
   private final Set<VirtualFilePointerContainerImpl> myContainers = ContainerUtil.newIdentityTroveSet();
   @NotNull private final VirtualFileManager myVirtualFileManager;
   @NotNull private final MessageBus myBus;
-  private static final Comparator<String> URL_COMPARATOR = SystemInfo.isFileSystemCaseSensitive ? new Comparator<String>() {
-    @Override
-    public int compare(@NotNull String url1, @NotNull String url2) {
-      return url1.compareTo(url2);
-    }
-  } : new Comparator<String>() {
-    @Override
-    public int compare(@NotNull String url1, @NotNull String url2) {
-      return url1.compareToIgnoreCase(url2);
-    }
-  };
+  private static final Comparator<String> URL_COMPARATOR = SystemInfo.isFileSystemCaseSensitive ? String::compareTo : String::compareToIgnoreCase;
 
   VirtualFilePointerManagerImpl(@NotNull VirtualFileManager virtualFileManager,
                                 @NotNull MessageBus bus,
@@ -124,7 +114,7 @@ public class VirtualFilePointerManagerImpl extends VirtualFilePointerManager imp
   @NotNull
   private static VirtualFilePointer[] toPointers(@NotNull List<FilePointerPartNode> nodes) {
     if (nodes.isEmpty()) return VirtualFilePointer.EMPTY_ARRAY;
-    List<VirtualFilePointer> list = new ArrayList<VirtualFilePointer>(nodes.size());
+    List<VirtualFilePointer> list = new ArrayList<>(nodes.size());
     for (FilePointerPartNode node : nodes) {
       node.addAllPointersTo(list);
     }
@@ -133,7 +123,7 @@ public class VirtualFilePointerManagerImpl extends VirtualFilePointerManager imp
 
   @TestOnly
   VirtualFilePointer[] getPointersUnder(VirtualFile parent, String childName) {
-    List<FilePointerPartNode> nodes = new ArrayList<FilePointerPartNode>();
+    List<FilePointerPartNode> nodes = new ArrayList<>();
     addPointersUnder(parent, true, childName, nodes);
     return toPointers(nodes);
   }
@@ -217,7 +207,7 @@ public class VirtualFilePointerManagerImpl extends VirtualFilePointerManager imp
     return pointer;
   }
 
-  private final Map<String, IdentityVirtualFilePointer> myUrlToIdentity = new THashMap<String, IdentityVirtualFilePointer>();
+  private final Map<String, IdentityVirtualFilePointer> myUrlToIdentity = new THashMap<>();
   @NotNull
   private IdentityVirtualFilePointer getOrCreateIdentity(@NotNull String url, @Nullable VirtualFile found) {
     IdentityVirtualFilePointer pointer = myUrlToIdentity.get(url);
@@ -282,9 +272,9 @@ public class VirtualFilePointerManagerImpl extends VirtualFilePointerManager imp
   private synchronized void assertAllPointersDisposed() {
     for (Map.Entry<VirtualFilePointerListener, FilePointerPartNode> entry : myPointers.entrySet()) {
       FilePointerPartNode root = entry.getValue();
-      List<FilePointerPartNode> left = new ArrayList<FilePointerPartNode>();
-      List<VirtualFilePointerImpl> pointers = new ArrayList<VirtualFilePointerImpl>();
+      List<FilePointerPartNode> left = new ArrayList<>();
       root.addPointersUnder(null, false, "", left);
+      List<VirtualFilePointerImpl> pointers = new ArrayList<>();
       for (FilePointerPartNode node : left) {
         node.addAllPointersTo(pointers);
       }
@@ -319,7 +309,7 @@ public class VirtualFilePointerManagerImpl extends VirtualFilePointerManager imp
 
   @TestOnly
   public void assertPointersAreDisposed() {
-    List<VirtualFilePointerImpl> pointers = new ArrayList<VirtualFilePointerImpl>();
+    List<VirtualFilePointerImpl> pointers = new ArrayList<>();
     addAllPointersTo(pointers);
     try {
       for (VirtualFilePointerImpl pointer : pointers) {
@@ -335,7 +325,7 @@ public class VirtualFilePointerManagerImpl extends VirtualFilePointerManager imp
 
   @TestOnly
   private void addAllPointersTo(@NotNull Collection<VirtualFilePointerImpl> pointers) {
-    List<FilePointerPartNode> out = new ArrayList<FilePointerPartNode>();
+    List<FilePointerPartNode> out = new ArrayList<>();
     for (FilePointerPartNode root : myPointers.values()) {
       root.addPointersUnder(null, false, "", out);
     }
@@ -394,8 +384,8 @@ public class VirtualFilePointerManagerImpl extends VirtualFilePointerManager imp
 
   @Override
   public void before(@NotNull final List<? extends VFileEvent> events) {
-    List<FilePointerPartNode> toFireEvents = new ArrayList<FilePointerPartNode>();
-    List<FilePointerPartNode> toUpdateUrl = new ArrayList<FilePointerPartNode>();
+    List<FilePointerPartNode> toFireEvents = new ArrayList<>();
+    List<FilePointerPartNode> toUpdateUrl = new ArrayList<>();
     VirtualFilePointer[] toFirePointers;
 
     synchronized (this) {
@@ -419,7 +409,7 @@ public class VirtualFilePointerManagerImpl extends VirtualFilePointerManager imp
           VirtualFile eventFile = moveEvent.getFile();
           addPointersUnder(moveEvent.getNewParent(), true, eventFile.getName(), toFireEvents);
 
-          List<FilePointerPartNode> nodes = new ArrayList<FilePointerPartNode>();
+          List<FilePointerPartNode> nodes = new ArrayList<>();
           addPointersUnder(eventFile, false, "", nodes);
           for (FilePointerPartNode node : nodes) {
             VirtualFilePointerImpl pointer = node.getAnyPointer();
@@ -437,7 +427,7 @@ public class VirtualFilePointerManagerImpl extends VirtualFilePointerManager imp
             VirtualFile parent = eventFile.getParent(); // e.g. for LightVirtualFiles
             addPointersUnder(parent, true, change.getNewValue().toString(), toFireEvents);
 
-            List<FilePointerPartNode> nodes = new ArrayList<FilePointerPartNode>();
+            List<FilePointerPartNode> nodes = new ArrayList<>();
             addPointersUnder(eventFile, false, "", nodes);
             for (FilePointerPartNode node : nodes) {
               VirtualFilePointerImpl pointer = node.getAnyPointer();
@@ -450,16 +440,12 @@ public class VirtualFilePointerManagerImpl extends VirtualFilePointerManager imp
         }
       }
 
-      myEvents = new ArrayList<EventDescriptor>();
+      myEvents = new ArrayList<>();
       toFirePointers = toPointers(toFireEvents);
       for (final VirtualFilePointerListener listener : myPointers.keySet()) {
         if (listener == null) continue;
-        List<VirtualFilePointer> filtered = ContainerUtil.filter(toFirePointers, new Condition<VirtualFilePointer>() {
-          @Override
-          public boolean value(VirtualFilePointer pointer) {
-            return ((VirtualFilePointerImpl)pointer).getListener() == listener;
-          }
-        });
+        List<VirtualFilePointer> filtered = ContainerUtil.filter(toFirePointers,
+                                                                 pointer -> ((VirtualFilePointerImpl)pointer).getListener() == listener);
         if (!filtered.isEmpty()) {
           EventDescriptor event = new EventDescriptor(listener, filtered.toArray(new VirtualFilePointer[filtered.size()]));
           myEvents.add(event);
@@ -489,7 +475,7 @@ public class VirtualFilePointerManagerImpl extends VirtualFilePointerManager imp
         Pair<VirtualFile,String> after = node.update();
         String urlAfter = after.second;
         if (URL_COMPARATOR.compare(urlBefore, urlAfter) != 0) {
-          List<VirtualFilePointerImpl> myPointers = new SmartList<VirtualFilePointerImpl>();
+          List<VirtualFilePointerImpl> myPointers = new SmartList<>();
           node.addAllPointersTo(myPointers);
 
           // url has changed, reinsert
@@ -544,10 +530,17 @@ public class VirtualFilePointerManagerImpl extends VirtualFilePointerManager imp
     }
   }
 
+  @Override
+  public long getModificationCount() {
+    // depend on PersistentFS.getInstance().getStructureModificationCount() because com.intellij.openapi.vfs.impl.FilePointerPartNode.update is
+    // depend on its own modcount because we need to change both before and after VFS changes
+    return super.getModificationCount() + PersistentFS.getInstance().getStructureModificationCount();
+  }
+
   private static class DelegatingDisposable implements Disposable {
     private static final ConcurrentMap<Disposable, DelegatingDisposable> ourInstances =
       ContainerUtil.newConcurrentMap(ContainerUtil.<Disposable>identityStrategy());
-    private final TObjectIntHashMap<VirtualFilePointerImpl> myCounts = new TObjectIntHashMap<VirtualFilePointerImpl>();
+    private final TObjectIntHashMap<VirtualFilePointerImpl> myCounts = new TObjectIntHashMap<>();
     private final Disposable myParent;
 
     private DelegatingDisposable(@NotNull Disposable parent) {
@@ -573,14 +566,11 @@ public class VirtualFilePointerManagerImpl extends VirtualFilePointerManager imp
     public void dispose() {
       ourInstances.remove(myParent);
       synchronized (this) {
-        myCounts.forEachEntry(new TObjectIntProcedure<VirtualFilePointerImpl>() {
-          @Override
-          public boolean execute(VirtualFilePointerImpl pointer, int disposeCount) {
-            int after = pointer.myNode.incrementUsageCount(-disposeCount + 1);
-            LOG.assertTrue(after > 0, after);
-            pointer.dispose();
-            return true;
-          }
+        myCounts.forEachEntry((pointer, disposeCount) -> {
+          int after = pointer.myNode.incrementUsageCount(-disposeCount + 1);
+          LOG.assertTrue(after > 0, after);
+          pointer.dispose();
+          return true;
         });
       }
     }

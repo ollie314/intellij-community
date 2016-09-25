@@ -15,6 +15,7 @@
  */
 package com.intellij.psi.impl.source.tree.java;
 
+import com.intellij.codeInsight.daemon.impl.analysis.JavaGenericsUtil;
 import com.intellij.lang.ASTNode;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.projectRoots.JavaSdkVersion;
@@ -25,7 +26,6 @@ import com.intellij.pom.java.LanguageLevel;
 import com.intellij.psi.*;
 import com.intellij.psi.impl.DebugUtil;
 import com.intellij.psi.impl.PsiClassImplUtil;
-import com.intellij.psi.impl.PsiImplUtil;
 import com.intellij.psi.impl.source.resolve.JavaResolveCache;
 import com.intellij.psi.impl.source.resolve.graphInference.InferenceSession;
 import com.intellij.psi.impl.source.resolve.graphInference.PsiPolyExpressionUtil;
@@ -255,14 +255,18 @@ public class PsiMethodCallExpressionImpl extends ExpressionPsiElement implements
     // If unchecked conversion was necessary for the method to be applicable, 
     // the parameter types of the invocation type are the parameter types of the method's type,
     // and the return type and thrown types are given by the erasures of the return type and thrown types of the method's type.
-    if (!languageLevel.isAtLeast(LanguageLevel.JDK_1_8) && 
-        (method.hasTypeParameters() || JavaVersionService.getInstance().isAtLeast(call, JavaSdkVersion.JDK_1_8)) &&
+    if ((!languageLevel.isAtLeast(LanguageLevel.JDK_1_8) && method.hasTypeParameters() ||
+         !method.hasTypeParameters() && JavaVersionService.getInstance().isAtLeast(call, JavaSdkVersion.JDK_1_8)) &&
         result instanceof MethodCandidateInfo && ((MethodCandidateInfo)result).isApplicable()) {
       final PsiType[] args = call.getArgumentList().getExpressionTypes();
-      final boolean allowUncheckedConversion = false;
-      final int applicabilityLevel = PsiUtil.getApplicabilityLevel(method, substitutor, args, languageLevel, allowUncheckedConversion, true);
-      if (applicabilityLevel == MethodCandidateInfo.ApplicabilityLevel.NOT_APPLICABLE) {
-        return TypeConversionUtil.erasure(substitutedReturnType);
+      final PsiParameter[] parameters = method.getParameterList().getParameters();
+      final boolean varargs = ((MethodCandidateInfo)result).getApplicabilityLevel() == MethodCandidateInfo.ApplicabilityLevel.VARARGS;
+      for (int i = 0; i < args.length; i++) {
+        final PsiType parameterType = substitutor.substitute(PsiTypesUtil.getParameterType(parameters, i, varargs));
+        final PsiType expressionType = args[i];
+        if (expressionType != null && parameterType != null && JavaGenericsUtil.isRawToGeneric(parameterType, expressionType)) {
+          return TypeConversionUtil.erasure(substitutedReturnType);
+        }
       }
     }
 
@@ -271,9 +275,6 @@ public class PsiMethodCallExpressionImpl extends ExpressionPsiElement implements
       if (Comparing.equal(TypeConversionUtil.erasure(substitutedReturnType), returnTypeErasure)) {
         return returnTypeErasure;
       }
-    }
-    if (!languageLevel.isAtLeast(LanguageLevel.JDK_1_8)) {
-      return PsiImplUtil.normalizeWildcardTypeByPosition(substitutedReturnType, call);
     }
     return PsiUtil.captureToplevelWildcards(substitutedReturnType, call);
   }

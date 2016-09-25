@@ -18,8 +18,10 @@ package com.intellij.codeInspection.ui;
 
 import com.intellij.codeHighlighting.HighlightDisplayLevel;
 import com.intellij.codeInspection.reference.RefEntity;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.vcs.FileStatus;
 import com.intellij.util.containers.FactoryMap;
+import com.intellij.util.ui.tree.TreeUtil;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
@@ -50,12 +52,12 @@ public abstract class InspectionTreeNode extends DefaultMutableTreeNode {
     }
   }
 
-  public int getProblemCount() {
+  public int getProblemCount(boolean allowSuppressed) {
     int sum = 0;
     Enumeration enumeration = children();
     while (enumeration.hasMoreElements()) {
       InspectionTreeNode child = (InspectionTreeNode)enumeration.nextElement();
-      sum += child.getProblemCount();
+      sum += child.getProblemCount(allowSuppressed);
     }
     return sum;
   }
@@ -64,7 +66,7 @@ public abstract class InspectionTreeNode extends DefaultMutableTreeNode {
     return true;
   }
 
-  public boolean isExcluded(ExcludedInspectionTreeNodesManager excludedManager){
+  public boolean isExcluded(ExcludedInspectionTreeNodesManager excludedManager) {
     return excludedManager.isExcluded(this);
   }
 
@@ -77,7 +79,7 @@ public abstract class InspectionTreeNode extends DefaultMutableTreeNode {
     return null;
   }
 
-  public FileStatus getNodeStatus(){
+  public FileStatus getNodeStatus() {
     return FileStatus.NOT_CHANGED;
   }
 
@@ -97,6 +99,23 @@ public abstract class InspectionTreeNode extends DefaultMutableTreeNode {
       InspectionTreeNode child = (InspectionTreeNode)enumeration.nextElement();
       child.amnestyElement(excludedManager);
     }
+  }
+
+  public InspectionTreeNode insertByOrder(InspectionTreeNode child, boolean allowDuplication) {
+    return ReadAction.compute(() -> {
+      if (!allowDuplication) {
+        int index = getIndex(child);
+        if (index != -1) {
+          return (InspectionTreeNode)getChildAt(index);
+        }
+      }
+      int index = TreeUtil.indexedBinarySearch(this, child, InspectionResultsViewComparator.getInstance());
+      if (!allowDuplication && index >= 0){
+        return (InspectionTreeNode)getChildAt(index);
+      }
+      insert(child, Math.abs(index + 1));
+      return child;
+    });
   }
 
   @Override
@@ -142,12 +161,12 @@ public abstract class InspectionTreeNode extends DefaultMutableTreeNode {
   }
 
   @Override
-  public synchronized void setParent(MutableTreeNode newParent) {
-    super.setParent(newParent);
+  public synchronized TreeNode getParent() {
+    return super.getParent();
   }
 
   @Override
-  public synchronized TreeNode getParent() {
-    return super.getParent();
+  public synchronized void setParent(MutableTreeNode newParent) {
+    super.setParent(newParent);
   }
 }

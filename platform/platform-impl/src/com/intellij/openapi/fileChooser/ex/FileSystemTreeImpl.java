@@ -73,13 +73,13 @@ public class FileSystemTreeImpl implements FileSystemTree {
   private final FileTreeStructure myTreeStructure;
   private final AbstractTreeBuilder myTreeBuilder;
   private final Project myProject;
-  private final ArrayList<Runnable> myOkActions = new ArrayList<Runnable>(2);
+  private final ArrayList<Runnable> myOkActions = new ArrayList<>(2);
   private final FileChooserDescriptor myDescriptor;
 
   private final List<Listener> myListeners = ContainerUtil.createLockFreeCopyOnWriteList();
   private final MyExpansionListener myExpansionListener = new MyExpansionListener();
 
-  private final Set<VirtualFile> myEverExpanded = new THashSet<VirtualFile>();
+  private final Set<VirtualFile> myEverExpanded = new THashSet<>();
 
   public FileSystemTreeImpl(@Nullable final Project project, final FileChooserDescriptor descriptor) {
     this(project, descriptor, new Tree(), null, null, null);
@@ -102,12 +102,10 @@ public class FileSystemTreeImpl implements FileSystemTree {
 
     myTree.addTreeExpansionListener(myExpansionListener);
 
-    myTreeBuilder = createTreeBuilder(myTree, treeModel, myTreeStructure, FileComparator.getInstance(), descriptor, new Runnable() {
-      public void run() {
-        myTree.expandPath(new TreePath(treeModel.getRoot()));
-        if (onInitialized != null) {
-          onInitialized.run();
-        }
+    myTreeBuilder = createTreeBuilder(myTree, treeModel, myTreeStructure, FileComparator.getInstance(), descriptor, () -> {
+      myTree.expandPath(new TreePath(treeModel.getRoot()));
+      if (onInitialized != null) {
+        onInitialized.run();
       }
     });
 
@@ -366,12 +364,9 @@ public class FileSystemTreeImpl implements FileSystemTree {
 
   @NotNull
   public VirtualFile[] getSelectedFiles() {
-    final List<VirtualFile> files = collectSelectedElements(new NullableFunction<FileElement, VirtualFile>() {
-      @Override
-      public VirtualFile fun(final FileElement element) {
-        final VirtualFile file = element.getFile();
-        return file != null && file.isValid() ? file : null;
-      }
+    final List<VirtualFile> files = collectSelectedElements((NullableFunction<FileElement, VirtualFile>)element -> {
+      final VirtualFile file = element.getFile();
+      return file != null && file.isValid() ? file : null;
     });
     return VfsUtilCore.toVirtualFileArray(files);
   }
@@ -430,7 +425,7 @@ public class FileSystemTreeImpl implements FileSystemTree {
 
   private void processSelectionChange() {
     if (myListeners.size() == 0) return;
-    List<VirtualFile> selection = new ArrayList<VirtualFile>();
+    List<VirtualFile> selection = new ArrayList<>();
 
     final TreePath[] paths = myTree.getSelectionPaths();
     if (paths != null) {
@@ -473,15 +468,12 @@ public class FileSystemTreeImpl implements FileSystemTree {
 
           AbstractTreeStructure treeStructure = myTreeBuilder.getTreeStructure();
           final boolean async = treeStructure != null && treeStructure.isToBuildChildrenInBackground(virtualFile);
-          DumbService.allowStartingDumbModeInside(DumbModePermission.MAY_START_MODAL, new Runnable() {
-            @Override
-            public void run() {
-              if (virtualFile instanceof NewVirtualFile) {
-                RefreshQueue.getInstance().refresh(async, false, null, ModalityState.stateForComponent(myTree), virtualFile);
-              }
-              else {
-                virtualFile.refresh(async, false);
-              }
+          DumbService.allowStartingDumbModeInside(DumbModePermission.MAY_START_MODAL, () -> {
+            if (virtualFile instanceof NewVirtualFile) {
+              RefreshQueue.getInstance().refresh(async, false, null, ModalityState.stateForComponent(myTree), virtualFile);
+            }
+            else {
+              virtualFile.refresh(async, false);
             }
           });
         }

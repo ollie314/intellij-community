@@ -29,19 +29,18 @@ import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import javax.swing.tree.MutableTreeNode;
+import javax.swing.tree.TreeNode;
 
 /**
  * @author max
  */
-public class RefElementNode extends SuppressableInspectionTreeNode implements RefElementAware {
-  private boolean myHasDescriptorsUnder = false;
-  private CommonProblemDescriptor mySingleDescriptor = null;
-  protected final InspectionToolPresentation myToolPresentation;
+public class RefElementNode extends SuppressableInspectionTreeNode {
+  private volatile boolean myHasDescriptorsUnder;
+  private volatile CommonProblemDescriptor mySingleDescriptor;
   private final Icon myIcon;
   public RefElementNode(@Nullable RefEntity userObject, @NotNull InspectionToolPresentation presentation) {
     super(userObject, presentation);
-    myToolPresentation = presentation;
-    init();
+    init(presentation.getContext().getProject());
     final RefEntity refEntity = getElement();
     myIcon = refEntity == null ? null : refEntity.getIcon(false);
   }
@@ -78,34 +77,38 @@ public class RefElementNode extends SuppressableInspectionTreeNode implements Re
 
   @Override
   public void excludeElement(ExcludedInspectionTreeNodesManager excludedManager) {
-    myToolPresentation.ignoreCurrentElement(getElement());
     super.excludeElement(excludedManager);
   }
 
   @Override
   public void amnestyElement(ExcludedInspectionTreeNodesManager excludedManager) {
-    myToolPresentation.amnesty(getElement());
     super.amnestyElement(excludedManager);
   }
 
   @Override
   public FileStatus getNodeStatus() {
-    return  myToolPresentation.getElementStatus(getElement());
+    return myPresentation.getElementStatus(getElement());
   }
 
   @Override
   public void add(MutableTreeNode newChild) {
+    checkHasDescriptorUnder(newChild);
     super.add(newChild);
-    if (newChild instanceof ProblemDescriptionNode) {
-      myHasDescriptorsUnder = true;
-    }
+  }
+
+  @Override
+  public InspectionTreeNode insertByOrder(InspectionTreeNode child, boolean allowDuplication) {
+    checkHasDescriptorUnder(child);
+    return super.insertByOrder(child, allowDuplication);
   }
 
   public void setProblem(@NotNull CommonProblemDescriptor descriptor) {
     mySingleDescriptor = descriptor;
   }
 
-  public CommonProblemDescriptor getProblem() {
+  @Nullable
+  @Override
+  public CommonProblemDescriptor getDescriptor() {
     return mySingleDescriptor;
   }
 
@@ -118,23 +121,28 @@ public class RefElementNode extends SuppressableInspectionTreeNode implements Re
   }
 
   @Override
-  public int getProblemCount() {
-    return Math.max(1, super.getProblemCount());
+  public int getProblemCount(boolean allowSuppressed) {
+    return isLeaf() ? myPresentation.getIgnoredRefElements().contains(getElement()) && !(allowSuppressed && isAlreadySuppressedFromView() && isValid()) ? 0 : 1 : super.getProblemCount(allowSuppressed);
   }
 
   @Override
   public void visitProblemSeverities(FactoryMap<HighlightDisplayLevel, Integer> counter) {
-    if (isLeaf()) {
+    if (isLeaf() && !myPresentation.isElementIgnored(getElement())) {
       counter.put(HighlightDisplayLevel.WARNING, counter.get(HighlightDisplayLevel.WARNING) + 1);
       return;
     }
     super.visitProblemSeverities(counter);
   }
 
+  @Override
+  public boolean isQuickFixAppliedFromView() {
+    return false;
+  }
+
   @Nullable
   @Override
   public String getCustomizedTailText() {
-    if (myToolPresentation.isDummy()) {
+    if (myPresentation.isDummy()) {
       return "";
     }
     final String customizedText = super.getCustomizedTailText();
@@ -142,5 +150,18 @@ public class RefElementNode extends SuppressableInspectionTreeNode implements Re
       return customizedText;
     }
     return isLeaf() ? "" : null;
+  }
+
+  private void checkHasDescriptorUnder(MutableTreeNode newChild) {
+    if (myHasDescriptorsUnder) return;
+    if (newChild instanceof ProblemDescriptionNode ||
+        newChild instanceof RefElementNode && ((RefElementNode)newChild).hasDescriptorsUnder()) {
+      myHasDescriptorsUnder = true;
+      TreeNode parent = getParent();
+      while (parent instanceof RefElementNode) {
+        ((RefElementNode)parent).myHasDescriptorsUnder = true;
+        parent = parent.getParent();
+      }
+    }
   }
 }

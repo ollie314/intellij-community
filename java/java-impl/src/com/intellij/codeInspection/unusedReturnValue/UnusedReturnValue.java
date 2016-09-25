@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2009 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,7 +44,7 @@ import java.util.List;
 public class UnusedReturnValue extends GlobalJavaBatchInspectionTool{
   private MakeVoidQuickFix myQuickFix;
 
-  public boolean IGNORE_BUILDER_PATTERN = false;
+  public boolean IGNORE_BUILDER_PATTERN;
 
   @Override
   @Nullable
@@ -163,7 +163,7 @@ public class UnusedReturnValue extends GlobalJavaBatchInspectionTool{
       PsiMethod psiMethod = null;
       if (myProcessor != null) {
         RefElement refElement = (RefElement)myProcessor.getElement(descriptor);
-        if (refElement.isValid() && refElement instanceof RefMethod) {
+        if (refElement instanceof RefMethod && refElement.isValid()) {
           RefMethod refMethod = (RefMethod)refElement;
           psiMethod = (PsiMethod) refMethod.getElement();
         }
@@ -172,6 +172,11 @@ public class UnusedReturnValue extends GlobalJavaBatchInspectionTool{
       }
       if (psiMethod == null) return;
       makeMethodHierarchyVoid(project, psiMethod);
+    }
+
+    @Override
+    public boolean startInWriteAction() {
+      return false;
     }
 
     @Override
@@ -204,7 +209,7 @@ public class UnusedReturnValue extends GlobalJavaBatchInspectionTool{
     private static void replaceReturnStatements(@NotNull final PsiMethod method) {
       final PsiCodeBlock body = method.getBody();
       if (body != null) {
-        final List<PsiReturnStatement> returnStatements = new ArrayList<PsiReturnStatement>();
+        final List<PsiReturnStatement> returnStatements = new ArrayList<>();
         body.accept(new JavaRecursiveElementWalkingVisitor() {
           @Override
           public void visitReturnStatement(final PsiReturnStatement statement) {

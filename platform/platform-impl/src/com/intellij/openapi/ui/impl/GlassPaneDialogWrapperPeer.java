@@ -408,7 +408,7 @@ public class GlassPaneDialogWrapperPeer extends DialogWrapperPeer implements Foc
                                                 AllIcons.Ide.Shadow.Bottom.getIconHeight(), AllIcons.Ide.Shadow.Right.getIconWidth()));
 
       myPane = pane;
-      myDialogWrapper = new WeakReference<DialogWrapper>(wrapper);
+      myDialogWrapper = new WeakReference<>(wrapper);
 //      myProject = new WeakReference<Project>(project);
 
       myRootPane = new MyRootPane(this); // be careful with DialogWrapper.dispose()!
@@ -604,12 +604,7 @@ public class GlassPaneDialogWrapperPeer extends DialogWrapperPeer implements Foc
       remove(getContentPane());
       repaint();
 
-      final Runnable disposer = new Runnable() {
-        @Override
-        public void run() {
-          setVisible(false);
-        }
-      };
+      final Runnable disposer = () -> setVisible(false);
 
       if (EventQueue.isDispatchThread()) {
         disposer.run();

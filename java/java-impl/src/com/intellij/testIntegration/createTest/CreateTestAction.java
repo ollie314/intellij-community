@@ -128,18 +128,10 @@ public class CreateTestAction extends PsiElementBaseIntentionAction {
       return;
     }
 
-    CommandProcessor.getInstance().executeCommand(project, new Runnable() {
-      @Override
-      public void run() {
-        TestFramework framework = d.getSelectedTestFrameworkDescriptor();
-        final TestGenerator generator = TestGenerators.INSTANCE.forLanguage(framework.getLanguage());
-        DumbService.getInstance(project).withAlternativeResolveEnabled(new Runnable() {
-          @Override
-          public void run() {
-            generator.generateTest(project, d);
-          }
-        });
-      }
+    CommandProcessor.getInstance().executeCommand(project, () -> {
+      TestFramework framework = d.getSelectedTestFrameworkDescriptor();
+      final TestGenerator generator = TestGenerators.INSTANCE.forLanguage(framework.getLanguage());
+      DumbService.getInstance(project).withAlternativeResolveEnabled(() -> generator.generateTest(project, d));
     }, CodeInsightBundle.message("intention.create.test"), this);
   }
 
@@ -171,7 +163,7 @@ public class CreateTestAction extends PsiElementBaseIntentionAction {
     }
 
     //suggest to choose from all dependencies modules
-    final HashSet<Module> modules = new HashSet<Module>();
+    final HashSet<Module> modules = new HashSet<>();
     ModuleUtilCore.collectModulesDependsOn(mainModule, modules);
     return modules.stream()
       .flatMap(CreateTestAction::suitableTestSourceFolders)

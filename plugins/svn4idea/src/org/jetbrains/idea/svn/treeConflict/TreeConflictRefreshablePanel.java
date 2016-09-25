@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,10 +37,12 @@ import com.intellij.openapi.vcs.ui.VcsBalloonProblemNotifier;
 import com.intellij.ui.JBColor;
 import com.intellij.util.BeforeAfter;
 import com.intellij.util.containers.Convertor;
+import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.VcsBackgroundTask;
 import com.intellij.vcsUtil.VcsUtil;
 import gnu.trove.TLongArrayList;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.idea.svn.ConflictedSvnChange;
 import org.jetbrains.idea.svn.SvnRevisionNumber;
 import org.jetbrains.idea.svn.SvnVcs;
@@ -59,6 +61,8 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.util.Collections;
 import java.util.List;
+
+import static com.intellij.util.ObjectUtils.notNull;
 
 /**
  * Created with IntelliJ IDEA.
@@ -126,8 +130,8 @@ public class TreeConflictRefreshablePanel extends AbstractRefreshablePanel {
 
   @Override
   protected Object loadImpl() throws VcsException {
-    return new BeforeAfter<BeforeAfter<ConflictSidePresentation>>(processDescription(myChange.getBeforeDescription()),
-                                                     processDescription(myChange.getAfterDescription()));
+    return new BeforeAfter<>(processDescription(myChange.getBeforeDescription()),
+                             processDescription(myChange.getAfterDescription()));
   }
 
   private BeforeAfter<ConflictSidePresentation> processDescription(TreeConflictDescription description) throws VcsException {
@@ -163,7 +167,7 @@ public class TreeConflictRefreshablePanel extends AbstractRefreshablePanel {
         }
         rightSide = createSide(description.getSourceRightVersion(), pegFromLeft, false);
         rightSide.load();
-        return new BeforeAfter<ConflictSidePresentation>(leftSide, rightSide);
+        return new BeforeAfter<>(leftSide, rightSide);
       }
     } catch (SVNException e) {
       throw new VcsException(e);
@@ -176,7 +180,7 @@ public class TreeConflictRefreshablePanel extends AbstractRefreshablePanel {
       }
     }
 
-    return new BeforeAfter<ConflictSidePresentation>(leftSide, rightSide);
+    return new BeforeAfter<>(leftSide, rightSide);
   }
 
   private static boolean isDifferentURLs(TreeConflictDescription description) {
@@ -206,7 +210,7 @@ public class TreeConflictRefreshablePanel extends AbstractRefreshablePanel {
     final JPanel main = new JPanel(new GridBagLayout());
 
     final GridBagConstraints gb = new GridBagConstraints(0, 0, 1, 1, 1, 0, GridBagConstraints.NORTHWEST, GridBagConstraints.HORIZONTAL,
-                                                            new Insets(1, 1, 1, 1), 0, 0);
+                                                         JBUI.insets(1), 0, 0);
     final String pathComment = myCommittedRevision == null ? "" :
                                " (current: " +
                                myChange.getBeforeRevision().getRevisionNumber().asString() +
@@ -378,8 +382,9 @@ public class TreeConflictRefreshablePanel extends AbstractRefreshablePanel {
     };
   }
 
-  public static String filePath(FilePath newFilePath) {
-    return newFilePath.getName() + " (" + newFilePath.getParentPath().getPath() + ")";
+  @NotNull
+  public static String filePath(@NotNull FilePath newFilePath) {
+    return newFilePath.getName() + " (" + notNull(newFilePath.getParentPath()).getPath() + ")";
   }
 
   private static ActionListener createBoth(TreeConflictDescription description) {
@@ -517,7 +522,7 @@ public class TreeConflictRefreshablePanel extends AbstractRefreshablePanel {
     @Override
     public void dispose() {
       if (myFileHistoryPanel != null) {
-        myFileHistoryPanel.dispose();
+        Disposer.dispose(myFileHistoryPanel);
       }
     }
 

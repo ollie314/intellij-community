@@ -63,7 +63,7 @@ public class FoldingModelImpl implements FoldingModelEx, PrioritizedInternalDocu
   private boolean myFoldRegionsProcessed;
 
   private int mySavedCaretShift;
-  private final MultiMap<FoldingGroup, FoldRegion> myGroups = new MultiMap<FoldingGroup, FoldRegion>();
+  private final MultiMap<FoldingGroup, FoldRegion> myGroups = new MultiMap<>();
   private boolean myDocumentChangeProcessed = true;
   private final AtomicLong myExpansionCounter = new AtomicLong();
 
@@ -398,6 +398,7 @@ public class FoldingModelImpl implements FoldingModelEx, PrioritizedInternalDocu
     myEditor.recalculateSizeAndRepaint();
     myEditor.getGutterComponentEx().updateSize();
     myEditor.getGutterComponentEx().repaint();
+    myEditor.invokeDelayedErrorStripeRepaint();
 
     for (Caret caret : myEditor.getCaretModel().getAllCarets()) {
       // There is a possible case that caret position is already visual position aware. But visual position depends on number of folded
@@ -484,6 +485,15 @@ public class FoldingModelImpl implements FoldingModelEx, PrioritizedInternalDocu
     return myFoldTree.getFoldedLinesCountBefore(offset);
   }
 
+  public int getTotalNumberOfFoldedLines() {
+    if (!myDocumentChangeProcessed && myEditor.getDocument().isInEventsHandling()) {
+      // There is a possible case that this method is called on document update before fold regions are recalculated.
+      // We return zero in such situations then.
+      return 0;
+    }
+    return myFoldTree.getTotalNumberOfFoldedLines();
+  }
+
   @Override
   @Nullable
   public FoldRegion[] fetchTopLevel() {
@@ -513,10 +523,8 @@ public class FoldingModelImpl implements FoldingModelEx, PrioritizedInternalDocu
     return myFoldTextAttributes;
   }
 
-  public void flushCaretPosition() {
-    for (Caret caret : myEditor.getCaretModel().getAllCarets()) {
-      caret.putUserData(SAVED_CARET_POSITION, null);
-    }
+  void flushCaretPosition(@NotNull Caret caret) {
+    caret.putUserData(SAVED_CARET_POSITION, null);
   }
 
   void onBulkDocumentUpdateStarted() {

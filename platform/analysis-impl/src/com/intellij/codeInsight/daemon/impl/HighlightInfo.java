@@ -43,7 +43,6 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.BitUtil;
-import com.intellij.util.Function;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.xml.util.XmlStringUtil;
 import org.intellij.lang.annotations.MagicConstant;
@@ -335,10 +334,6 @@ public class HighlightInfo implements Segment {
   @Override
   @NonNls
   public String toString() {
-    return getDescription() != null ? getDescription() : "";
-  }
-
-  public String paramString() {
     @NonNls String s = "HighlightInfo(" + startOffset + "," + endOffset+")";
     if (getActualStartOffset() != startOffset || getActualEndOffset() != endOffset) {
       s += "; actual: (" + getActualStartOffset() + "," + getActualEndOffset() + ")";
@@ -752,7 +747,7 @@ public class HighlightInfo implements Segment {
     
     boolean canCleanup(@NotNull PsiElement element) {
       if (myCanCleanup == null) {
-        InspectionProfile profile = InspectionProjectProfileManager.getInstance(element.getProject()).getInspectionProfile();
+        InspectionProfile profile = InspectionProjectProfileManager.getInstance(element.getProject()).getCurrentProfile();
         final HighlightDisplayKey key = myKey;
         if (key == null) {
           myCanCleanup = false;
@@ -783,7 +778,7 @@ public class HighlightInfo implements Segment {
       }
       IntentionManager intentionManager = IntentionManager.getInstance();
       List<IntentionAction> newOptions = intentionManager.getStandardIntentionOptions(key, element);
-      InspectionProfile profile = InspectionProjectProfileManager.getInstance(element.getProject()).getInspectionProfile();
+      InspectionProfile profile = InspectionProjectProfileManager.getInstance(element.getProject()).getCurrentProfile();
       InspectionToolWrapper toolWrapper = profile.getInspectionTool(key.toString(), element);
       if (!(toolWrapper instanceof LocalInspectionToolWrapper)) {
         HighlightDisplayKey idkey = HighlightDisplayKey.findById(key.toString());
@@ -799,16 +794,16 @@ public class HighlightInfo implements Segment {
         InspectionProfileEntry wrappedTool = toolWrapper instanceof LocalInspectionToolWrapper ? ((LocalInspectionToolWrapper)toolWrapper).getTool()
                                                                                                : ((GlobalInspectionToolWrapper)toolWrapper).getTool();
         if (wrappedTool instanceof DefaultHighlightVisitorBasedInspection.AnnotatorBasedInspection) {
-          List<IntentionAction> actions = Collections.<IntentionAction>emptyList(); 
+          List<IntentionAction> actions = Collections.emptyList();
           if (myProblemGroup instanceof SuppressableProblemGroup) {
-            actions = Arrays.<IntentionAction>asList(((SuppressableProblemGroup)myProblemGroup).getSuppressActions(element));
+            actions = Arrays.asList(((SuppressableProblemGroup)myProblemGroup).getSuppressActions(element));
           }
           if (fixAllIntention != null) {
             if (actions.isEmpty()) {
-              return Collections.<IntentionAction>singletonList(fixAllIntention);
+              return Collections.singletonList(fixAllIntention);
             }
             else {
-              actions = new ArrayList<IntentionAction>(actions);
+              actions = new ArrayList<>(actions);
               actions.add(fixAllIntention);
             }
           }
@@ -824,12 +819,7 @@ public class HighlightInfo implements Segment {
         else {
           SuppressQuickFix[] suppressFixes = wrappedTool.getBatchSuppressActions(element);
           if (suppressFixes.length > 0) {
-            ContainerUtil.addAll(newOptions, ContainerUtil.map(suppressFixes, new Function<SuppressQuickFix, IntentionAction>() {
-              @Override
-              public IntentionAction fun(SuppressQuickFix fix) {
-                return SuppressIntentionActionFromFix.convertBatchToSuppressIntentionAction(fix);
-              }
-            }));
+            ContainerUtil.addAll(newOptions, ContainerUtil.map(suppressFixes, SuppressIntentionActionFromFix::convertBatchToSuppressIntentionAction));
           }
         }
 

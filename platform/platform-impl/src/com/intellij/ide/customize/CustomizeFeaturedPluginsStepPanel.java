@@ -23,6 +23,7 @@ import com.intellij.openapi.progress.util.AbstractProgressIndicatorExBase;
 import com.intellij.openapi.ui.VerticalFlowLayout;
 import com.intellij.openapi.updateSettings.impl.PluginDownloader;
 import com.intellij.openapi.util.SystemInfo;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.ex.ProgressIndicatorEx;
 import com.intellij.ui.ColorUtil;
 import com.intellij.ui.JBColor;
@@ -47,7 +48,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class CustomizeFeaturedPluginsStepPanel extends AbstractCustomizeWizardStep {
   private static final int COLS = 3;
-  private static final ExecutorService ourService = AppExecutorUtil.createBoundedApplicationPoolExecutor(4);
+  private static final ExecutorService ourService = AppExecutorUtil.createBoundedApplicationPoolExecutor("CustomizeFeaturedPluginsStepPanel pool",4);
 
   public final AtomicBoolean myCanceled = new AtomicBoolean(false);
   private final PluginGroups myPluginGroups;
@@ -57,12 +58,7 @@ public class CustomizeFeaturedPluginsStepPanel extends AbstractCustomizeWizardSt
     setLayout(new GridLayout(1, 1));
     add(myInProgressLabel = new JLabel("Loading...", SwingConstants.CENTER));
     myPluginGroups = pluginGroups;
-    myPluginGroups.setLoadingCallback(new Runnable() {
-      @Override
-      public void run() {
-        onPluginGroupsLoaded();
-      }
-    });
+    myPluginGroups.setLoadingCallback(() -> onPluginGroupsLoaded());
   }
 
   private void onPluginGroupsLoaded() {
@@ -89,7 +85,7 @@ public class CustomizeFeaturedPluginsStepPanel extends AbstractCustomizeWizardSt
       int i = s.indexOf(':');
       String topic = s.substring(0, i);
       int j = s.indexOf(':', i + 1);
-      final String description = s.substring(i + 1, j);
+      String description = s.substring(i + 1, j);
       final String pluginId = s.substring(j + 1);
       IdeaPluginDescriptor foundDescriptor = null;
       for (IdeaPluginDescriptor descriptor : pluginsFromRepository) {
@@ -101,18 +97,29 @@ public class CustomizeFeaturedPluginsStepPanel extends AbstractCustomizeWizardSt
       if (foundDescriptor == null) continue;
       final IdeaPluginDescriptor descriptor = foundDescriptor;
 
-
-
       final boolean isVIM = PluginGroups.IDEA_VIM_PLUGIN_ID.equals(descriptor.getPluginId().getIdString());
+      boolean isCloud = "#Cloud".equals(topic);
+
+      if (isCloud) {
+        title = descriptor.getName();
+        description = StringUtil.defaultIfEmpty(descriptor.getDescription(), "No description available");
+        topic = StringUtil.defaultIfEmpty(descriptor.getCategory(), "Unknown");
+      }
 
       JLabel titleLabel = new JLabel("<html><body><h2 style=\"text-align:left;\">" + title + "</h2></body></html>");
       JLabel topicLabel = new JLabel("<html><body><h4 style=\"text-align:left;color:#808080;font-weight:bold;\">" + topic + "</h4></body></html>");
 
       JLabel descriptionLabel = createHTMLLabel(description);
       JLabel warningLabel = null;
-      if (isVIM) {
-        warningLabel = createHTMLLabel("Recommended only if you are<br> familiar with Vim.");
-        warningLabel.setIcon(AllIcons.General.BalloonWarning);
+      if (isVIM || isCloud) {
+        if (isCloud) {
+          warningLabel = createHTMLLabel("JBA account");
+          warningLabel.setIcon(AllIcons.General.BalloonInformation);
+        }
+        else {
+          warningLabel = createHTMLLabel("Recommended only if you are<br> familiar with Vim.");
+          warningLabel.setIcon(AllIcons.General.BalloonWarning);
+        }
 
         if (!SystemInfo.isWindows) UIUtil.applyStyle(UIUtil.ComponentStyle.SMALL, warningLabel);
       }
@@ -143,37 +150,26 @@ public class CustomizeFeaturedPluginsStepPanel extends AbstractCustomizeWizardSt
         public void start() {
           myCanceled.set(false);
           super.start();
-          SwingUtilities.invokeLater(new Runnable() {
-            @Override
-            public void run() {
-              wrapperLayout.show(buttonWrapper, "progress");
-            }
-          });
+          SwingUtilities.invokeLater(() -> wrapperLayout.show(buttonWrapper, "progress"));
         }
 
         @Override
         public void processFinish() {
           super.processFinish();
-          SwingUtilities.invokeLater(new Runnable() {
-            @Override
-            public void run() {
-              wrapperLayout.show(buttonWrapper, "button");
-              installButton.setEnabled(false);
-              installButton.setText("Installed");
-            }
+          SwingUtilities.invokeLater(() -> {
+            wrapperLayout.show(buttonWrapper, "button");
+            installButton.setEnabled(false);
+            installButton.setText("Installed");
           });
         }
 
         @Override
         public void setFraction(final double fraction) {
           super.setFraction(fraction);
-          SwingUtilities.invokeLater(new Runnable() {
-            @Override
-            public void run() {
-              int value = (int)(100 * fraction + .5);
-              progressBar.setValue(value);
-              progressBar.setString(value + "%");
-            }
+          SwingUtilities.invokeLater(() -> {
+            int value = (int)(100 * fraction + .5);
+            progressBar.setValue(value);
+            progressBar.setString(value + "%");
           });
         }
 
@@ -182,13 +178,10 @@ public class CustomizeFeaturedPluginsStepPanel extends AbstractCustomizeWizardSt
           stop();
           myCanceled.set(true);
           super.cancel();
-          SwingUtilities.invokeLater(new Runnable() {
-            @Override
-            public void run() {
-              wrapperLayout.show(buttonWrapper, "button");
-              progressBar.setValue(0);
-              progressBar.setString("0%");
-            }
+          SwingUtilities.invokeLater(() -> {
+            wrapperLayout.show(buttonWrapper, "button");
+            progressBar.setValue(0);
+            progressBar.setString("0%");
           });
         }
       };
@@ -215,13 +208,10 @@ public class CustomizeFeaturedPluginsStepPanel extends AbstractCustomizeWizardSt
 
             void onFail() {
               //noinspection SSBasedInspection
-              SwingUtilities.invokeLater(new Runnable() {
-                @Override
-                public void run() {
-                  indicator.stop();
-                  wrapperLayout.show(buttonWrapper, "progress");
-                  progressBar.setString("Cannot download plugin");
-                }
+              SwingUtilities.invokeLater(() -> {
+                indicator.stop();
+                wrapperLayout.show(buttonWrapper, "progress");
+                progressBar.setString("Cannot download plugin");
               });
             }
           });

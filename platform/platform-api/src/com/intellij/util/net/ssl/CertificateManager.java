@@ -293,25 +293,22 @@ public class CertificateManager implements PersistentStateComponent<CertificateM
     Application app = ApplicationManager.getApplication();
     final CountDownLatch proceeded = new CountDownLatch(1);
     final AtomicBoolean accepted = new AtomicBoolean();
-    final AtomicReference<DialogWrapper> dialogRef = new AtomicReference<DialogWrapper>();
-    Runnable showDialog = new Runnable() {
-      @Override
-      public void run() {
-        // skip if certificate was already rejected due to timeout or interrupt
-        if (proceeded.getCount() == 0) {
-          return;
-        }
-        try {
-          DialogWrapper dialog = dialogFactory.call();
-          dialogRef.set(dialog);
-          accepted.set(dialog.showAndGet());
-        }
-        catch (Exception e) {
-          LOG.error(e);
-        }
-        finally {
-          proceeded.countDown();
-        }
+    final AtomicReference<DialogWrapper> dialogRef = new AtomicReference<>();
+    Runnable showDialog = () -> {
+      // skip if certificate was already rejected due to timeout or interrupt
+      if (proceeded.getCount() == 0) {
+        return;
+      }
+      try {
+        DialogWrapper dialog = dialogFactory.call();
+        dialogRef.set(dialog);
+        accepted.set(dialog.showAndGet());
+      }
+      catch (Exception e) {
+        LOG.error(e);
+      }
+      finally {
+        proceeded.countDown();
       }
     };
     if (app.isDispatchThread()) {
@@ -367,7 +364,7 @@ public class CertificateManager implements PersistentStateComponent<CertificateM
     @Tag("expired")
     @Property(surroundWithTag = false)
     @AbstractCollection(elementTag = "commonName")
-    public LinkedHashSet<String> BROKEN_CERTIFICATES = new LinkedHashSet<String>();
+    public LinkedHashSet<String> BROKEN_CERTIFICATES = new LinkedHashSet<>();
 
     /**
      * Do not show the dialog and accept untrusted certificates automatically.

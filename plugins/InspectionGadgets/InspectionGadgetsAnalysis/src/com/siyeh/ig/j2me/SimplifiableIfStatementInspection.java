@@ -226,8 +226,8 @@ public class SimplifiableIfStatementInspection extends BaseInspection {
     public void doFix(Project project, ProblemDescriptor descriptor) {
       final PsiElement element = descriptor.getPsiElement();
       final PsiIfStatement ifStatement = (PsiIfStatement)element.getParent();
-      List<PsiComment> before = new ArrayList<PsiComment>();
-      List<PsiComment> after = new ArrayList<PsiComment>();
+      List<PsiComment> before = new ArrayList<>();
+      List<PsiComment> after = new ArrayList<>();
       collectComments(ifStatement, true, before, after);
       final String newStatementText = calculateReplacementStatement(ifStatement);
       if (newStatementText == null) {
@@ -385,7 +385,7 @@ public class SimplifiableIfStatementInspection extends BaseInspection {
       }
       final PsiExpression thenLhs = thenExpression.getLExpression();
       final PsiExpression elseLhs = elseExpression.getLExpression();
-      return EquivalenceChecker.expressionsAreEquivalent(thenLhs, elseLhs);
+      return EquivalenceChecker.getCanonicalPsiEquivalence().expressionsAreEquivalent(thenLhs, elseLhs);
     }
 
     public static boolean isAssignment(@Nullable PsiStatement statement) {

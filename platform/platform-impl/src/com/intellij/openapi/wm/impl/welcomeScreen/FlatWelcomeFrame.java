@@ -54,15 +54,18 @@ import com.intellij.ui.popup.PopupFactoryImpl;
 import com.intellij.ui.popup.list.GroupedItemsListRenderer;
 import com.intellij.util.ParameterizedRunnable;
 import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.containers.Convertor;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.MouseEventAdapter;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.accessibility.AccessibleContextAccessor;
-import com.intellij.util.ui.accessibility.AccessibleContextUtil;
+import com.intellij.util.ui.accessibility.AccessibleContextDelegate;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import javax.accessibility.Accessible;
 import javax.accessibility.AccessibleContext;
+import javax.accessibility.AccessibleRole;
 import javax.swing.*;
 import javax.swing.event.ListDataEvent;
 import javax.swing.event.ListDataListener;
@@ -79,10 +82,11 @@ import java.util.List;
 /**
  * @author Konstantin Bulenkov
  */
-public class FlatWelcomeFrame extends JFrame implements IdeFrame, AccessibleContextAccessor {
+public class FlatWelcomeFrame extends JFrame implements IdeFrame, Disposable, AccessibleContextAccessor {
   private static final String ACTION_GROUP_KEY = "ACTION_GROUP_KEY";
-  private final BalloonLayout myBalloonLayout;
+  private BalloonLayout myBalloonLayout;
   private final FlatWelcomeScreen myScreen;
+  private boolean myDisposed;
 
   public FlatWelcomeFrame() {
     final JRootPane rootPane = getRootPane();
@@ -93,11 +97,7 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, AccessibleCont
       public void addNotify() {
         super.addNotify();
         //noinspection SSBasedInspection
-        SwingUtilities.invokeLater(new Runnable() {
-          public void run() {
-            JBProtocolCommand.handleCurrentCommand();
-          }
-        });
+        SwingUtilities.invokeLater(() -> JBProtocolCommand.handleCurrentCommand());
       }
     };
 
@@ -123,9 +123,9 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, AccessibleCont
     ProjectManager.getInstance().addProjectManagerListener(new ProjectManagerAdapter() {
       @Override
       public void projectOpened(Project project) {
-        dispose();
+        Disposer.dispose(FlatWelcomeFrame.this);
       }
-    });
+    }, this);
 
     if (NotificationsManagerImpl.newEnabled()) {
       myBalloonLayout = new WelcomeBalloonLayoutImpl(rootPane, JBUI.insets(8), myScreen.myEventListener, myScreen.myEventLocation);
@@ -136,23 +136,26 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, AccessibleCont
 
     WelcomeFrame.setupCloseAction(this);
     MnemonicHelper.init(this);
-    Disposer.register(ApplicationManager.getApplication(), new Disposable() {
-      @Override
-      public void dispose() {
-        FlatWelcomeFrame.this.dispose();
-      }
-    });
+    Disposer.register(ApplicationManager.getApplication(), this);
   }
 
   @Override
   public void dispose() {
+    if (myDisposed) {
+      return;
+    }
+    myDisposed = true;
     saveLocation(getBounds());
     super.dispose();
-    if (myBalloonLayout instanceof WelcomeBalloonLayoutImpl) {
-      ((WelcomeBalloonLayoutImpl)myBalloonLayout).dispose();
+    if (myBalloonLayout != null) {
+      ((BalloonLayoutImpl)myBalloonLayout).dispose();
+      myBalloonLayout = null;
     }
     Disposer.dispose(myScreen);
     WelcomeFrame.resetInstance();
+
+    // open project from welcome screen show progress dialog and call FocusTrackback.register()
+    FocusTrackback.release(this);
   }
 
   private static void saveLocation(Rectangle location) {
@@ -276,6 +279,8 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, AccessibleCont
         Presentation presentation = e.getPresentation();
         if (presentation.isEnabled()) {
           ActionLink registerLink = new ActionLink("Register", register);
+          // Don't allow focus, as the containing panel is going to focusable.
+          registerLink.setFocusable(false);
           registerLink.setNormalColor(getLinkNormalColor());
           NonOpaquePanel button = new NonOpaquePanel(new BorderLayout());
           button.setBorder(JBUI.Borders.empty(4, 10));
@@ -312,39 +317,37 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, AccessibleCont
         }
       });
       panel.setVisible(false);
-      myEventListener = new ParameterizedRunnable<List<NotificationType>>() {
-        @Override
-        public void run(List<NotificationType> types) {
-          NotificationType type = null;
-          for (NotificationType t : types) {
-            if (NotificationType.ERROR == t) {
-              type = NotificationType.ERROR;
-              break;
-            }
-            if (NotificationType.WARNING == t) {
-              type = NotificationType.WARNING;
-            }
-            else if (type == null && NotificationType.INFORMATION == t) {
-              type = NotificationType.INFORMATION;
-            }
+      myEventListener = types -> {
+        NotificationType type = null;
+        for (NotificationType t : types) {
+          if (NotificationType.ERROR == t) {
+            type = NotificationType.ERROR;
+            break;
           }
-
+          if (NotificationType.WARNING == t) {
+            type = NotificationType.WARNING;
+          }
+          else if (type == null && NotificationType.INFORMATION == t) {
+            type = NotificationType.INFORMATION;
+          }
+        }
+        if (types.isEmpty()) {
+          panel.setVisible(false);
+        }
+        else {
           actionLinkRef.get().setIcon(IdeNotificationArea.createIconWithNotificationCount(actionLinkRef.get(), type, types.size()));
           panel.setVisible(true);
         }
       };
-      myEventLocation = new Computable<Point>() {
-        @Override
-        public Point compute() {
-          Point location = SwingUtilities.convertPoint(panel, 0, 0, getRootPane().getLayeredPane());
-          return new Point(location.x, location.y + 5);
-        }
+      myEventLocation = () -> {
+        Point location = SwingUtilities.convertPoint(panel, 0, 0, getRootPane().getLayeredPane());
+        return new Point(location.x, location.y + 5);
       };
       return panel;
     }
 
     private JComponent createActionLink(final String text, final String groupId, Icon icon, boolean focusListOnLeft) {
-      final Ref<ActionLink> ref = new Ref<ActionLink>(null);
+      final Ref<ActionLink> ref = new Ref<>(null);
       AnAction action = new AnAction() {
         @Override
         public void actionPerformed(@NotNull AnActionEvent e) {
@@ -364,13 +367,12 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, AccessibleCont
     private JComponent createActionLink(String text, Icon icon, Ref<ActionLink> ref, AnAction action) {
       ActionLink link = new ActionLink(text, icon, action);
       ref.set(link);
+      // Don't allow focus, as the containing panel is going to focusable.
+      link.setFocusable(false);
       link.setPaintUnderline(false);
       link.setNormalColor(getLinkNormalColor());
-      NonOpaquePanel panel = new NonOpaquePanel(new BorderLayout());
+      JActionLinkPanel panel = new JActionLinkPanel(link);
       panel.setBorder(JBUI.Borders.empty(4, 6, 4, 6));
-      panel.add(link);
-      AccessibleContextUtil.setName(panel, link);
-      AccessibleContextUtil.setDescription(panel, link);
       panel.add(createArrow(link), BorderLayout.EAST);
       return panel;
     }
@@ -385,9 +387,6 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, AccessibleCont
       collectAllActions(group, quickStart);
 
       for (AnAction action : group.getChildren(null)) {
-        JPanel button = new JPanel(new BorderLayout());
-        button.setOpaque(false);
-        button.setBorder(JBUI.Borders.empty(8, 20));
         AnActionEvent e =
           AnActionEvent.createFromAnAction(action, null, ActionPlaces.WELCOME_SCREEN, DataManager.getInstance().getDataContext(this));
         action.update(e);
@@ -403,11 +402,12 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, AccessibleCont
           }
           action = wrapGroups(action);
           ActionLink link = new ActionLink(text, icon, action, createUsageTracker(action));
+          // Don't allow focus, as the containing panel is going to focusable.
+          link.setFocusable(false);
           link.setPaintUnderline(false);
           link.setNormalColor(getLinkNormalColor());
-          button.add(link);
-          AccessibleContextUtil.setName(button, link);
-          AccessibleContextUtil.setDescription(button, link);
+          JActionLinkPanel button = new JActionLinkPanel(link);
+          button.setBorder(JBUI.Borders.empty(8, 20));
           if (action instanceof WelcomePopupAction) {
             button.add(createArrow(link), BorderLayout.EAST);
           }
@@ -421,29 +421,62 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, AccessibleCont
       return panel.root;
     }
 
+    /**
+     * Wraps an {@link ActionLink} component and delegates accessibility support to it.
+     */
+    protected class JActionLinkPanel extends JPanel {
+      @NotNull private ActionLink myActionLink;
+
+      public JActionLinkPanel(@NotNull ActionLink actionLink) {
+        super(new BorderLayout());
+        myActionLink = actionLink;
+        add(myActionLink);
+        NonOpaquePanel.setTransparent(this);
+      }
+
+      @Override
+      public AccessibleContext getAccessibleContext() {
+        if (accessibleContext == null) {
+          accessibleContext = new AccessibleJActionLinkPanel(myActionLink.getAccessibleContext());
+        }
+        return accessibleContext;
+      }
+
+      protected class AccessibleJActionLinkPanel extends AccessibleContextDelegate {
+        public AccessibleJActionLinkPanel(AccessibleContext context) {
+          super(context);
+        }
+
+        @Override
+        public Accessible getAccessibleParent() {
+          if (getParent() instanceof Accessible) {
+            return (Accessible)getParent();
+          }
+          return super.getAccessibleParent();
+        }
+
+        @Override
+        public AccessibleRole getAccessibleRole() {
+          return AccessibleRole.PUSH_BUTTON;
+        }
+      }
+    }
+
     private AnAction wrapGroups(AnAction action) {
       if (action instanceof ActionGroup && ((ActionGroup)action).isPopup()) {
-        final Pair<JPanel, JBList> panel = createActionGroupPanel((ActionGroup)action, mySlidingPanel, new Runnable() {
-          @Override
-          public void run() {
-            goBack();
-          }
-        });
-        final Runnable onDone = new Runnable() {
-          @Override
-          public void run() {
-            setTitle("New Project");
-            final JBList list = panel.second;
-            ScrollingUtil.ensureSelectionExists(list);
-            final ListSelectionListener[] listeners =
-              ((DefaultListSelectionModel)list.getSelectionModel()).getListeners(ListSelectionListener.class);
+        final Pair<JPanel, JBList> panel = createActionGroupPanel((ActionGroup)action, mySlidingPanel, () -> goBack());
+        final Runnable onDone = () -> {
+          setTitle("New Project");
+          final JBList list = panel.second;
+          ScrollingUtil.ensureSelectionExists(list);
+          final ListSelectionListener[] listeners =
+            ((DefaultListSelectionModel)list.getSelectionModel()).getListeners(ListSelectionListener.class);
 
-            //avoid component cashing. This helps in case of LaF change
-            for (ListSelectionListener listener : listeners) {
-              listener.valueChanged(new ListSelectionEvent(list, list.getSelectedIndex(), list.getSelectedIndex(), true));
-            }
-            list.requestFocus();
+          //avoid component cashing. This helps in case of LaF change
+          for (ListSelectionListener listener : listeners) {
+            listener.valueChanged(new ListSelectionEvent(list, list.getSelectedIndex(), list.getSelectedIndex(), true));
           }
+          list.requestFocus();
         };
         final String name = action.getClass().getName();
         mySlidingPanel.add(name, panel.first);
@@ -459,12 +492,9 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, AccessibleCont
     }
 
     protected void goBack() {
-      mySlidingPanel.swipe("root", JBCardLayout.SwipeDirection.BACKWARD).doWhenDone(new Runnable() {
-        @Override
-        public void run() {
-          mySlidingPanel.getRootPane().setDefaultButton(null);
-          setTitle(getWelcomeFrameTitle());
-        }
+      mySlidingPanel.swipe("root", JBCardLayout.SwipeDirection.BACKWARD).doWhenDone(() -> {
+        mySlidingPanel.getRootPane().setDefaultButton(null);
+        setTitle(getWelcomeFrameTitle());
       });
     }
 
@@ -547,7 +577,7 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, AccessibleCont
         @Override
         public void keyPressed(KeyEvent e) {
           final JList list = UIUtil.findComponentOfType(FlatWelcomeFrame.this.getComponent(), JList.class);
-          if (e.getKeyCode() == KeyEvent.VK_ENTER) {
+          if (e.getKeyCode() == KeyEvent.VK_ENTER || e.getKeyCode() == KeyEvent.VK_SPACE) {
             InputEvent event = e;
             if (e.getComponent() instanceof JComponent) {
               ActionLink link = UIUtil.findComponentOfType((JComponent)e.getComponent(), ActionLink.class);
@@ -678,12 +708,7 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, AccessibleCont
   }
 
   private static Runnable createUsageTracker(final AnAction action) {
-    return new Runnable() {
-      @Override
-      public void run() {
-        UsageTrigger.trigger("welcome.screen." + ActionManager.getInstance().getId(action));
-      }
-    };
+    return () -> UsageTrigger.trigger("welcome.screen." + ActionManager.getInstance().getId(action));
   }
 
   private static JLabel createArrow(final ActionLink link) {
@@ -790,6 +815,11 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, AccessibleCont
        }
 
        @Override
+       protected Color getBackground() {
+         return getProjectsBackground();
+       }
+
+       @Override
        protected void customizeComponent(JList list, Object value, boolean isSelected) {
          if (myTextLabel != null) {
            myTextLabel.setText(getActionText(((AnAction)value)));
@@ -858,7 +888,20 @@ public class FlatWelcomeFrame extends JFrame implements IdeFrame, AccessibleCont
         }
       }.registerCustomShortcutSet(KeyEvent.VK_ESCAPE, 0, main);
     }
+    installQuickSearch(list);
     return Pair.create(main, list);
+  }
+
+  public static void installQuickSearch(JBList list) {
+    new ListSpeedSearch(list, new Convertor<Object, String>() {
+      @Override
+      public String convert(Object o) {
+        if (o instanceof AbstractActionWithPanel) { //to avoid dependency mess with ProjectSettingsStepBase
+          return ((AbstractActionWithPanel)o).getTemplatePresentation().getText();
+        }
+        return null;
+      }
+    });
   }
 
   private static List<AnAction> flattenActionGroups(@NotNull final ActionGroup action) {

@@ -162,7 +162,7 @@ public class SubstitutorComputer {
                                                    @NotNull PsiType[] argTypes) {
     if (typeParameters.length == 0 || myArgumentTypes == null) return partialSubstitutor;
 
-    final GrClosureSignature erasedSignature = GrClosureSignatureUtil.createSignatureWithErasedParameterTypes(method);
+    final GrClosureSignature erasedSignature = GrClosureSignatureUtil.createSignature(method, partialSubstitutor, true);
 
     final GrClosureSignature signature = GrClosureSignatureUtil.createSignature(method, partialSubstitutor);
     final GrClosureParameter[] params = signature.getParameters();
@@ -276,7 +276,7 @@ public class SubstitutorComputer {
   protected boolean exitsContains(PsiElement place) {
     if (myFlowOwner == null) return false;
     if (myExitPoints == null) {
-      myExitPoints = new HashSet<PsiElement>();
+      myExitPoints = new HashSet<>();
       myExitPoints.addAll(ControlFlowUtils.collectReturns(myFlowOwner));
     }
     return myExitPoints.contains(place);

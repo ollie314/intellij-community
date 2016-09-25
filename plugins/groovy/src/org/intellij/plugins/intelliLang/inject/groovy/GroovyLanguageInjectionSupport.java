@@ -92,7 +92,8 @@ public class GroovyLanguageInjectionSupport extends AbstractLanguageInjectionSup
   }
 
   @Override
-  public boolean addInjectionInPlace(@NotNull Language language, @Nullable PsiLanguageInjectionHost psiElement) {
+  public boolean addInjectionInPlace(Language language, @Nullable PsiLanguageInjectionHost psiElement) {
+    if (language == null) return false;
     if (!isStringLiteral(psiElement)) return false;
 
 
@@ -105,23 +106,21 @@ public class GroovyLanguageInjectionSupport extends AbstractLanguageInjectionSup
 
     GrLiteralContainer host = (GrLiteralContainer)psiElement;
     final HashMap<BaseInjection, Pair<PsiMethod, Integer>> injectionsMap = ContainerUtil.newHashMap();
-    final ArrayList<PsiElement> annotations = new ArrayList<PsiElement>();
+    final ArrayList<PsiElement> annotations = new ArrayList<>();
     final Project project = host.getProject();
     final Configuration configuration = Configuration.getProjectInstance(project);
     collectInjections(host, configuration, this, injectionsMap, annotations);
 
     if (injectionsMap.isEmpty() && annotations.isEmpty()) return false;
-    final ArrayList<BaseInjection> originalInjections = new ArrayList<BaseInjection>(injectionsMap.keySet());
-    final List<BaseInjection> newInjections = ContainerUtil.mapNotNull(originalInjections, new NullableFunction<BaseInjection, BaseInjection>() {
-      @Override
-      public BaseInjection fun(final BaseInjection injection) {
-        final Pair<PsiMethod, Integer> pair = injectionsMap.get(injection);
-        final String placeText = JavaLanguageInjectionSupport.getPatternStringForJavaPlace(pair.first, pair.second);
-        final BaseInjection newInjection = injection.copy();
-        newInjection.setPlaceEnabled(placeText, false);
-        return InjectorUtils.canBeRemoved(newInjection) ? null : newInjection;
-      }
-    });
+    final ArrayList<BaseInjection> originalInjections = new ArrayList<>(injectionsMap.keySet());
+    final List<BaseInjection> newInjections = ContainerUtil.mapNotNull(originalInjections,
+                                                                       (NullableFunction<BaseInjection, BaseInjection>)injection -> {
+                                                                         final Pair<PsiMethod, Integer> pair = injectionsMap.get(injection);
+                                                                         final String placeText = JavaLanguageInjectionSupport.getPatternStringForJavaPlace(pair.first, pair.second);
+                                                                         final BaseInjection newInjection = injection.copy();
+                                                                         newInjection.setPlaceEnabled(placeText, false);
+                                                                         return InjectorUtils.canBeRemoved(newInjection) ? null : newInjection;
+                                                                       });
     configuration.replaceInjectionsWithUndo(project, newInjections, originalInjections, annotations);
     return true;
   }
@@ -211,20 +210,17 @@ public class GroovyLanguageInjectionSupport extends AbstractLanguageInjectionSup
 
   private static Processor<PsiLanguageInjectionHost> getAnnotationFixer(@NotNull final Project project,
                                                                         @NotNull final String languageId) {
-    return new Processor<PsiLanguageInjectionHost>() {
-      @Override
-      public boolean process(@Nullable PsiLanguageInjectionHost host) {
-        if (host == null) return false;
+    return host -> {
+      if (host == null) return false;
 
-        final Configuration.AdvancedConfiguration configuration = Configuration.getProjectInstance(project).getAdvancedConfiguration();
-        boolean allowed = configuration.isSourceModificationAllowed();
-        configuration.setSourceModificationAllowed(true);
-        try {
-          return doInject(languageId, host, host);
-        }
-        finally {
-          configuration.setSourceModificationAllowed(allowed);
-        }
+      final Configuration.AdvancedConfiguration configuration = Configuration.getProjectInstance(project).getAdvancedConfiguration();
+      boolean allowed = configuration.isSourceModificationAllowed();
+      configuration.setSourceModificationAllowed(true);
+      try {
+        return doInject(languageId, host, host);
+      }
+      finally {
+        configuration.setSourceModificationAllowed(allowed);
       }
     };
   }

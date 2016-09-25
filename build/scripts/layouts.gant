@@ -13,76 +13,45 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+
+import org.jetbrains.intellij.build.*
+import org.jetbrains.jps.util.JpsPathUtil
+
 import static org.jetbrains.jps.idea.IdeaProjectLoader.guessHome
 
 includeTargets << new File("${guessHome(this)}/build/scripts/utils.gant")
 
+/**
+ * @deprecated use 'update-from-sources' from dist.gant instead
+ */
 target('default': "Developers update") {
   //when IDEA CE is updated from IDEA UE sources project should be loaded from IDEA UE directory
   String projectHome = isDefined("devIdeaHome") ? devIdeaHome : home
-  loadProjectFromPath(projectHome)
-  def patchedDescriptorDir = patchAppDescriptor(deploy)
-  layoutFull(home, deploy, patchedDescriptorDir)
-  ant.delete(dir: patchedDescriptorDir)
-}
-
-String appInfoFileName() {
-  return isDefined("productProperties") ? productProperties.appInfoFile() : "idea/IdeaApplicationInfo.xml"
-}
-
-boolean maySkipAndroidPlugin() {
-  return isDefined("productProperties") && productProperties.maySkipAndroidPlugin
+  def options = new BuildOptions()
+  options.useCompiledClassesFromProjectOutput = true
+  def context = BuildContext.createContext(ant, projectBuilder, project, global, home, projectHome, new IdeaCommunityProperties(home),
+                                           ProprietaryBuildTools.DUMMY, options)
+  context.paths.distAll = deploy
+  layoutFull(context)
 }
 
 boolean setPluginAndIDEVersionInPluginXml() {
   return !isDefined("productProperties") || productProperties.setPluginAndIDEVersionInPluginXml
 }
 
-String appInfoModule() {
-  return isDefined("productProperties") ? productProperties.appInfoModule : "community-resources"
-}
-
-String productCode() {
-  return isDefined("productProperties") ? productProperties.code : "IC"
-}
-
-void customLayout(String targetDirectory) {
-  if (isDefined("productProperties")) {
-    productProperties.customLayout(targetDirectory)
-  }
-}
-
-String relativeAndroidHome() {
-  return isDefined("productProperties") ? productProperties.relativeAndroidHome : "android"
-}
-
-String relativeAndroidToolsBaseHome() {
-  return isDefined("productProperties") ? productProperties.relativeAndroidToolsBaseHome : relativeAndroidHome() + "/tools-base"
-}
-
 List<String> getExcludedPlugins() {
   return isDefined("productProperties") ? productProperties.excludedPlugins : []
 }
 
-String patchAppDescriptor(String targetDirectory) {
-  def patchedDirectory = "${targetDirectory}/../patched"
-
-  ant.delete(dir: patchedDirectory)
-
-  layout(patchedDirectory) {
-    module(appInfoModule()) {
-      include(name: appInfoFileName())
-    }
-  }
-
-  def code = productCode()
-  ant.replace(file: "$patchedDirectory/${appInfoFileName()}", token: "__BUILD_NUMBER__", value: "${code}-$snapshot")
-  ant.replace(file: "$patchedDirectory/${appInfoFileName()}", token: "__BUILD_DATE__", value: new Date().format("yyyyMMddHHmm"))
-
-  return patchedDirectory
-}
-
-def layoutFull(String home, String targetDirectory, String patchedDescriptorDir = null) {
+/**
+ * @deprecated this method isn't called anymore, it's temporary left for compatibility only; modify {@link org.jetbrains.intellij.build.IdeaCommunityProperties} instead
+ */
+def layoutFull(BuildContext context) {
+  binding.setVariable("productProperties", context.productProperties)
+  String home = context.paths.communityHome
+  String targetDirectory = context.paths.distAll
+  File patchedApplicationInfo = BuildTasks.create(context).patchApplicationInfo()
   projectBuilder.stage("layout to $targetDirectory")
 
   List<String> jpsCommonModules = ["jps-model-impl", "jps-model-serialization"]
@@ -196,25 +165,25 @@ def layoutFull(String home, String targetDirectory, String patchedDescriptorDir 
         module("resources")
         module("platform-resources")
 
-        def appInfoModule = appInfoModule()
-        def appInfoInCommunity = "community-resources".equals(appInfoModule)
-
-        if (appInfoInCommunity) {
+        def appInfoModule = context.productProperties.applicationInfoModule
+        if ("community-resources" == appInfoModule) {
           module("community-resources") {
-            if (patchedDescriptorDir != null) {
-              exclude(name: appInfoFileName())
+            if (patchedApplicationInfo != null) {
+              exclude(name: "idea/$patchedApplicationInfo.name")
             }
           }
         } else {
           module("community-resources")
           module(appInfoModule) {
-            if (patchedDescriptorDir != null) {
-              exclude(name: appInfoFileName())
+            if (patchedApplicationInfo != null) {
+              exclude(name: "idea/$patchedApplicationInfo.name")
             }
           }
         }
-        if (patchedDescriptorDir != null) {
-          fileset(dir: patchedDescriptorDir)
+        if (patchedApplicationInfo != null) {
+          dir("idea") {
+            fileset(file: patchedApplicationInfo.path)
+          }
         }
       }
 
@@ -238,6 +207,7 @@ def layoutFull(String home, String targetDirectory, String patchedDescriptorDir 
         module("forms-compiler")
         module("forms_rt")
         module("instrumentation-util")
+        module("instrumentation-util-8")
       }
 
       jar("jps-model.jar") {
@@ -258,11 +228,6 @@ def layoutFull(String home, String targetDirectory, String patchedDescriptorDir 
         include(name: "kotlin-reflect.jar")
       }
 
-      dir("src") {
-        fileset(dir: "$home/lib/src") {
-          include(name: "trove4j_src.jar")
-        }
-      }
       fileset(dir: "$home/xml/relaxng/lib", includes: "*.jar")
 
       dir("ant") {
@@ -279,7 +244,7 @@ def layoutFull(String home, String targetDirectory, String patchedDescriptorDir 
       }
     }
 
-    layoutCommunityPlugins(home, maySkipAndroidPlugin())
+    layoutCommunityPlugins(home, context)
 
     dir("plugins") {
       dir("javaFX") {
@@ -316,29 +281,30 @@ def layoutFull(String home, String targetDirectory, String patchedDescriptorDir 
     }
   }
 
-  // product specific custom layout
-  customLayout(targetDirectory)
-
   reorder(home, targetDirectory)
   return info
 }
 
-public def layoutCommunityPlugins(String home, boolean maySkipAndroidPlugin = false) {
+/**
+ * @deprecated this method isn't used in new build scripts (it's still used in CLion and AppCode build scripts which aren't rewritten yet and
+ * in third-party products); specify non-trivial layout of plugins in {@link org.jetbrains.intellij.build.CommunityRepositoryModules} instead
+ */
+public def layoutCommunityPlugins(String home, BuildContext buildContext = null) {
   if (!isDefined("pluginFilter") || pluginFilter.contains("android")) {
-    def androidHome = relativeAndroidHome()
-    def androidToolsBaseHome = relativeAndroidToolsBaseHome()
-    if (new File("$home/$androidHome").exists()) {
-      layoutAndroid("$home/$androidHome", "$home/$androidToolsBaseHome")
+    if (buildContext == null) {
+      projectBuilder.error("Cannot build Android plugin: buildContext isn't defined")
     }
-    else {
-      def message = "Android plugin sources aren't found at ${androidHome}"
-      if (maySkipAndroidPlugin) {
-        projectBuilder.warning("$message. Android plugin is excluded from layout.")
-      }
-      else {
-        projectBuilder.error(message)
-      }
+    def androidModule = buildContext.findModule("android")
+    def sdklibModule = buildContext.findModule("sdklib")
+    if (androidModule == null) projectBuilder.error("Cannot build Android plugin: 'android' module isn't included into the project")
+    if (sdklibModule == null) projectBuilder.error("Cannot build Android plugin: 'sdklib' module isn't included into the project")
+
+    def androidHome = JpsPathUtil.urlToPath(androidModule.contentRootsList.urls.first())
+    def androidToolsBaseHome = JpsPathUtil.urlToFile(sdklibModule.contentRootsList.urls.first()).parentFile.canonicalPath
+    [androidHome, androidToolsBaseHome].each {
+      if (!new File(it).exists()) projectBuilder.error("Cannot build Android plugin: $it doesn't exist")
     }
+    layoutAndroid(androidHome, androidToolsBaseHome)
   }
 
   dir("plugins") {
@@ -375,6 +341,9 @@ public def layoutCommunityPlugins(String home, boolean maySkipAndroidPlugin = fa
       jar("maven-jps-plugin.jar") {
         module("maven-jps-plugin")
       }
+      jar("aether-dependency-resolver.jar") {
+        module("aether-dependency-resolver")
+      }
       jar("maven-server-api.jar") {
         module("maven-server-api")
       }
@@ -387,8 +356,8 @@ public def layoutCommunityPlugins(String home, boolean maySkipAndroidPlugin = fa
       jar("maven30-server-impl.jar") {
         module("maven30-server-impl")
       }
-      jar("maven32-server-impl.jar") {
-        module("maven32-server-impl")
+      jar("maven3-server-impl.jar") {
+        module("maven3-server-impl")
       }
 
       jar("artifact-resolver-m2.jar") {
@@ -410,7 +379,7 @@ public def layoutCommunityPlugins(String home, boolean maySkipAndroidPlugin = fa
         fileset(dir: "$home/plugins/maven/maven3-server-common/lib") {include(name: "*.jar")}
       }
       dir("maven3") {
-        fileset(dir: "$home/plugins/maven/maven30-server-impl/lib/maven3")
+        fileset(dir: "$home/plugins/maven/maven3-server-impl/lib/maven3")
       }
 
       dir("maven2-server-lib") {
@@ -465,7 +434,12 @@ public def layoutCommunityPlugins(String home, boolean maySkipAndroidPlugin = fa
     }
 
     layoutPlugin("svn4idea") {
-      fileset(dir: "$home/plugins/svn4idea/lib", excludes: "**/svnkitsrc.zip")
+      fileset(dir: "$home/plugins/svn4idea/lib") {
+        exclude(name: "svnkitsrc.zip")
+        exclude(name: "sqljetsrc.zip")
+        exclude(name: "svnkit-javahl16.zip")
+        exclude(name: "trileadsrc.zip")
+      }
     }
 
     layoutPlugin("junit", "junit", "idea-junit") {
@@ -684,8 +658,9 @@ def setPluginVersionAndSince(String moduleName, String version) {
     def text = file.text
     if (!text.contains("<version>")) {
       def dotIndex = version.indexOf('.')
-      def untilBuild = dotIndex > 0 ? (Integer.parseInt(version.substring(0, dotIndex)) + 1).toString() + ".0" : version
-      file.text = text.replace("</id>", "</id>\n  <version>${version}</version>\n  <idea-version since-build=\"${version}\" until-build=\"${untilBuild}\"/>\n")
+      def untilBuild = dotIndex > 0 ? Integer.parseInt(version.substring(0, dotIndex)) + ".*" : version
+      def anchor = text.contains("</id>") ? "</id>" : "</name>"
+      file.text = text.replace(anchor, "${anchor}\n  <version>${version}</version>\n  <idea-version since-build=\"${version}\" until-build=\"${untilBuild}\"/>\n")
     }
   }
 }
@@ -721,7 +696,12 @@ def layoutPlugin(String pluginName, String moduleName, String jarName, Closure c
   }
 
   if (setPluginAndIDEVersionInPluginXml()) {
-    setPluginVersionAndSince(moduleName, requireProperty("buildNumber", requireProperty("build.number", snapshot)))
+    def version = requireProperty("buildNumber", requireProperty("build.number", snapshot))
+    //do not set 'until-build' for snapshot builds compiled locally. Otherwise if you build from sources of e.g. 145 branch you'll get
+    // 'until-build=146.0' in plugin.xml in module outputs and won't be able to run IDE from sources of 'master' branch.
+    if (!version.toLowerCase().endsWith("snapshot")) {
+      setPluginVersionAndSince(moduleName, version)
+    }
   }
 
   dir(pluginName) {
@@ -806,10 +786,14 @@ def reorder(String home, String targetDirectory) {
   }
 }
 
+/**
+ * @deprecated this method isn't used in new build scripts (it's still used in Android Studio build scripts which aren't rewritten yet);
+ * layout of Android plugin in specified in {@link org.jetbrains.intellij.build.CommunityRepositoryModules}
+ */
 def layoutAndroid(String androidHome, String androidToolsBaseHome) {
   dir("plugins") {
     layoutPlugin("android") {
-      fileset(dir: "${androidHome}/android/lib") {
+      fileset(dir: "$androidHome/lib") {
         include(name: "**/*.jar")
         exclude(name: "**/fest-*.jar")
         exclude(name: "src/*.jar")
@@ -838,6 +822,9 @@ def layoutAndroid(String androidHome, String androidToolsBaseHome) {
       jar("manifest-merger.jar") {
         module("manifest-merger")
       }
+      jar("repository.jar") {
+        module("repository")
+      }
       jar("sdk-tools.jar") {
         module("assetstudio")
         module("ddmlib")
@@ -851,15 +838,18 @@ def layoutAndroid(String androidHome, String androidToolsBaseHome) {
         module("chartlib")
         module("builder-model")
         module("builder-test-api")
+        module("instant-run-common")
+        module("instant-run-client")
+        module("instant-run-runtime")
       }
       jar("androidAnnotations.jar") {
-        fileset(dir: "$androidHome/android/annotations")
+        fileset(dir: "$androidHome/annotations")
       }
       dir("jps") {
         jar("android-gradle-jps.jar") { module("android-gradle-jps") }
       }
       dir("device-art-resources") {
-        fileset(dir: "$androidHome/android/device-art-resources")
+        fileset(dir: "$androidHome/device-art-resources")
       }
 
       dir("jps") {
@@ -895,6 +885,7 @@ def layoutJps(String home, String targetDir, String buildNumber, Closure additio
         module("forms_rt")
         module("forms-compiler")
         module("instrumentation-util")
+        module("instrumentation-util-8")
         module("jps-builders")
         module("jps-standalone-builder")
         module("java-runtime")
@@ -916,6 +907,11 @@ def layoutJps(String home, String targetDir, String buildNumber, Closure additio
 
 
       jar("maven-jps-plugin.jar") { module("maven-jps-plugin") }
+      jar("aether-dependency-resolver.jar") { module("aether-dependency-resolver") }
+      fileset(dir: "$home/plugins/maven/lib") {
+        include(name: "aether-*.jar")
+        include(name: "maven-aether-provider-*.jar")
+      }
       jar("gradle-jps-plugin.jar") { module("gradle-jps-plugin") }
       fileset(dir: "$home/plugins/maven/maven30-server-impl/lib/maven3/lib") {include(name: "plexus-utils-*.jar")}
 
@@ -976,11 +972,9 @@ def layout_core(String home, String target) {
     }
 
     fileset(dir: "$home/lib") {
-      include(name: "guava-17.0.jar")
+      include(name: "guava-19.0.jar")
       include(name: "picocontainer.jar")
       include(name: "trove4j.jar")
-      include(name: "asm.jar")
-      include(name: "asm-commons.jar")
       include(name: "cli-parser-1.1.jar")
       include(name: "snappy-in-java-0.3.1.jar")
       include(name: "jayatana-1.2.4.jar")

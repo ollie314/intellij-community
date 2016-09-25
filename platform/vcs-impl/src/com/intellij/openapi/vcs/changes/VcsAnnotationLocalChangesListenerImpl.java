@@ -31,6 +31,7 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.Alarm;
 import com.intellij.util.containers.MultiMap;
 import com.intellij.util.messages.MessageBusConnection;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 import java.util.*;
@@ -57,19 +58,19 @@ public class VcsAnnotationLocalChangesListenerImpl implements Disposable, VcsAnn
 
   private final MultiMap<VirtualFile, FileAnnotation> myFileAnnotationMap;
 
-  public VcsAnnotationLocalChangesListenerImpl(Project project, final ProjectLevelVcsManager vcsManager) {
+  public VcsAnnotationLocalChangesListenerImpl(@NotNull Project project, final ProjectLevelVcsManager vcsManager) {
     myLock = new Object();
     myUpdateStuff = createUpdateStuff();
     myUpdater = new ZipperUpdater(ApplicationManager.getApplication().isUnitTestMode() ? 10 : 300, Alarm.ThreadToUse.POOLED_THREAD, project);
     myConnection = project.getMessageBus().connect();
     myLocalFileSystem = LocalFileSystem.getInstance();
     VcsAnnotationRefresher handler = createHandler();
-    myDirtyPaths = new HashSet<String>();
-    myDirtyChanges = new HashMap<String, VcsRevisionNumber>();
-    myDirtyFiles = new HashSet<VirtualFile>();
+    myDirtyPaths = new HashSet<>();
+    myDirtyChanges = new HashMap<>();
+    myDirtyFiles = new HashSet<>();
     myFileAnnotationMap = MultiMap.createSet();
     myVcsManager = vcsManager;
-    myVcsKeySet = new HashSet<VcsKey>();
+    myVcsKeySet = new HashSet<>();
 
     myConnection.subscribe(VcsAnnotationRefresher.LOCAL_CHANGES_CHANGED, handler);
   }
@@ -78,12 +79,12 @@ public class VcsAnnotationLocalChangesListenerImpl implements Disposable, VcsAnn
     return new Runnable() {
       @Override
       public void run() {
-        final Set<String> paths = new HashSet<String>();
-        final Map<String, VcsRevisionNumber> changes = new HashMap<String, VcsRevisionNumber>();
-        final Set<VirtualFile> files = new HashSet<VirtualFile>();
+        final Set<String> paths = new HashSet<>();
+        final Map<String, VcsRevisionNumber> changes = new HashMap<>();
+        final Set<VirtualFile> files = new HashSet<>();
         Set<VcsKey> vcsToRefresh;
         synchronized (myLock) {
-          vcsToRefresh = new HashSet<VcsKey>(myVcsKeySet);
+          vcsToRefresh = new HashSet<>(myVcsKeySet);
 
           paths.addAll(myDirtyPaths);
           changes.putAll(myDirtyChanges);
@@ -113,7 +114,7 @@ public class VcsAnnotationLocalChangesListenerImpl implements Disposable, VcsAnn
   }
 
   private void processUnderFile(VirtualFile file) {
-    final MultiMap<VirtualFile, FileAnnotation> annotations = new MultiMap<VirtualFile, FileAnnotation>();
+    final MultiMap<VirtualFile, FileAnnotation> annotations = new MultiMap<>();
     synchronized (myLock) {
       for (VirtualFile virtualFile : myFileAnnotationMap.keySet()) {
         if (VfsUtilCore.isAncestor(file, virtualFile, true)) {
@@ -179,7 +180,7 @@ public class VcsAnnotationLocalChangesListenerImpl implements Disposable, VcsAnn
 
   private void closeForVcs(final Set<VcsKey> refresh) {
     if (refresh.isEmpty()) return;
-    final Set<FileAnnotation> copy = new HashSet<FileAnnotation>();
+    final Set<FileAnnotation> copy = new HashSet<>();
     synchronized (myLock) {
       for (FileAnnotation annotation : myFileAnnotationMap.values()) {
         final VcsKey key = annotation.getVcsKey();

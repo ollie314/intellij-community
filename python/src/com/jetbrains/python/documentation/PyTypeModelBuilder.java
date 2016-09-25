@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 package com.jetbrains.python.documentation;
 
-import com.google.common.base.Function;
 import com.google.common.collect.Collections2;
 import com.google.common.collect.Maps;
 import com.intellij.psi.PsiElement;
@@ -26,10 +25,7 @@ import com.jetbrains.python.toolbox.ChainIterable;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 import static com.jetbrains.python.documentation.DocumentationBuilderKit.$;
 import static com.jetbrains.python.documentation.DocumentationBuilderKit.combUp;
@@ -211,7 +207,7 @@ public class PyTypeModelBuilder {
           break;
         }
       }
-      final List<TypeModel> elementModels = new ArrayList<TypeModel>();
+      final List<TypeModel> elementModels = new ArrayList<>();
       if (!nullOnlyTypes) {
         for (PyType elementType : elementTypes) {
           elementModels.add(build(elementType, true));
@@ -227,24 +223,17 @@ public class PyTypeModelBuilder {
         result = new UnknownType(build(unionType.excludeNull(myContext), true));
       }
       else {
-        final PyType optionalType = getOptionalType(unionType);
-        if (optionalType != null) {
-          return new OptionalType(build(optionalType, true));
-        }
-
-        result = new OneOf(Collections2.transform(unionType.getMembers(), new Function<PyType, TypeModel>() {
-          @Override
-          public TypeModel apply(PyType t) {
-            return build(t, false);
-          }
-        }));
+        result = Optional
+          .ofNullable(getOptionalType(unionType))
+          .<PyTypeModelBuilder.TypeModel>map(optionalType -> new OptionalType(build(optionalType, true)))
+          .orElseGet(() -> new OneOf(Collections2.transform(unionType.getMembers(), t -> build(t, false))));
       }
     }
     else if (type instanceof PyCallableType && !(type instanceof PyClassLikeType)) {
       result = build((PyCallableType)type);
     }
     else if (type instanceof PyTupleType) {
-      final List<TypeModel> elementModels = new ArrayList<TypeModel>();
+      final List<TypeModel> elementModels = new ArrayList<>();
       final PyTupleType tupleType = (PyTupleType)type;
       for (int i = 0; i < (tupleType.isHomogeneous() ? 1 : tupleType.getElementCount()); i++) {
         final PyType elementType = tupleType.getElementType(i);
@@ -284,7 +273,7 @@ public class PyTypeModelBuilder {
     List<TypeModel> parameterModels = null;
     final List<PyCallableParameter> parameters = type.getParameters(myContext);
     if (parameters != null) {
-      parameterModels = new ArrayList<TypeModel>();
+      parameterModels = new ArrayList<>();
       for (PyCallableParameter parameter : parameters) {
         parameterModels.add(new ParamType(parameter.getName(), build(parameter.getType(myContext), true)));
       }

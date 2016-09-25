@@ -84,6 +84,10 @@ public abstract class XBreakpointType<B extends XBreakpoint<P>, P extends XBreak
     return mySuspendThreadSupported;
   }
 
+  public SuspendPolicy getDefaultSuspendPolicy() {
+    return SuspendPolicy.ALL;
+  }
+
   public enum StandardPanels {SUSPEND_POLICY, ACTIONS, DEPENDENCY}
 
   public EnumSet<StandardPanels> getVisibleStandardPanels() {
@@ -185,12 +189,7 @@ public abstract class XBreakpointType<B extends XBreakpoint<P>, P extends XBreak
 
   @NotNull 
   public Comparator<B> getBreakpointComparator() {
-    return new Comparator<B>() {
-      @Override
-      public int compare(B b, B b1) {
-        return (int)(b1.getTimeStamp() - b.getTimeStamp());
-      }
-    };
+    return (b, b1) -> (int)(b1.getTimeStamp() - b.getTimeStamp());
     //return XDebuggerUtil.getInstance().getDefaultBreakpointComparator(this);
   }
 

@@ -64,22 +64,12 @@ public class PersistentFSImpl extends PersistentFS implements ApplicationCompone
 
   private final AtomicBoolean myShutDown = new AtomicBoolean(false);
   @SuppressWarnings({"FieldCanBeLocal", "unused"})
-  private final LowMemoryWatcher myWatcher = LowMemoryWatcher.register(new Runnable() {
-    @Override
-    public void run() {
-      clearIdCache();
-    }
-  });
+  private final LowMemoryWatcher myWatcher = LowMemoryWatcher.register(this::clearIdCache);
   private volatile int myStructureModificationCount;
 
   public PersistentFSImpl(@NotNull MessageBus bus) {
     myEventBus = bus;
-    ShutDownTracker.getInstance().registerShutdownTask(new Runnable() {
-      @Override
-      public void run() {
-        performShutdown();
-      }
-    });
+    ShutDownTracker.getInstance().registerShutdownTask(this::performShutdown);
   }
 
   @Override
@@ -136,12 +126,7 @@ public class PersistentFSImpl extends PersistentFS implements ApplicationCompone
     if (!areChildrenLoaded(id)) {
       nameIds  = persistAllChildren(file, id, nameIds);
     }
-    return ContainerUtil.map2Array(nameIds, String.class, new Function<FSRecords.NameId, String>() {
-      @Override
-      public String fun(FSRecords.NameId id) {
-        return id.name.toString();
-      }
-    });
+    return ContainerUtil.map2Array(nameIds, String.class, id1 -> id1.name.toString());
   }
 
   @Override
@@ -282,6 +267,7 @@ public class PersistentFSImpl extends PersistentFS implements ApplicationCompone
                                                  @NotNull VirtualFile file,
                                                  @NotNull NewVirtualFileSystem fs,
                                                  @NotNull FileAttributes attributes) {
+    assert id > 0 : id;
     String name = file.getName();
     if (!name.isEmpty()) {
       if (namesEqual(fs, name, FSRecords.getNameSequence(id))) return false; // TODO: Handle root attributes change.
@@ -532,7 +518,8 @@ public class PersistentFSImpl extends PersistentFS implements ApplicationCompone
         return FileUtil.loadBytes(contentStream, (int)length);
       }
       catch (IOException e) {
-        throw FSRecords.handleError(e);
+        FSRecords.handleError(e);
+        return ArrayUtil.EMPTY_BYTE_ARRAY;
       }
     }
   }
@@ -693,12 +680,7 @@ public class PersistentFSImpl extends PersistentFS implements ApplicationCompone
     }
   }
 
-  @NotNull private static final Comparator<EventWrapper> DEPTH_COMPARATOR = new Comparator<EventWrapper>() {
-    @Override
-    public int compare(@NotNull final EventWrapper o1, @NotNull final EventWrapper o2) {
-      return o1.event.getFileDepth() - o2.event.getFileDepth();
-    }
-  };
+  @NotNull private static final Comparator<EventWrapper> DEPTH_COMPARATOR = (o1, o2) -> o1.event.getFileDepth() - o2.event.getFileDepth();
 
   @NotNull
   private static List<VFileEvent> validateEvents(@NotNull List<VFileEvent> events) {
@@ -718,7 +700,7 @@ public class PersistentFSImpl extends PersistentFS implements ApplicationCompone
       ContainerUtil.quickSort(deletionEvents, DEPTH_COMPARATOR);
 
       invalidIDs = new TIntHashSet(deletionEvents.size());
-      final Set<VirtualFile> dirsToBeDeleted = new THashSet<VirtualFile>(deletionEvents.size());
+      final Set<VirtualFile> dirsToBeDeleted = new THashSet<>(deletionEvents.size());
       nextEvent:
       for (EventWrapper wrapper : deletionEvents) {
         final VirtualFile candidate = wrapper.event.getFile();
@@ -737,7 +719,7 @@ public class PersistentFSImpl extends PersistentFS implements ApplicationCompone
       }
     }
 
-    final List<VFileEvent> filtered = new ArrayList<VFileEvent>(events.size() - invalidIDs.size());
+    final List<VFileEvent> filtered = new ArrayList<>(events.size() - invalidIDs.size());
     for (int i = 0, size = events.size(); i < size; i++) {
       final VFileEvent event = events.get(i);
       if (event.isValid() && !(event instanceof VFileDeleteEvent && invalidIDs.contains(i))) {
@@ -768,10 +750,10 @@ public class PersistentFSImpl extends PersistentFS implements ApplicationCompone
       }
 
       if (changedParent != null) {
-        if (parentToChildrenEventsChanges == null) parentToChildrenEventsChanges = new THashMap<VirtualFile, List<VFileEvent>>();
+        if (parentToChildrenEventsChanges == null) parentToChildrenEventsChanges = new THashMap<>();
         List<VFileEvent> parentChildrenChanges = parentToChildrenEventsChanges.get(changedParent);
         if (parentChildrenChanges == null) {
-          parentToChildrenEventsChanges.put(changedParent, parentChildrenChanges = new SmartList<VFileEvent>());
+          parentToChildrenEventsChanges.put(changedParent, parentChildrenChanges = new SmartList<>());
         }
         parentChildrenChanges.add(event);
       }
@@ -781,12 +763,9 @@ public class PersistentFSImpl extends PersistentFS implements ApplicationCompone
     }
 
     if (parentToChildrenEventsChanges != null) {
-      parentToChildrenEventsChanges.forEachEntry(new TObjectObjectProcedure<VirtualFile, List<VFileEvent>>() {
-        @Override
-        public boolean execute(VirtualFile parent, List<VFileEvent> childrenEvents) {
-          applyChildrenChangeEvents(parent, childrenEvents);
-          return true;
-        }
+      parentToChildrenEventsChanges.forEachEntry((parent, childrenEvents) -> {
+        applyChildrenChangeEvents(parent, childrenEvents);
+        return true;
       });
       parentToChildrenEventsChanges.clear();
     }
@@ -797,13 +776,13 @@ public class PersistentFSImpl extends PersistentFS implements ApplicationCompone
   private void applyChildrenChangeEvents(@NotNull VirtualFile parent, @NotNull List<VFileEvent> events) {
     final NewVirtualFileSystem delegate = getDelegate(parent);
     TIntArrayList childrenIdsUpdated = new TIntArrayList();
-    List<VirtualFile> childrenToBeUpdated = new SmartList<VirtualFile>();
 
     final int parentId = getFileId(parent);
     assert parentId != 0;
     TIntHashSet parentChildrenIds = new TIntHashSet(FSRecords.list(parentId));
     boolean hasRemovedChildren = false;
 
+    List<VirtualFile> childrenToBeUpdated = new SmartList<>();
     for (VFileEvent event : events) {
       if (event instanceof VFileCreateEvent) {
         String name = ((VFileCreateEvent)event).getChildName();
@@ -1004,7 +983,7 @@ public class PersistentFSImpl extends PersistentFS implements ApplicationCompone
   @Override
   @NotNull
   public VirtualFile[] getRoots(@NotNull final NewVirtualFileSystem fs) {
-    final List<VirtualFile> roots = new ArrayList<VirtualFile>();
+    final List<VirtualFile> roots = new ArrayList<>();
 
     for (NewVirtualFile root : myRoots.values()) {
       if (root.getFileSystem() == fs) {
@@ -1071,6 +1050,7 @@ public class PersistentFSImpl extends PersistentFS implements ApplicationCompone
         }
         else if (VirtualFile.PROP_SYMLINK_TARGET.equals(propertyChangeEvent.getPropertyName())) {
           executeSetTarget(file, (String)newValue);
+          markForContentReloadRecursively(getFileId(file));
         }
       }
     }
@@ -1247,15 +1227,14 @@ public class PersistentFSImpl extends PersistentFS implements ApplicationCompone
   public void cleanPersistedContents() {
     final int[] roots = FSRecords.listRoots();
     for (int root : roots) {
-      cleanPersistedContentsRecursively(root);
+      markForContentReloadRecursively(root);
     }
   }
 
-  @TestOnly
-  private void cleanPersistedContentsRecursively(int id) {
+  private void markForContentReloadRecursively(int id) {
     if (isDirectory(getFileAttributes(id))) {
       for (int child : FSRecords.list(id)) {
-        cleanPersistedContentsRecursively(child);
+        markForContentReloadRecursively(child);
       }
     }
     else {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,23 +37,24 @@ import java.awt.*;
 public class JBUI {
   private static final Logger LOG = Logger.getInstance("#com.intellij.util.ui.JBUI");
 
-  private static float scaleFactor = 1.0f;
+  /**
+   * A default system scale factor.
+   */
+  public static final float SYSTEM_DEF_SCALE = getSystemDefScale();
+
+  private static float scaleFactor;
 
   static {
-    calculateScaleFactor();
+    setScaleFactor(SYSTEM_DEF_SCALE);
   }
 
-  private static void calculateScaleFactor() {
+  private static float getSystemDefScale() {
     if (SystemInfo.isMac) {
-      LOG.info("UI scale factor: 1.0");
-      scaleFactor = 1.0f;
-      return;
+      return 1.0f;
     }
 
     if (SystemProperties.has("hidpi") && !SystemProperties.is("hidpi")) {
-      LOG.info("UI scale factor: 1.0");
-      scaleFactor = 1.0f;
-      return;
+      return 1.0f;
     }
 
     UIUtil.initSystemFontData();
@@ -65,11 +66,13 @@ public class JBUI {
     } else {
       size = Fonts.label().getSize();
     }
-    setScaleFactor(size/UIUtil.DEF_SYSTEM_FONT_SIZE);
+    return size / UIUtil.DEF_SYSTEM_FONT_SIZE;
   }
 
   public static void setScaleFactor(float scale) {
     if (SystemProperties.has("hidpi") && !SystemProperties.is("hidpi")) {
+      scaleFactor = 1.0f;
+      LOG.info("UI scale factor: 1.0");
       return;
     }
 
@@ -235,6 +238,10 @@ public class JBUI {
 
     public static Border customLine(Color color, int thickness) {
       return customLine(color, thickness, thickness, thickness, thickness);
+    }
+
+    public static Border customLine(Color color) {
+      return customLine(color, 1);
     }
 
     public static Border merge(@Nullable Border source, @NotNull Border extra, boolean extraIsOutside) {

@@ -45,6 +45,8 @@ import com.intellij.ui.awt.RelativePoint;
 import com.intellij.util.Alarm;
 import com.intellij.util.BitUtil;
 import com.intellij.util.ui.UIUtil;
+import com.intellij.util.ui.accessibility.AccessibleContextUtil;
+import com.intellij.util.ui.accessibility.ScreenReader;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
@@ -68,7 +70,7 @@ public class HintManagerImpl extends HintManager implements Disposable {
   private LightweightHint myQuestionHint = null;
   private QuestionAction myQuestionAction = null;
 
-  private final List<HintInfo> myHintsStack = new ArrayList<HintInfo>();
+  private final List<HintInfo> myHintsStack = new ArrayList<>();
   private Editor myLastEditor = null;
   private final Alarm myHideAlarm = new Alarm();
 
@@ -286,13 +288,11 @@ public class HintManagerImpl extends HintManager implements Disposable {
    */
   public void showEditorHint(final LightweightHint hint, final Editor editor, @PositionFlags final short constraint, @HideFlags final int flags, final int timeout, final boolean reviveOnEditorChange) {
     editor.getScrollingModel().scrollToCaret(ScrollType.MAKE_VISIBLE);
-    editor.getScrollingModel().runActionOnScrollingFinished(new Runnable() {
-      @Override
-      public void run() {
-        LogicalPosition pos = editor.getCaretModel().getLogicalPosition();
-        Point p = getHintPosition(hint, editor, pos, constraint);
-        showEditorHint(hint, editor, p, flags, timeout, reviveOnEditorChange, createHintHint(editor, p, hint, constraint));
-      }});
+    editor.getScrollingModel().runActionOnScrollingFinished(() -> {
+      LogicalPosition pos = editor.getCaretModel().getLogicalPosition();
+      Point p = getHintPosition(hint, editor, pos, constraint);
+      showEditorHint(hint, editor, p, flags, timeout, reviveOnEditorChange, createHintHint(editor, p, hint, constraint));
+    });
   }
 
   /**
@@ -345,6 +345,11 @@ public class HintManagerImpl extends HintManager implements Disposable {
 
     Component component = hint.getComponent();
 
+    // Set focus to control so that screen readers will announce the tooltip contents.
+    // Users can press "ESC" to return to the editor.
+    if (ScreenReader.isActive()) {
+      hintInfo.setRequestFocus(true);
+    }
     doShowInGivenLocation(hint, editor, p, hintInfo, true);
 
     ListenerUtil.addMouseListener(component, new MouseAdapter() {
@@ -494,8 +499,12 @@ public class HintManagerImpl extends HintManager implements Disposable {
     final Rectangle dominantArea = PlatformDataKeys.DOMINANT_HINT_AREA_RECTANGLE.getData(dataContext);
 
     LOG.assertTrue(SwingUtilities.isEventDispatchThread());
+    if (dominantArea != null) {
+      return getHintPositionRelativeTo(hint, editor, constraint, dominantArea, pos);
+    }
+
     JRootPane rootPane = editor.getComponent().getRootPane();
-    if (dominantArea == null && rootPane != null) {
+    if (rootPane != null) {
       JLayeredPane lp = rootPane.getLayeredPane();
       for (HintInfo info : getHintsStackArray()) {
         if (!info.hint.isSelectingHint()) continue;
@@ -539,17 +548,14 @@ public class HintManagerImpl extends HintManager implements Disposable {
         }
       }
     }
-    else {
-      return getHintPositionRelativeTo(hint, editor, constraint, dominantArea, pos);
-    }
 
     return getHintPosition(hint, editor, pos, constraint);
   }
 
-  private static Point getHintPositionRelativeTo(final LightweightHint hint,
-                                                 final Editor editor,
-                                                 @PositionFlags  short constraint,
-                                                 final Rectangle lookupBounds,
+  private static Point getHintPositionRelativeTo(@NotNull final LightweightHint hint,
+                                                 @NotNull final Editor editor,
+                                                 @PositionFlags short constraint,
+                                                 @NotNull final Rectangle lookupBounds,
                                                  final LogicalPosition pos) {
 
     JComponent externalComponent = getExternalComponent(editor);
@@ -649,7 +655,7 @@ public class HintManagerImpl extends HintManager implements Disposable {
   }
 
   @NotNull
-  private static JComponent getExternalComponent(@NotNull Editor editor) {
+  public static JComponent getExternalComponent(@NotNull Editor editor) {
     JComponent externalComponent = editor.getComponent();
     JRootPane rootPane = externalComponent.getRootPane();
     if (rootPane == null) return externalComponent;
@@ -726,6 +732,9 @@ public class HintManagerImpl extends HintManager implements Disposable {
 
   @Override
   public void showInformationHint(@NotNull Editor editor, @NotNull JComponent component) {
+    // Set the accessible name so that screen readers announce the panel type (e.g. "Hint panel")
+    // when the tooltip gets the focus.
+    AccessibleContextUtil.setName(component, "Hint");
     showInformationHint(editor, component, true);
   }
 
@@ -803,7 +812,9 @@ public class HintManagerImpl extends HintManager implements Disposable {
       }
     });
 
-    showEditorHint(hint, editor, p, HIDE_BY_ANY_KEY | HIDE_BY_TEXT_CHANGE | UPDATE_BY_SCROLLING | HIDE_IF_OUT_OF_EDITOR, 0, false,
+    showEditorHint(hint, editor, p,
+                   HIDE_BY_ANY_KEY | HIDE_BY_TEXT_CHANGE | UPDATE_BY_SCROLLING | HIDE_IF_OUT_OF_EDITOR | DONT_CONSUME_ESCAPE,
+                   0, false,
                    createHintHint(editor, p, hint, constraint));
     myQuestionAction = action;
     myQuestionHint = hint;
@@ -940,6 +951,9 @@ public class HintManagerImpl extends HintManager implements Disposable {
 
       myQuestionAction = null;
       myQuestionHint = null;
+      if (myLastEditor != null && project == myLastEditor.getProject()) {
+        updateLastEditor(null);
+      }
     }
   }
 
@@ -987,10 +1001,12 @@ public class HintManagerImpl extends HintManager implements Disposable {
         if ((info.flags & mask) != 0 || editorChanged && !info.reviveOnEditorChange) {
           info.hint.hide();
           myHintsStack.remove(info);
-          if (onlyOne) {
-            return true;
+          if ((mask & HIDE_BY_ESCAPE) == 0 || (info.flags & DONT_CONSUME_ESCAPE) == 0) {
+            if (onlyOne) {
+              return true;
+            }
+            done = true;
           }
-          done = true;
         }
       }
 

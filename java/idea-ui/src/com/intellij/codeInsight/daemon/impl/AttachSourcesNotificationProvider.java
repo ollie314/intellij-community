@@ -70,7 +70,7 @@ import java.util.*;
  */
 public class AttachSourcesNotificationProvider extends EditorNotifications.Provider<EditorNotificationPanel> {
   private static final ExtensionPointName<AttachSourcesProvider> EXTENSION_POINT_NAME =
-    new ExtensionPointName<AttachSourcesProvider>("com.intellij.attachSourcesProvider");
+    new ExtensionPointName<>("com.intellij.attachSourcesProvider");
 
   private static final Key<EditorNotificationPanel> KEY = Key.create("add sources to class");
 
@@ -107,7 +107,7 @@ public class AttachSourcesNotificationProvider extends EditorNotifications.Provi
     if (sourceFile == null) {
       final List<LibraryOrderEntry> libraries = findLibraryEntriesForFile(file);
       if (libraries != null) {
-        List<AttachSourcesProvider.AttachSourcesAction> actions = new ArrayList<AttachSourcesProvider.AttachSourcesAction>();
+        List<AttachSourcesProvider.AttachSourcesAction> actions = new ArrayList<>();
 
         PsiFile clsFile = PsiManager.getInstance(myProject).findFile(file);
         boolean hasNonLightAction = false;
@@ -128,12 +128,7 @@ public class AttachSourcesNotificationProvider extends EditorNotifications.Provi
           }
         }
 
-        Collections.sort(actions, new Comparator<AttachSourcesProvider.AttachSourcesAction>() {
-          @Override
-          public int compare(AttachSourcesProvider.AttachSourcesAction o1, AttachSourcesProvider.AttachSourcesAction o2) {
-            return o1.getName().compareToIgnoreCase(o2.getName());
-          }
-        });
+        Collections.sort(actions, (o1, o2) -> o1.getName().compareToIgnoreCase(o2.getName()));
 
         AttachSourcesProvider.AttachSourcesAction defaultAction;
         if (findSourceFileInSameJar(file) != null) {
@@ -145,30 +140,24 @@ public class AttachSourcesNotificationProvider extends EditorNotifications.Provi
         actions.add(defaultAction);
 
         for (final AttachSourcesProvider.AttachSourcesAction action : actions) {
-          panel.createActionLabel(GuiUtils.getTextWithoutMnemonicEscaping(action.getName()), new Runnable() {
-            @Override
-            public void run() {
-              List<LibraryOrderEntry> entries = findLibraryEntriesForFile(file);
-              if (!Comparing.equal(libraries, entries)) {
-                Messages.showErrorDialog(myProject, "Can't find library for " + file.getName(), "Error");
-                return;
-              }
-
-              panel.setText(action.getBusyText());
-
-              action.perform(entries);
+          panel.createActionLabel(GuiUtils.getTextWithoutMnemonicEscaping(action.getName()), () -> {
+            List<LibraryOrderEntry> entries = findLibraryEntriesForFile(file);
+            if (!Comparing.equal(libraries, entries)) {
+              Messages.showErrorDialog(myProject, "Can't find library for " + file.getName(), "Error");
+              return;
             }
+
+            panel.setText(action.getBusyText());
+
+            action.perform(entries);
           });
         }
       }
     }
     else {
-      panel.createActionLabel(ProjectBundle.message("class.file.open.source.action"), new Runnable() {
-        @Override
-        public void run() {
-          OpenFileDescriptor descriptor = new OpenFileDescriptor(myProject, sourceFile);
-          FileEditorManager.getInstance(myProject).openTextEditor(descriptor, true);
-        }
+      panel.createActionLabel(ProjectBundle.message("class.file.open.source.action"), () -> {
+        OpenFileDescriptor descriptor = new OpenFileDescriptor(myProject, sourceFile);
+        FileEditorManager.getInstance(myProject).openTextEditor(descriptor, true);
       });
     }
 
@@ -186,7 +175,9 @@ public class AttachSourcesNotificationProvider extends EditorNotifications.Provi
             int major = stream.readUnsignedShort();
             StringBuilder info = new StringBuilder().append("bytecode version: ").append(major).append('.').append(minor);
             LanguageLevel level = ClsParsingUtil.getLanguageLevelByVersion(major);
-            if (level != null) info.append(" (").append(level.getName()).append(')');
+            if (level != null) {
+              info.append(" (").append(level == LanguageLevel.JDK_1_3 ? level.getName() + " or older" : level.getName()).append(')');
+            }
             return info.toString();
           }
         }
@@ -240,7 +231,7 @@ public class AttachSourcesNotificationProvider extends EditorNotifications.Provi
 
     @Override
     public ActionCallback perform(List<LibraryOrderEntry> orderEntriesContainingFile) {
-      final List<Library.ModifiableModel> modelsToCommit = new ArrayList<Library.ModifiableModel>();
+      final List<Library.ModifiableModel> modelsToCommit = new ArrayList<>();
       for (LibraryOrderEntry orderEntry : orderEntriesContainingFile) {
         final Library library = orderEntry.getLibrary();
         if (library == null) continue;
@@ -305,7 +296,7 @@ public class AttachSourcesNotificationProvider extends EditorNotifications.Provi
       VirtualFile[] files = LibrarySourceRootDetectorUtil.scanAndSelectDetectedJavaSourceRoots(myParentComponent, candidates);
       if (files.length == 0) return ActionCallback.REJECTED;
 
-      final Map<Library, LibraryOrderEntry> librariesToAppendSourcesTo = new HashMap<Library, LibraryOrderEntry>();
+      final Map<Library, LibraryOrderEntry> librariesToAppendSourcesTo = new HashMap<>();
       for (LibraryOrderEntry library : libraries) {
         librariesToAppendSourcesTo.put(library.getLibrary(), library);
       }
@@ -349,15 +340,12 @@ public class AttachSourcesNotificationProvider extends EditorNotifications.Provi
     }
 
     private static void appendSources(final Library library, final VirtualFile[] files) {
-      ApplicationManager.getApplication().runWriteAction(new Runnable() {
-        @Override
-        public void run() {
-          Library.ModifiableModel model = library.getModifiableModel();
-          for (VirtualFile virtualFile : files) {
-            model.addRoot(virtualFile, OrderRootType.SOURCES);
-          }
-          model.commit();
+      ApplicationManager.getApplication().runWriteAction(() -> {
+        Library.ModifiableModel model = library.getModifiableModel();
+        for (VirtualFile virtualFile : files) {
+          model.addRoot(virtualFile, OrderRootType.SOURCES);
         }
+        model.commit();
       });
     }
   }

@@ -29,6 +29,7 @@ import com.intellij.ide.util.treeView.NodeDescriptor;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.RangeMarker;
@@ -158,14 +159,11 @@ abstract class TodoPanel extends SimpleToolWindowPanel implements OccurenceNavig
     myTree.getSelectionModel().addTreeSelectionListener(new TreeSelectionListener() {
       @Override
       public void valueChanged(final TreeSelectionEvent e) {
-        SwingUtilities.invokeLater(new Runnable() {
-          @Override
-          public void run() {
-            if (myUsagePreviewPanel.isVisible()) {
-              updatePreviewPanel();
-            }
+        ApplicationManager.getApplication().invokeLater(() -> {
+          if (myUsagePreviewPanel.isVisible()) {
+            updatePreviewPanel();
           }
-        });
+        }, ModalityState.NON_MODAL, myProject.getDisposed());
       }
     });
 
@@ -214,12 +212,7 @@ abstract class TodoPanel extends SimpleToolWindowPanel implements OccurenceNavig
     autoScrollToSourceHandler.install(myTree);
     rightGroup.add(autoScrollToSourceHandler.createToggleAction());
 
-    SetTodoFilterAction setTodoFilterAction = new SetTodoFilterAction(myProject, mySettings, new Consumer<TodoFilter>() {
-      @Override
-      public void consume(TodoFilter todoFilter) {
-        setTodoFilter(todoFilter);
-      }
-    });
+    SetTodoFilterAction setTodoFilterAction = new SetTodoFilterAction(myProject, mySettings, todoFilter -> setTodoFilter(todoFilter));
     rightGroup.add(setTodoFilterAction);
     rightGroup.add(new MyPreviewAction());
     toolBarPanel.add(
@@ -236,8 +229,8 @@ abstract class TodoPanel extends SimpleToolWindowPanel implements OccurenceNavig
   }
 
   private void updatePreviewPanel() {
-    if (myProject.isDisposed()) return;
-    List<UsageInfo> infos = new ArrayList<UsageInfo>();
+    if (myProject == null || myProject.isDisposed()) return;
+    List<UsageInfo> infos = new ArrayList<>();
     final TreePath path = myTree.getSelectionPath();
     if (path != null) {
       DefaultMutableTreeNode node = (DefaultMutableTreeNode)path.getLastPathComponent();
@@ -422,35 +415,23 @@ abstract class TodoPanel extends SimpleToolWindowPanel implements OccurenceNavig
 
   protected void rebuildWithAlarm(final Alarm alarm) {
     alarm.cancelAllRequests();
-    alarm.addRequest(new Runnable() {
-      @Override
-      public void run() {
-        final Set<VirtualFile> files = new HashSet<VirtualFile>();
-        ApplicationManager.getApplication().runReadAction(new Runnable() {
-          @Override
-          public void run() {
-            try {
-              myTodoTreeBuilder.collectFiles(new Processor<VirtualFile>() {
-                @Override
-                public boolean process(VirtualFile virtualFile) {
-                  files.add(virtualFile);
-                  return true;
-                }
-              });
-            }
-            catch (IndexNotReadyException ignore) {
-            }
-          }
-        });
-        final Runnable runnable = new Runnable() {
-          @Override
-          public void run() {
-            myTodoTreeBuilder.rebuildCache(files);
-            updateTree();
-          }
-        };
-        ApplicationManager.getApplication().invokeLater(runnable);
-      }
+    alarm.addRequest(() -> {
+      final Set<VirtualFile> files = new HashSet<>();
+      ApplicationManager.getApplication().runReadAction(() -> {
+        try {
+          myTodoTreeBuilder.collectFiles(virtualFile -> {
+            files.add(virtualFile);
+            return true;
+          });
+        }
+        catch (IndexNotReadyException ignore) {
+        }
+      });
+      final Runnable runnable = () -> {
+        myTodoTreeBuilder.rebuildCache(files);
+        updateTree();
+      };
+      ApplicationManager.getApplication().invokeLater(runnable);
     }, 300);
   }
 
@@ -678,8 +659,8 @@ abstract class TodoPanel extends SimpleToolWindowPanel implements OccurenceNavig
     @Override
     public void visibilityChanged() {
       if (myProject.isOpen()) {
-        PsiDocumentManager.getInstance(myProject).commitAllDocuments();
-        myTodoTreeBuilder.setUpdatable(isShowing());
+        PsiDocumentManager.getInstance(myProject).performWhenAllCommitted(
+          () -> myTodoTreeBuilder.setUpdatable(isShowing()));
       }
     }
   }

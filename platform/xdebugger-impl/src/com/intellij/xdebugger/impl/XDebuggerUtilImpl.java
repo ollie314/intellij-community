@@ -67,6 +67,8 @@ import com.intellij.xdebugger.impl.breakpoints.ui.grouping.XBreakpointFileGroupi
 import com.intellij.xdebugger.impl.evaluate.quick.common.ValueLookupManager;
 import com.intellij.xdebugger.impl.settings.XDebuggerSettingManagerImpl;
 import com.intellij.xdebugger.impl.ui.DebuggerUIUtil;
+import com.intellij.xdebugger.impl.ui.tree.XDebuggerTree;
+import com.intellij.xdebugger.impl.ui.tree.XDebuggerTreeState;
 import com.intellij.xdebugger.impl.ui.tree.actions.XDebuggerTreeActionBase;
 import com.intellij.xdebugger.settings.XDebuggerSettings;
 import com.intellij.xdebugger.ui.DebuggerColors;
@@ -75,12 +77,13 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.concurrency.AsyncPromise;
 import org.jetbrains.concurrency.Promise;
-import org.jetbrains.concurrency.PromiseKt;
 
 import javax.swing.*;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
 import java.util.*;
+
+import static org.jetbrains.concurrency.Promises.rejectedPromise;
 
 /**
  * @author nik
@@ -269,7 +272,7 @@ public class XDebuggerUtilImpl extends XDebuggerUtil {
             Promise.resolve((XLineBreakpoint)breakpointManager.addLineBreakpoint(type, file.getUrl(), line, properties, temporary)));
           return;
         }
-        result.setResult(PromiseKt.<XLineBreakpoint>rejectedPromise());
+        result.setResult(rejectedPromise());
       }
     }.execute().getResultObject();
   }
@@ -429,7 +432,7 @@ public class XDebuggerUtilImpl extends XDebuggerUtil {
 
   @Override
   public <B extends XBreakpoint<?>> Comparator<B> getDefaultBreakpointComparator(final XBreakpointType<B, ?> type) {
-    return (o1, o2) -> type.getDisplayText(o1).compareTo(type.getDisplayText(o2));
+    return Comparator.comparing(type::getDisplayText);
   }
 
   @Override
@@ -473,10 +476,6 @@ public class XDebuggerUtilImpl extends XDebuggerUtil {
     PsiElement element;
     int offset = lineStart;
 
-    if (file instanceof PsiCompiledFile) {
-      file = ((PsiCompiledFile)file).getDecompiledPsiFile();
-    }
-
     while (offset < lineEnd) {
       element = file.findElementAt(offset);
       if (element != null) {
@@ -509,10 +508,6 @@ public class XDebuggerUtilImpl extends XDebuggerUtil {
     PsiFile file = document == null ? null : PsiManager.getInstance(project).findFile(virtualFile);
     if (file == null) {
       return null;
-    }
-
-    if (file instanceof PsiCompiledFile) {
-      file = ((PsiCompiledFile)file).getDecompiledPsiFile();
     }
 
     if (offset < 0) {
@@ -566,6 +561,13 @@ public class XDebuggerUtilImpl extends XDebuggerUtil {
         session.rebuildViews();
       }
     }
+  }
+
+  public static void rebuildTreeAndViews(XDebuggerTree tree) {
+    if (tree.isDetached()) {
+      tree.rebuildAndRestore(XDebuggerTreeState.saveState(tree));
+    }
+    rebuildAllSessionsViews(tree.getProject());
   }
 
   @NotNull

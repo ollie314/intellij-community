@@ -61,8 +61,8 @@ import java.util.concurrent.ExecutorService;
  * @author peter
  */
 public class MvcModuleStructureSynchronizer extends AbstractProjectComponent {
-  private static final ExecutorService ourExecutor = AppExecutorUtil.createBoundedApplicationPoolExecutor(1);
-  private final Set<Pair<Object, SyncAction>> myOrders = new LinkedHashSet<Pair<Object, SyncAction>>();
+  private static final ExecutorService ourExecutor = AppExecutorUtil.createBoundedApplicationPoolExecutor("MvcModuleStructureSynchronizer pool",1);
+  private final Set<Pair<Object, SyncAction>> myOrders = new LinkedHashSet<>();
 
   private Set<VirtualFile> myPluginRoots = Collections.emptySet();
 
@@ -144,36 +144,33 @@ public class MvcModuleStructureSynchronizer extends AbstractProjectComponent {
           if (framework == null) return;
 
           if (framework.isToReformatOnCreation(file) || file.isDirectory()) {
-            ApplicationManager.getApplication().invokeLater(new Runnable() {
-              @Override
-              public void run() {
-                if (!file.isValid()) return;
-                if (!framework.hasSupport(module)) return;
+            ApplicationManager.getApplication().invokeLater(() -> {
+              if (!file.isValid()) return;
+              if (!framework.hasSupport(module)) return;
 
-                final List<VirtualFile> files = new ArrayList<VirtualFile>();
+              final List<VirtualFile> files = new ArrayList<>();
 
-                if (file.isDirectory()) {
-                  ModuleRootManager.getInstance(module).getFileIndex().iterateContentUnderDirectory(file, new ContentIterator() {
-                    @Override
-                    public boolean processFile(VirtualFile fileOrDir) {
-                      if (!fileOrDir.isDirectory() && framework.isToReformatOnCreation(fileOrDir)) {
-                        files.add(file);
-                      }
-                      return true;
+              if (file.isDirectory()) {
+                ModuleRootManager.getInstance(module).getFileIndex().iterateContentUnderDirectory(file, new ContentIterator() {
+                  @Override
+                  public boolean processFile(VirtualFile fileOrDir) {
+                    if (!fileOrDir.isDirectory() && framework.isToReformatOnCreation(fileOrDir)) {
+                      files.add(file);
                     }
-                  });
-                }
-                else {
-                  files.add(file);
-                }
-
-                PsiManager manager = PsiManager.getInstance(myProject);
-
-                for (VirtualFile virtualFile : files) {
-                  PsiFile psiFile = manager.findFile(virtualFile);
-                  if (psiFile != null) {
-                    new ReformatCodeProcessor(myProject, psiFile, null, false).run();
+                    return true;
                   }
+                });
+              }
+              else {
+                files.add(file);
+              }
+
+              PsiManager manager = PsiManager.getInstance(myProject);
+
+              for (VirtualFile virtualFile : files) {
+                PsiFile psiFile = manager.findFile(virtualFile);
+                if (psiFile != null) {
+                  new ReformatCodeProcessor(myProject, psiFile, null, false).run();
                 }
               }
             }, module.getDisposed());
@@ -300,7 +297,7 @@ public class MvcModuleStructureSynchronizer extends AbstractProjectComponent {
 
   private LinkedHashSet<Pair<Object, SyncAction>> takeOrderSnapshot() {
     synchronized (myOrders) {
-      return new LinkedHashSet<Pair<Object, SyncAction>>(myOrders);
+      return new LinkedHashSet<>(myOrders);
     }
   }
 
@@ -363,7 +360,7 @@ public class MvcModuleStructureSynchronizer extends AbstractProjectComponent {
 
   private Set<Trinity<Module, SyncAction, MvcFramework>> computeRawActions(Set<Pair<Object, SyncAction>> actions) {
     //get module by object and kill duplicates
-    final Set<Trinity<Module, SyncAction, MvcFramework>> rawActions = new LinkedHashSet<Trinity<Module, SyncAction, MvcFramework>>();
+    final Set<Trinity<Module, SyncAction, MvcFramework>> rawActions = new LinkedHashSet<>();
     for (final Pair<Object, SyncAction> pair : actions) {
       for (Module module : determineModuleBySyncActionObject(pair.first)) {
         if (!module.isDisposed()) {
@@ -427,7 +424,7 @@ public class MvcModuleStructureSynchronizer extends AbstractProjectComponent {
         if (mvcModuleStructureSynchronizer.myOutOfModuleDirectoryCreatedActionAdded) {
           mvcModuleStructureSynchronizer.myOutOfModuleDirectoryCreatedActionAdded = false;
 
-          Set<VirtualFile> roots = new HashSet<VirtualFile>();
+          Set<VirtualFile> roots = new HashSet<>();
 
           for (String rootPath : MvcWatchedRootProvider.getRootsToWatch(project)) {
             ContainerUtil.addIfNotNull(roots, LocalFileSystem.getInstance().findFileByPath(rootPath));
@@ -435,12 +432,7 @@ public class MvcModuleStructureSynchronizer extends AbstractProjectComponent {
 
           if (!roots.equals(mvcModuleStructureSynchronizer.myPluginRoots)) {
             mvcModuleStructureSynchronizer.myPluginRoots = roots;
-            ApplicationManager.getApplication().invokeLater(new Runnable() {
-              @Override
-              public void run() {
-                mvcModuleStructureSynchronizer.queue(UpdateProjectStructure, project);
-              }
-            });
+            ApplicationManager.getApplication().invokeLater(() -> mvcModuleStructureSynchronizer.queue(UpdateProjectStructure, project));
           }
         }
       }
@@ -454,30 +446,27 @@ public class MvcModuleStructureSynchronizer extends AbstractProjectComponent {
     StartupManager.getInstance(myProject).runWhenProjectIsInitialized(new DumbAwareRunnable() {
       @Override
       public void run() {
-        ApplicationManager.getApplication().invokeLater(new Runnable() {
-          @Override
-          public void run() {
-            if (myProject.isDisposed()) return;
+        ApplicationManager.getApplication().invokeLater(() -> {
+          if (myProject.isDisposed()) return;
 
-            for (ToolWindowEP ep : ToolWindowEP.EP_NAME.getExtensions()) {
-              if (MvcToolWindowDescriptor.class.isAssignableFrom(ep.getFactoryClass())) {
-                MvcToolWindowDescriptor descriptor = (MvcToolWindowDescriptor)ep.getToolWindowFactory();
-                String id = descriptor.getToolWindowId();
-                boolean shouldShow = descriptor.value(myProject);
+          for (ToolWindowEP ep : ToolWindowEP.EP_NAME.getExtensions()) {
+            if (MvcToolWindowDescriptor.class.isAssignableFrom(ep.getFactoryClass())) {
+              MvcToolWindowDescriptor descriptor = (MvcToolWindowDescriptor)ep.getToolWindowFactory();
+              String id = descriptor.getToolWindowId();
+              boolean shouldShow = descriptor.value(myProject);
 
-                ToolWindowManager toolWindowManager = ToolWindowManager.getInstance(myProject);
+              ToolWindowManager toolWindowManager = ToolWindowManager.getInstance(myProject);
 
-                ToolWindow toolWindow = toolWindowManager.getToolWindow(id);
+              ToolWindow toolWindow = toolWindowManager.getToolWindow(id);
 
-                if (shouldShow && toolWindow == null) {
-                  toolWindow = toolWindowManager.registerToolWindow(id, true, ToolWindowAnchor.LEFT, myProject, true);
-                  toolWindow.setIcon(descriptor.getFramework().getToolWindowIcon());
-                  descriptor.createToolWindowContent(myProject, toolWindow);
-                }
-                else if (!shouldShow && toolWindow != null) {
-                  toolWindowManager.unregisterToolWindow(id);
-                  Disposer.dispose(toolWindow.getContentManager());
-                }
+              if (shouldShow && toolWindow == null) {
+                toolWindow = toolWindowManager.registerToolWindow(id, true, ToolWindowAnchor.LEFT, myProject, true);
+                toolWindow.setIcon(descriptor.getFramework().getToolWindowIcon());
+                descriptor.createToolWindowContent(myProject, toolWindow);
+              }
+              else if (!shouldShow && toolWindow != null) {
+                toolWindowManager.unregisterToolWindow(id);
+                Disposer.dispose(toolWindow.getContentManager());
               }
             }
           }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,18 +20,30 @@ import com.intellij.lang.ASTNode;
 import com.intellij.lang.annotation.Annotation;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
+import com.intellij.psi.util.PsiTreeUtil;
 import com.jetbrains.python.PyTokenTypes;
 import com.jetbrains.python.highlighting.PyHighlighter;
 import com.jetbrains.python.psi.*;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.Optional;
+
 /**
  * @author vlan
  */
 public class DumbAwareHighlightingAnnotator extends PyAnnotator implements HighlightRangeExtension {
+
   @Override
   public void visitPyFunction(PyFunction node) {
-    highlightKeyword(node, PyTokenTypes.ASYNC_KEYWORD);
+    if (node.isAsyncAllowed()) {
+      highlightKeyword(node, PyTokenTypes.ASYNC_KEYWORD);
+    }
+    else {
+      Optional
+        .ofNullable(node.getNode())
+        .map(astNode -> astNode.findChildByType(PyTokenTypes.ASYNC_KEYWORD))
+        .ifPresent(asyncNode -> getHolder().createErrorAnnotation(asyncNode, "function \"" + node.getName() + "\" cannot be async"));
+    }
   }
 
   @Override
@@ -47,6 +59,17 @@ public class DumbAwareHighlightingAnnotator extends PyAnnotator implements Highl
   @Override
   public void visitPyPrefixExpression(PyPrefixExpression node) {
     highlightKeyword(node, PyTokenTypes.AWAIT_KEYWORD);
+  }
+
+  @Override
+  public void visitPyComprehensionElement(PyComprehensionElement node) {
+    PsiTreeUtil
+      .collectElementsOfType(node.getResultExpression(), PyPrefixExpression.class)
+      .stream()
+      .filter(expression -> expression.getOperator() == PyTokenTypes.AWAIT_KEYWORD && expression.getOperand() != null)
+      .map(expression -> expression.getNode().findChildByType(PyTokenTypes.AWAIT_KEYWORD))
+      .filter(awaitNode -> awaitNode != null)
+      .forEach(awaitNode -> getHolder().createErrorAnnotation(awaitNode, "'await' expressions are not supported here"));
   }
 
   @Override

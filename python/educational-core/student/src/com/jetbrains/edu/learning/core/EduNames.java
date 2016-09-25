@@ -21,6 +21,7 @@ import org.jetbrains.annotations.NonNls;
 @NonNls
 public class EduNames {
   public static final String TASK_HTML = "task.html";
+  public static final String TASK_MD = "task.md";
   public static final String HINTS = "hints";
   public static final String LESSON = "lesson";
   public static final String LESSON_TITLED = StringUtil.toTitleCase(LESSON);
@@ -32,13 +33,21 @@ public class EduNames {
   public static final String USER_TEST_OUTPUT = "output";
   public static final String WINDOW_POSTFIX = "_window.";
   public static final String WINDOWS_POSTFIX = "_windows";
+  public static final String ANSWERS_POSTFIX = "_answers";
   public static final String USER_TESTS = "userTests";
   public static final String TESTS_FILE = "tests.py";
   public static final String TEST_HELPER = "test_helper.py";
 
   public static final String SANDBOX_DIR = "Sandbox";
   public static final String COURSE_META_FILE = "course.json";
-  public static String PYCHARM_ADDITIONAL = "PyCharm additional materials";
+  public static final String PYCHARM_ADDITIONAL = "PyCharm additional materials";
+  public static final String PYCHARM = "PyCharm";
+
+  public static final String STUDY = "Study";
+  public static final String ADAPTIVE = "Adaptive";
+
+  public static final String ANSWER_PLACEHOLDER = "Answer Placeholder";
+  public static final String SRC = "src";
 
   private EduNames() {
   }

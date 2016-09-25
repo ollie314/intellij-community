@@ -22,6 +22,7 @@ import org.jetbrains.annotations.Nullable;
 /**
  * @author Bas Leijdekkers
  */
+@SuppressWarnings({"OptionalGetWithoutIsPresent", "OptionalUsedAsFieldOrParameterType"})
 public class OptionalGetWithoutIsPresentInspectionTest extends LightInspectionTestCase {
 
   public void testSimple() {
@@ -106,6 +107,24 @@ public class OptionalGetWithoutIsPresentInspectionTest extends LightInspectionTe
            "      return \"\";" +
            "    }" +
            "    return o.get();" +
+           "  }" +
+           "}");
+  }
+
+  public void testNested() {
+    doTest("import java.util.Optional;" +
+           "class X {" +
+           "  void test(Optional<String> opt, String action) {" +
+           "    if(!opt.isPresent()) {" +
+           "      throw new IllegalArgumentException();" +
+           "    }" +
+           "    switch(action) {" +
+           "      case \"case\":" +
+           "        System.out.println(opt.get());" +
+           "        break;" +
+           "      default:" +
+           "        System.err.println(opt.get());" +
+           "    }" +
            "  }" +
            "}");
   }

@@ -40,6 +40,7 @@ import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.util.ClassUtil;
 import com.intellij.psi.util.InheritanceUtil;
 import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.psi.util.PsiTypesUtil;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.StringBuilderSpinAllocator;
 import com.intellij.util.containers.ContainerUtil;
@@ -107,7 +108,7 @@ public abstract class DebuggerUtils {
         Method toStringMethod = debugProcess.getUserData(TO_STRING_METHOD_KEY);
         if (toStringMethod == null) {
           try {
-            ReferenceType refType = objRef.virtualMachine().classesByName(CommonClassNames.JAVA_LANG_OBJECT).get(0);
+            ReferenceType refType = getObjectClassType(objRef.virtualMachine());
             toStringMethod = findMethod(refType, "toString", "()Ljava/lang/String;");
             debugProcess.putUserData(TO_STRING_METHOD_KEY, toStringMethod);
           }
@@ -153,13 +154,13 @@ public abstract class DebuggerUtils {
   public static Method findMethod(@NotNull ReferenceType refType, @NonNls String methodName, @Nullable @NonNls String methodSignature) {
     if (refType instanceof ArrayType) {
       // for array types methodByName() in JDI always returns empty list
-      Method method = findMethod(refType.virtualMachine().classesByName(CommonClassNames.JAVA_LANG_OBJECT).get(0), methodName, methodSignature);
+      Method method = findMethod(getObjectClassType(refType.virtualMachine()), methodName, methodSignature);
       if (method != null) {
         return method;
       }
       // for arrays, clone signature may return array of objects, there is no such method in Object class
       if ("clone".equals(methodName) && "()[Ljava/lang/Object;".equals(methodSignature)) {
-        method = findMethod(refType.virtualMachine().classesByName(CommonClassNames.JAVA_LANG_OBJECT).get(0), "clone", null);
+        method = findMethod(getObjectClassType(refType.virtualMachine()), "clone", null);
         if (method != null) {
           return method;
         }
@@ -265,19 +266,37 @@ public abstract class DebuggerUtils {
     return false;
   }
 
-  @Nullable
-  public static Type getSuperType(@Nullable Type subType, @NotNull String superType) {
-    if (subType == null) return null;
+  public static boolean instanceOf(@Nullable Type subType, @NotNull String superType) {
+    if (subType == null || subType instanceof VoidType) {
+      return false;
+    }
+
+    if (subType instanceof PrimitiveType) {
+      return superType.equals(subType.name());
+    }
 
     if (CommonClassNames.JAVA_LANG_OBJECT.equals(superType)) {
-      List list = subType.virtualMachine().classesByName(CommonClassNames.JAVA_LANG_OBJECT);
-      if(list.size() > 0) {
-        return (ReferenceType)list.get(0);
-      }
+      return true;
+    }
+
+    return getSuperTypeInt(subType, superType) != null;
+  }
+
+  @Nullable
+  public static Type getSuperType(@Nullable Type subType, @NotNull String superType) {
+    if (subType == null || subType instanceof PrimitiveType || subType instanceof VoidType) {
       return null;
     }
 
+    if (CommonClassNames.JAVA_LANG_OBJECT.equals(superType)) {
+      return getObjectClassType(subType.virtualMachine());
+    }
+
     return getSuperTypeInt(subType, superType);
+  }
+
+  private static ReferenceType getObjectClassType(VirtualMachine virtualMachine) {
+    return ContainerUtil.getFirstItem(virtualMachine.classesByName(CommonClassNames.JAVA_LANG_OBJECT));
   }
 
   private static boolean typeEquals(@NotNull Type type, @NotNull String typeName) {
@@ -339,25 +358,8 @@ public abstract class DebuggerUtils {
         }
       }
     }
-    else if (subType instanceof PrimitiveType) {
-      //noinspection HardCodedStringLiteral
-      if(superType.equals("java.lang.Primitive")) {
-        return subType;
-      }
-    }
 
-    //only for interfaces and arrays
-    if(CommonClassNames.JAVA_LANG_OBJECT.equals(superType)) {
-      List list = subType.virtualMachine().classesByName(CommonClassNames.JAVA_LANG_OBJECT);
-      if(list.size() > 0) {
-        return (ReferenceType)list.get(0);
-      }
-    }
     return null;
-  }
-
-  public static boolean instanceOf(@Nullable Type subType, @NotNull String superType) {
-    return getSuperType(subType, superType) != null;
   }
 
   @Nullable
@@ -392,18 +394,16 @@ public abstract class DebuggerUtils {
   public static PsiType getType(@NotNull String className, @NotNull Project project) {
     ApplicationManager.getApplication().assertReadAccessAllowed();
 
-    final PsiManager psiManager = PsiManager.getInstance(project);
     try {
       if (getArrayClass(className) != null) {
-        return JavaPsiFacade.getInstance(psiManager.getProject()).getElementFactory().createTypeFromText(className, null);
+        return JavaPsiFacade.getInstance(project).getElementFactory().createTypeFromText(className, null);
       }
-      if(project.isDefault()) {
+      if (project.isDefault()) {
         return null;
       }
-      final PsiClass aClass =
-        JavaPsiFacade.getInstance(psiManager.getProject()).findClass(className.replace('$', '.'), GlobalSearchScope.allScope(project));
+      PsiClass aClass = findClass(className, project, GlobalSearchScope.allScope(project));
       if (aClass != null) {
-        return JavaPsiFacade.getInstance(psiManager.getProject()).getElementFactory().createType(aClass);
+        return PsiTypesUtil.getClassType(aClass);
       }
     }
     catch (IncorrectOperationException e) {
@@ -423,11 +423,14 @@ public abstract class DebuggerUtils {
     }
   }
 
-  public static boolean hasSideEffects(PsiElement element) {
+  public static boolean hasSideEffects(@Nullable PsiElement element) {
     return hasSideEffectsOrReferencesMissingVars(element, null);
   }
   
-  public static boolean hasSideEffectsOrReferencesMissingVars(PsiElement element, @Nullable final Set<String> visibleLocalVariables) {
+  public static boolean hasSideEffectsOrReferencesMissingVars(@Nullable PsiElement element, @Nullable final Set<String> visibleLocalVariables) {
+    if (element == null) {
+      return false;
+    }
     final Ref<Boolean> rv = new Ref<>(Boolean.FALSE);
     element.accept(new JavaRecursiveElementWalkingVisitor() {
       @Override 

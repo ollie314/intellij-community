@@ -20,14 +20,9 @@ import com.intellij.application.options.SaveSchemeDialog;
 import com.intellij.application.options.SchemesToImportPopup;
 import com.intellij.openapi.application.ApplicationBundle;
 import com.intellij.openapi.options.*;
-import com.intellij.openapi.project.ProjectManager;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.MessageType;
 import com.intellij.openapi.ui.Messages;
-import com.intellij.openapi.ui.popup.Balloon;
-import com.intellij.openapi.ui.popup.BalloonBuilder;
-import com.intellij.openapi.ui.popup.JBPopupFactory;
-import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.codeStyle.CodeStyleScheme;
@@ -101,7 +96,7 @@ public class ManageCodeStyleSchemesDialog extends DialogWrapper {
 
   private void chooseAndImport() {
     ImportSourceChooserDialog<CodeStyleScheme> importSourceChooserDialog =
-      new ImportSourceChooserDialog<CodeStyleScheme>(myContentPane, CodeStyleScheme.class);
+      new ImportSourceChooserDialog<>(myContentPane, CodeStyleScheme.class);
     if (importSourceChooserDialog.showAndGet()) {
       if (importSourceChooserDialog.isImportFromSharedSelected()) {
         new SchemesToImportPopup<CodeStyleScheme>(myContentPane) {
@@ -262,7 +257,7 @@ public class ManageCodeStyleSchemesDialog extends DialogWrapper {
 
     public MySchemesTableModel(CodeStyleSchemesModel schemesModel) {
       mySchemesModel = schemesModel;
-      mySchemes = new ArrayList<CodeStyleScheme>();
+      mySchemes = new ArrayList<>();
       updateSchemes();
     }
 

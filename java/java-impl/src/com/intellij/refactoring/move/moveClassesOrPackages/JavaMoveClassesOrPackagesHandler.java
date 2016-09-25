@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -200,10 +200,7 @@ public class JavaMoveClassesOrPackagesHandler extends MoveHandlerDelegate {
         new MoveDirectoryWithClassesProcessor(project, directories, (PsiDirectory)targetContainer,
                                               refactoringSettings.RENAME_SEARCH_IN_COMMENTS_FOR_PACKAGE,
                                               refactoringSettings.RENAME_SEARCH_IN_COMMENTS_FOR_PACKAGE, true, callback);
-      processor.setPrepareSuccessfulSwingThreadCallback(new Runnable() {
-        @Override
-        public void run() {
-        }
+      processor.setPrepareSuccessfulSwingThreadCallback(() -> {
       });
       processor.run();
     }
@@ -214,7 +211,7 @@ public class JavaMoveClassesOrPackagesHandler extends MoveHandlerDelegate {
         return;
       }
       final MoveClassesOrPackagesToNewDirectoryDialog dlg =
-        new MoveClassesOrPackagesToNewDirectoryDialog(directories[0], new PsiElement[0], false, callback) {
+        new MoveClassesOrPackagesToNewDirectoryDialog(directories[0], PsiElement.EMPTY_ARRAY, false, callback) {
           @Override
           protected BaseRefactoringProcessor createRefactoringProcessor(Project project,
                                                                         final PsiDirectory targetDirectory,
@@ -372,7 +369,7 @@ public class JavaMoveClassesOrPackagesHandler extends MoveHandlerDelegate {
        JPanel panel = new JPanel(new BorderLayout());
 
 
-       final HashSet<String> packages = new HashSet<String>();
+       final HashSet<String> packages = new HashSet<>();
        for (PsiDirectory directory : myDirectories) {
          packages.add(JavaDirectoryService.getInstance().getPackage(directory).getQualifiedName());
        }

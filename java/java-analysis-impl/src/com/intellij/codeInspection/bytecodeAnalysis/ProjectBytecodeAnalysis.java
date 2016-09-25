@@ -33,6 +33,7 @@ import com.intellij.psi.util.CachedValuesManager;
 import com.intellij.psi.util.PsiFormatUtil;
 import com.intellij.testFramework.LightVirtualFile;
 import com.intellij.util.IncorrectOperationException;
+import com.intellij.util.containers.ConcurrentFactoryMap;
 import com.intellij.util.containers.Stack;
 import com.intellij.util.indexing.FileBasedIndex;
 import org.jetbrains.annotations.NotNull;
@@ -91,13 +92,8 @@ public class ProjectBytecodeAnalysis {
     if (!(listOwner instanceof PsiCompiledElement)) {
       return PsiAnnotation.EMPTY_ARRAY;
     }
-    return CachedValuesManager.getCachedValue(listOwner, new CachedValueProvider<PsiAnnotation[]>() {
-      @Nullable
-      @Override
-      public Result<PsiAnnotation[]> compute() {
-        return Result.create(collectInferredAnnotations(listOwner), listOwner);
-      }
-    });
+    return CachedValuesManager.getCachedValue(listOwner,
+                                              () -> CachedValueProvider.Result.create(collectInferredAnnotations(listOwner), listOwner));
   }
 
   /**
@@ -218,27 +214,27 @@ public class ProjectBytecodeAnalysis {
   }
 
   public PsiAnnotation getNotNullAnnotation() {
-    return CachedValuesManager.getManager(myProject).getCachedValue(myProject, new CachedValueProvider<PsiAnnotation>() {
-      @Nullable
-      @Override
-      public Result<PsiAnnotation> compute() {
-        return Result.create(createAnnotationFromText("@" + AnnotationUtil.NOT_NULL), ModificationTracker.NEVER_CHANGED);
-      }
-    });
+    return CachedValuesManager.getManager(myProject).getCachedValue(myProject, () ->
+      CachedValueProvider.Result.create(createAnnotationFromText("@" + AnnotationUtil.NOT_NULL), ModificationTracker.NEVER_CHANGED));
   }
 
   public PsiAnnotation getNullableAnnotation() {
-    return CachedValuesManager.getManager(myProject).getCachedValue(myProject, new CachedValueProvider<PsiAnnotation>() {
-      @Nullable
-      @Override
-      public Result<PsiAnnotation> compute() {
-        return Result.create(createAnnotationFromText("@" + AnnotationUtil.NULLABLE), ModificationTracker.NEVER_CHANGED);
-      }
-    });
+    return CachedValuesManager.getManager(myProject).getCachedValue(myProject, () ->
+      CachedValueProvider.Result.create(createAnnotationFromText("@" + AnnotationUtil.NULLABLE), ModificationTracker.NEVER_CHANGED));
   }
 
   public PsiAnnotation createContractAnnotation(String contractValue) {
-    return createAnnotationFromText("@org.jetbrains.annotations.Contract(" + contractValue + ")");
+    Map<String, PsiAnnotation> cache = CachedValuesManager.getManager(myProject).getCachedValue(myProject, () -> {
+      Map<String, PsiAnnotation> map = new ConcurrentFactoryMap<String, PsiAnnotation>() {
+        @Nullable
+        @Override
+        protected PsiAnnotation create(String attrs) {
+          return createAnnotationFromText("@org.jetbrains.annotations.Contract(" + attrs + ")");
+        }
+      };
+      return CachedValueProvider.Result.create(map, ModificationTracker.NEVER_CHANGED);
+    });
+    return cache.get(contractValue);
   }
 
   @Nullable
@@ -274,9 +270,9 @@ public class ProjectBytecodeAnalysis {
   private ParameterAnnotations loadParameterAnnotations(@NotNull HKey notNullKey)
     throws EquationsLimitException {
 
-    Map<Bytes, List<HEquations>> equationsCache = new HashMap<Bytes, List<HEquations>>();
+    Map<Bytes, List<HEquations>> equationsCache = new HashMap<>();
 
-    final Solver notNullSolver = new Solver(new ELattice<Value>(Value.NotNull, Value.Top), Value.Top);
+    final Solver notNullSolver = new Solver(new ELattice<>(Value.NotNull, Value.Top), Value.Top);
     collectEquations(Collections.singletonList(notNullKey), notNullSolver, equationsCache);
 
     Map<HKey, Value> notNullSolutions = notNullSolver.solve();
@@ -284,7 +280,7 @@ public class ProjectBytecodeAnalysis {
     boolean notNull =
       (Value.NotNull == notNullSolutions.get(notNullKey)) || (Value.NotNull == notNullSolutions.get(notNullKey.mkUnstable()));
 
-    final Solver nullableSolver = new Solver(new ELattice<Value>(Value.Null, Value.Top), Value.Top);
+    final Solver nullableSolver = new Solver(new ELattice<>(Value.Null, Value.Top), Value.Top);
     final HKey nullableKey = new HKey(notNullKey.key, notNullKey.dirKey + 1, true, false);
     collectEquations(Collections.singletonList(nullableKey), nullableSolver, equationsCache);
     Map<HKey, Value> nullableSolutions = nullableSolver.solve();
@@ -297,9 +293,9 @@ public class ProjectBytecodeAnalysis {
   private MethodAnnotations loadMethodAnnotations(@NotNull PsiMethod owner, @NotNull HKey key, ArrayList<HKey> allKeys)
     throws EquationsLimitException {
     MethodAnnotations result = new MethodAnnotations();
-    Map<Bytes, List<HEquations>> equationsCache = new HashMap<Bytes, List<HEquations>>();
+    Map<Bytes, List<HEquations>> equationsCache = new HashMap<>();
 
-    final Solver outSolver = new Solver(new ELattice<Value>(Value.Bot, Value.Top), Value.Top);
+    final Solver outSolver = new Solver(new ELattice<>(Value.Bot, Value.Top), Value.Top);
     final PuritySolver puritySolver = new PuritySolver();
     collectEquations(allKeys, outSolver, equationsCache);
     collectPurityEquations(key.updateDirection(BytecodeAnalysisConverter.mkDirectionKey(Pure)), puritySolver, equationsCache);
@@ -313,7 +309,7 @@ public class ProjectBytecodeAnalysis {
 
 
     if (nullableMethod) {
-      final Solver nullableMethodSolver = new Solver(new ELattice<Value>(Value.Bot, Value.Null), Value.Bot);
+      final Solver nullableMethodSolver = new Solver(new ELattice<>(Value.Bot, Value.Null), Value.Bot);
       HKey nullableKey = key.updateDirection(BytecodeAnalysisConverter.mkDirectionKey(NullableOut));
       if (nullableMethodTransitivity) {
         collectEquations(Collections.singletonList(nullableKey), nullableMethodSolver, equationsCache);
@@ -332,8 +328,8 @@ public class ProjectBytecodeAnalysis {
   private void collectPurityEquations(HKey key, PuritySolver puritySolver, Map<Bytes, List<HEquations>> cache)
     throws EquationsLimitException {
     GlobalSearchScope librariesScope = ProjectScope.getLibrariesScope(myProject);
-    HashSet<HKey> queued = new HashSet<HKey>();
-    Stack<HKey> queue = new Stack<HKey>();
+    HashSet<HKey> queued = new HashSet<>();
+    Stack<HKey> queue = new Stack<>();
 
     queue.push(key);
     queued.add(key);
@@ -379,8 +375,8 @@ public class ProjectBytecodeAnalysis {
   private void collectEquations(List<HKey> keys, Solver solver, @NotNull Map<Bytes, List<HEquations>> cache) throws EquationsLimitException {
 
     GlobalSearchScope librariesScope = ProjectScope.getLibrariesScope(myProject);
-    HashSet<HKey> queued = new HashSet<HKey>();
-    Stack<HKey> queue = new Stack<HKey>();
+    HashSet<HKey> queued = new HashSet<>();
+    Stack<HKey> queue = new Stack<>();
 
     for (HKey key : keys) {
       queue.push(key);
@@ -458,20 +454,20 @@ public class ProjectBytecodeAnalysis {
   private PsiAnnotation createAnnotationFromText(@NotNull final String text) throws IncorrectOperationException {
     PsiAnnotation annotation = JavaPsiFacade.getElementFactory(myProject).createAnnotationFromText(text, null);
     annotation.putUserData(INFERRED_ANNOTATION, Boolean.TRUE);
-    ((LightVirtualFile)annotation.getContainingFile().getViewProvider().getVirtualFile()).markReadOnly();
+    ((LightVirtualFile)annotation.getContainingFile().getViewProvider().getVirtualFile()).setWritable(false);
     return annotation;
   }
 }
 
 class MethodAnnotations {
   // @NotNull keys
-  final Set<HKey> notNulls = new HashSet<HKey>(1);
+  final Set<HKey> notNulls = new HashSet<>(1);
   // @Nullable keys
-  final Set<HKey> nullables = new HashSet<HKey>(1);
+  final Set<HKey> nullables = new HashSet<>(1);
   // @Contract(pure=true) part of contract
-  final Set<HKey> pures = new HashSet<HKey>(1);
+  final Set<HKey> pures = new HashSet<>(1);
   // @Contracts
-  final Map<HKey, String> contractsValues = new HashMap<HKey, String>();
+  final Map<HKey, String> contractsValues = new HashMap<>();
 }
 
 class ParameterAnnotations {

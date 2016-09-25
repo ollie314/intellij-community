@@ -20,6 +20,7 @@ import com.intellij.ide.IdeBundle;
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationInfo;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.util.io.BufferExposingByteArrayOutputStream;
 import com.intellij.openapi.util.io.FileUtilRt;
@@ -41,7 +42,6 @@ import java.net.*;
 import java.nio.charset.Charset;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.zip.GZIPInputStream;
 
 /**
  * Handy class for reading data from HTTP connections with built-in support for HTTP redirects and gzipped content and automatic cleanup.
@@ -54,6 +54,8 @@ import java.util.zip.GZIPInputStream;
  * }</pre>
  */
 public final class HttpRequests {
+  private static final Logger LOG = Logger.getInstance(HttpRequests.class);
+
   private static final int BLOCK_SIZE = 16 * 1024;
   private static final Pattern CHARSET_PATTERN = Pattern.compile("charset=([^;]+)");
 
@@ -61,6 +63,9 @@ public final class HttpRequests {
 
 
   public interface Request {
+    @NotNull
+    String getURL();
+
     @NotNull
     URLConnection getConnection() throws IOException;
 
@@ -114,6 +119,11 @@ public final class HttpRequests {
     }
 
     @Override
+    public String getMessage() {
+      return "Status: " + myStatusCode;
+    }
+
+    @Override
     public String toString() {
       return super.toString() + ". Status=" + myStatusCode + ", Url=" + myUrl;
     }
@@ -126,17 +136,23 @@ public final class HttpRequests {
   }
 
   @NotNull
-  public static String createErrorMessage(@NotNull IOException e, @NotNull Request request, boolean includeHeaders) throws IOException {
-    URLConnection connection = request.getConnection();
+  public static String createErrorMessage(@NotNull IOException e, @NotNull Request request, boolean includeHeaders) {
     StringBuilder builder = new StringBuilder();
-    builder.append("Cannot download '").append(connection.getURL().toExternalForm()).append("': ").append(e.getMessage());
-    if (includeHeaders) {
-      builder.append("\n, headers: ").append(connection.getHeaderFields());
+
+    builder.append("Cannot download '").append(request.getURL()).append("': ").append(e.getMessage());
+
+    try {
+      URLConnection connection = request.getConnection();
+      if (includeHeaders) {
+        builder.append("\n, headers: ").append(connection.getHeaderFields());
+      }
+      if (connection instanceof HttpURLConnection) {
+        HttpURLConnection httpConnection = (HttpURLConnection)connection;
+        builder.append("\n, response: ").append(httpConnection.getResponseCode()).append(' ').append(httpConnection.getResponseMessage());
+      }
     }
-    if (connection instanceof HttpURLConnection) {
-      HttpURLConnection httpConnection = (HttpURLConnection)connection;
-      builder.append("\n, response: ").append(httpConnection.getResponseCode()).append(' ').append(httpConnection.getResponseMessage());
-    }
+    catch (Throwable ignored) { }
+
     return builder.toString();
   }
 
@@ -248,6 +264,12 @@ public final class HttpRequests {
 
     @NotNull
     @Override
+    public String getURL() {
+      return myBuilder.myUrl;
+    }
+
+    @NotNull
+    @Override
     public URLConnection getConnection() throws IOException {
       if (myConnection == null) {
         myConnection = openConnection(myBuilder);
@@ -261,8 +283,7 @@ public final class HttpRequests {
       if (myInputStream == null) {
         myInputStream = getConnection().getInputStream();
         if (myBuilder.myGzip && "gzip".equalsIgnoreCase(getConnection().getContentEncoding())) {
-          //noinspection IOResourceOpenedButNotSafelyClosed
-          myInputStream = new GZIPInputStream(myInputStream);
+          myInputStream = CountingGZIPInputStream.create(myInputStream);
         }
       }
       return myInputStream;
@@ -353,6 +374,11 @@ public final class HttpRequests {
   }
 
   private static <T> T process(RequestBuilderImpl builder, RequestProcessor<T> processor) throws IOException {
+    LOG.assertTrue(ApplicationManager.getApplication() == null ||
+                   ApplicationManager.getApplication().isUnitTestMode() ||
+                   !ApplicationManager.getApplication().isReadAccessAllowed(),
+                   "Network shouldn't be accessed in EDT or inside read action");
+
     ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
     if (Patches.JDK_BUG_ID_8032832 && !UrlClassLoader.isRegisteredAsParallelCapable(contextLoader)) {
       // hack-around for class loader lock in sun.net.www.protocol.http.NegotiateAuthentication (IDEA-131621)

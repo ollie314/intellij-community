@@ -124,12 +124,7 @@ public class SingleConfigurableEditor extends DialogWrapper {
 
   @Override
   public void show() {
-    DumbService.allowStartingDumbModeInside(DumbModePermission.MAY_START_BACKGROUND, new Runnable() {
-      @Override
-      public void run() {
-        SingleConfigurableEditor.super.show();
-      }
-    });
+    DumbService.allowStartingDumbModeInside(DumbModePermission.MAY_START_BACKGROUND, () -> super.show());
   }
 
   public Configurable getConfigurable() {
@@ -159,7 +154,7 @@ public class SingleConfigurableEditor extends DialogWrapper {
   @Override
   @NotNull
   protected Action[] createActions() {
-    List<Action> actions = new ArrayList<Action>();
+    List<Action> actions = new ArrayList<>();
     actions.add(getOKAction());
     actions.add(getCancelAction());
     if (myShowApplyButton) {
@@ -229,12 +224,7 @@ public class SingleConfigurableEditor extends DialogWrapper {
       };
 
       // invokeLater necessary to make sure dialog is already shown so we calculate modality state correctly.
-      SwingUtilities.invokeLater(new Runnable() {
-        @Override
-        public void run() {
-          addUpdateRequest(updateRequest);
-        }
-      });
+      SwingUtilities.invokeLater(() -> addUpdateRequest(updateRequest));
     }
 
     private void addUpdateRequest(final Runnable updateRequest) {

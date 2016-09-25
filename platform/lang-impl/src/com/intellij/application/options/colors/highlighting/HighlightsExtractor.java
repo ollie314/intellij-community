@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2012 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-/**
- * @author Yura Cangea
- */
 package com.intellij.application.options.colors.highlighting;
 
 import com.intellij.openapi.editor.colors.TextAttributesKey;
@@ -38,7 +35,7 @@ public class HighlightsExtractor {
   private int myIndex;
   private boolean myIsOpeningTag;
 
-  private List<TextRange> mySkipped = new ArrayList<TextRange>();
+  private List<TextRange> mySkipped = new ArrayList<>();
 
   public HighlightsExtractor(@Nullable Map<String, TextAttributesKey> tags) {
     myTags = tags;
@@ -48,7 +45,7 @@ public class HighlightsExtractor {
     mySkipped.clear();
     if (myTags == null || myTags.isEmpty()) return text;
     resetIndices();
-    Stack<HighlightData> highlightsStack = new Stack<HighlightData>();
+    Stack<HighlightData> highlightsStack = new Stack<>();
     while (true) {
       String tagName = findTagName(text);
       if (tagName == null || myIndex < 0) break;

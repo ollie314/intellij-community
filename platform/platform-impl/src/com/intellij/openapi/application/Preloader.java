@@ -34,7 +34,7 @@ import java.util.concurrent.Executor;
  */
 public class Preloader implements ApplicationComponent {
   private static final Logger LOG = Logger.getInstance("#com.intellij.openapi.application.Preloader");
-  private final Executor myExecutor = SequentialTaskExecutor.createSequentialApplicationPoolExecutor();
+  private final Executor myExecutor = SequentialTaskExecutor.createSequentialApplicationPoolExecutor("com.intellij.openapi.application.Preloader pool");
   private final ProgressIndicator myIndicator = new ProgressIndicatorBase();
   private final ProgressIndicator myWrappingIndicator = new AbstractProgressIndicatorBase() {
     @Override
@@ -61,27 +61,22 @@ public class Preloader implements ApplicationComponent {
       return;
     }
 
+    ProgressManager progressManager = ProgressManager.getInstance();
     for (final PreloadingActivity activity : PreloadingActivity.EP_NAME.getExtensions()) {
-      myExecutor.execute(new Runnable() {
-        @Override
-        public void run() {
-          if (myIndicator.isCanceled()) return;
+      myExecutor.execute(() -> {
+        if (myIndicator.isCanceled()) return;
 
-          checkHeavyProcessRunning();
-          if (myIndicator.isCanceled()) return;
+        checkHeavyProcessRunning();
+        if (myIndicator.isCanceled()) return;
 
-          ProgressManager.getInstance().runProcess(new Runnable() {
-            @Override
-            public void run() {
-              try {
-                activity.preload(myWrappingIndicator);
-              }
-              catch (ProcessCanceledException ignore) {
-              }
-              LOG.info("Finished preloading " + activity);
-            }
-          }, myIndicator);
-        }
+        progressManager.runProcess(() -> {
+          try {
+            activity.preload(myWrappingIndicator);
+          }
+          catch (ProcessCanceledException ignore) {
+          }
+          LOG.info("Finished preloading " + activity);
+        }, myIndicator);
       });
     }
   }

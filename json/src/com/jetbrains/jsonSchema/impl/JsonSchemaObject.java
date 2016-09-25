@@ -1,5 +1,7 @@
 package com.jetbrains.jsonSchema.impl;
 
+import com.intellij.openapi.util.text.StringUtil;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -9,6 +11,7 @@ import java.util.Map;
  * @author Irina.Chernushina on 8/28/2015.
  */
 public class JsonSchemaObject {
+  private String myDefinitionAddress;
   private Map<String, JsonSchemaObject> myDefinitions;
   private Map<String, JsonSchemaObject> myProperties;
   private Map<String, JsonSchemaObject> myPatternProperties;
@@ -62,7 +65,7 @@ public class JsonSchemaObject {
   private JsonSchemaObject myNot;
 
   public JsonSchemaObject() {
-    myProperties = new HashMap<String, JsonSchemaObject>();
+    myProperties = new HashMap<>();
   }
 
   // full copy. allows to first apply properties for ref, then from definition itself, "in place"
@@ -108,6 +111,7 @@ public class JsonSchemaObject {
     myAnyOf = other.myAnyOf;
     myOneOf = other.myOneOf;
     myNot = other.myNot;
+    myDefinitionAddress = other.myDefinitionAddress;
   }
 
   public void mergeValues(JsonSchemaObject other) {
@@ -116,6 +120,9 @@ public class JsonSchemaObject {
     myProperties.putAll(other.myProperties);
     myDefinitions = copyMap(myDefinitions, other.myDefinitions);
     myPatternProperties = copyMap(myPatternProperties, other.myPatternProperties);
+    if (!StringUtil.isEmptyOrSpaces(other.myDescription)) {
+      myDescription = other.myDescription;
+    }
 
     if (other.myType != null) myType = other.myType;
     if (other.myDefault != null) myDefault = other.myDefault;
@@ -153,14 +160,14 @@ public class JsonSchemaObject {
 
   private static <T> List<T> copyList(List<T> target, List<T> source) {
     if (source == null || source.isEmpty()) return target;
-    if (target == null) target = new ArrayList<T>();
+    if (target == null) target = new ArrayList<>();
     target.addAll(source);
     return target;
   }
 
   private static <K, V> Map<K, V> copyMap(Map<K, V> target, Map<K, V> source) {
     if (source == null || source.isEmpty()) return target;
-    if (target == null) target = new HashMap<K, V>();
+    if (target == null) target = new HashMap<>();
     target.putAll(source);
     return target;
   }
@@ -479,5 +486,13 @@ public class JsonSchemaObject {
 
   public boolean hasSpecifiedType() {
     return myType != null || (myTypeVariants != null && !myTypeVariants.isEmpty());
+  }
+
+  public String getDefinitionAddress() {
+    return myDefinitionAddress;
+  }
+
+  public void setDefinitionAddress(String definitionAddress) {
+    myDefinitionAddress = definitionAddress;
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@ import com.intellij.openapi.options.SettingsEditorGroup;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.InvalidDataException;
 import com.intellij.openapi.util.WriteExternalException;
+import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.util.xmlb.SkipDefaultValuesSerializationFilters;
 import com.intellij.util.xmlb.XmlSerializer;
 import com.intellij.util.xmlb.XmlSerializerUtil;
@@ -46,7 +47,7 @@ import java.util.Map;
 public class JarApplicationConfiguration extends LocatableConfigurationBase implements CommonJavaRunConfigurationParameters, SearchScopeProvidingRunProfile {
   private static final SkipDefaultValuesSerializationFilters SERIALIZATION_FILTERS = new SkipDefaultValuesSerializationFilters();
   private JarApplicationConfigurationBean myBean = new JarApplicationConfigurationBean();
-  private Map<String, String> myEnvs = new LinkedHashMap<String, String>();
+  private Map<String, String> myEnvs = new LinkedHashMap<>();
   private JavaRunConfigurationModule myConfigurationModule;
 
   public JarApplicationConfiguration(Project project, ConfigurationFactory factory, String name) {
@@ -57,10 +58,10 @@ public class JarApplicationConfiguration extends LocatableConfigurationBase impl
   @NotNull
   @Override
   public SettingsEditor<? extends RunConfiguration> getConfigurationEditor() {
-    SettingsEditorGroup<JarApplicationConfiguration> group = new SettingsEditorGroup<JarApplicationConfiguration>();
+    SettingsEditorGroup<JarApplicationConfiguration> group = new SettingsEditorGroup<>();
     group.addEditor(ExecutionBundle.message("run.configuration.configuration.tab.title"), new JarApplicationConfigurable(getProject()));
     JavaRunConfigurationExtensionManager.getInstance().appendEditors(this, group);
-    group.addEditor(ExecutionBundle.message("logs.tab.title"), new LogConfigurationPanel<JarApplicationConfiguration>());
+    group.addEditor(ExecutionBundle.message("logs.tab.title"), new LogConfigurationPanel<>());
     return group;
   }
 
@@ -77,7 +78,7 @@ public class JarApplicationConfiguration extends LocatableConfigurationBase impl
   @Override
   public RunConfiguration clone() {
     JarApplicationConfiguration clone = (JarApplicationConfiguration)super.clone();
-    clone.myEnvs = new LinkedHashMap<String, String>(myEnvs);
+    clone.myEnvs = new LinkedHashMap<>(myEnvs);
     clone.myConfigurationModule = new JavaRunConfigurationModule(getProject(), true);
     clone.myConfigurationModule.setModule(myConfigurationModule.getModule());
     clone.myBean = XmlSerializerUtil.createCopy(myBean);
@@ -115,10 +116,15 @@ public class JarApplicationConfiguration extends LocatableConfigurationBase impl
   }
 
   @NotNull
-  @Override
   public Module[] getModules() {
     Module module = myConfigurationModule.getModule();
-    return module != null ? new Module[] {module}: Module.EMPTY_ARRAY;
+    return module != null ? new Module[]{module} : Module.EMPTY_ARRAY;
+  }
+
+  @Nullable
+  @Override
+  public GlobalSearchScope getSearchScope() {
+    return SearchScopeProvider.createSearchScope(getModules());
   }
 
   @Nullable

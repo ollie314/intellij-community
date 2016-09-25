@@ -206,14 +206,10 @@ public class CreateSubclassAction extends BaseIntentionAction {
           targetClass[0] = JavaDirectoryService.getInstance().createClass(targetDirectory, className);
         }
         catch (final IncorrectOperationException e) {
-          ApplicationManager.getApplication().invokeLater(new Runnable() {
-            @Override
-            public void run() {
-              Messages.showErrorDialog(project, CodeInsightBundle.message("intention.error.cannot.create.class.message", className) +
-                                                "\n"+e.getLocalizedMessage(),
-                                       CodeInsightBundle.message("intention.error.cannot.create.class.title"));
-            }
-          });
+          ApplicationManager.getApplication().invokeLater(
+            () -> Messages.showErrorDialog(project, CodeInsightBundle.message("intention.error.cannot.create.class.message", className) +
+                                                  "\n" + e.getLocalizedMessage(),
+                                         CodeInsightBundle.message("intention.error.cannot.create.class.title")));
           return;
         }
         startTemplate(oldTypeParameterList, project, psiClass, targetClass[0], false);
@@ -317,7 +313,7 @@ public class CreateSubclassAction extends BaseIntentionAction {
     }
     if (hasNonTrivialConstructor) {
       final PsiSubstitutor substitutor = TypeConversionUtil.getSuperClassSubstitutor(psiClass, targetClass, PsiSubstitutor.EMPTY);
-      final List<PsiMethodMember> baseConstructors = new ArrayList<PsiMethodMember>();
+      final List<PsiMethodMember> baseConstructors = new ArrayList<>();
       for (PsiMethod baseConstr : constructors) {
         if (PsiUtil.isAccessible(project, baseConstr, targetClass, targetClass)) {
           baseConstructors.add(new PsiMethodMember(baseConstr, substitutor));

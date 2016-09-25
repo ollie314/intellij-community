@@ -70,11 +70,6 @@ public abstract class GrVariableBaseImpl<T extends StubElement> extends GrStubEl
   }
 
   @Override
-  public PsiElement getParent() {
-    return getParentByTree();
-  }
-
-  @Override
   @Nullable
   public PsiTypeElement getTypeElement() {
     return PsiImplUtil.getOrCreateTypeElement(getTypeElementGroovy());
@@ -167,12 +162,7 @@ public abstract class GrVariableBaseImpl<T extends StubElement> extends GrStubEl
     }
 
     if (initializer != null) {
-      PsiType initializerType = ourGuard.doPreventingRecursion(this, true, new NullableComputable<PsiType>() {
-        @Override
-        public PsiType compute() {
-          return initializer.getType();
-        }
-      });
+      PsiType initializerType = ourGuard.doPreventingRecursion(this, true, (NullableComputable<PsiType>)() -> initializer.getType());
       if (declaredType == null) return initializerType;
 
       if (initializerType instanceof PsiClassType && TypesUtil.isAssignable(declaredType, initializerType, this)) {

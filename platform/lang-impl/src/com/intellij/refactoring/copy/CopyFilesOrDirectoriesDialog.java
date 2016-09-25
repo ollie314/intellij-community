@@ -15,6 +15,7 @@
  */
 package com.intellij.refactoring.copy;
 
+import com.intellij.ide.scratch.ScratchUtil;
 import com.intellij.ide.util.DirectoryUtil;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.actionSystem.ActionManager;
@@ -81,6 +82,8 @@ public class CopyFilesOrDirectoriesDialog extends DialogWrapper {
   private JLabel myInformationLabel;
   private TextFieldWithHistoryWithBrowseButton myTargetDirectoryField;
   private JCheckBox myOpenFilesInEditor = createOpenInEditorCB();
+  private boolean myUnknownFileType = false;
+
   private JTextField myNewNameField;
   private final PsiElement[] myElements;
   private final Project myProject;
@@ -111,7 +114,7 @@ public class CopyFilesOrDirectoriesDialog extends DialogWrapper {
         VirtualFile vFile = file.getVirtualFile();
         text = RefactoringBundle.message(doClone ? "copy.files.clone.file.0" : "copy.files.copy.file.0", shortenPath(vFile));
         String fileName = vFile.isInLocalFileSystem() ? vFile.getName() : PathUtil.suggestFileName(file.getName(), true, true);
-        if (StringUtil.isEmpty(vFile.getExtension())) {
+        if (StringUtil.isEmpty(vFile.getExtension()) && ScratchUtil.isScratch(vFile)) {
           FileType type = ObjectUtils.notNull(file.getLanguage().getAssociatedFileType(), file.getFileType());
           fileName = PathUtil.makeFileName(fileName, type.getDefaultExtension());
         }
@@ -248,7 +251,9 @@ public class CopyFilesOrDirectoriesDialog extends DialogWrapper {
   }
 
   public boolean openInEditor() {
-    return myOpenFilesInEditor.isSelected();
+    return myOpenFilesInEditor.isVisible() &&
+           myOpenFilesInEditor.isSelected() &&
+           !myUnknownFileType;
   }
 
   @Override
@@ -266,12 +271,16 @@ public class CopyFilesOrDirectoriesDialog extends DialogWrapper {
         return;
       }
 
-      if (myFileCopy && FileTypeChooser.getKnownFileTypeOrAssociate(myTargetDirectory.getVirtualFile(), newName, myProject) == null) {
-        return;
+      if (myFileCopy && myTargetDirectory != null) {
+        if (FileTypeChooser.getKnownFileTypeOrAssociate(myTargetDirectory.getVirtualFile(), newName, myProject) == null) {
+          myUnknownFileType = true;
+        }
       }
     }
 
-    saveOpenInEditorState(myOpenFilesInEditor.isSelected());
+    if (myOpenFilesInEditor.isVisible()) {
+      saveOpenInEditorState(myOpenFilesInEditor.isSelected());
+    }
     if (myShowDirectoryField) {
       final String targetDirectoryName = myTargetDirectoryField.getChildComponent().getText();
 
@@ -283,21 +292,13 @@ public class CopyFilesOrDirectoriesDialog extends DialogWrapper {
 
       RecentsManager.getInstance(myProject).registerRecentEntry(RECENT_KEYS, targetDirectoryName);
 
-      CommandProcessor.getInstance().executeCommand(myProject, new Runnable() {
-        @Override
-        public void run() {
-          ApplicationManager.getApplication().runWriteAction(new Runnable() {
-            @Override
-            public void run() {
-              try {
-                String path = FileUtil.toSystemIndependentName(targetDirectoryName);
-                myTargetDirectory = DirectoryUtil.mkdirs(PsiManager.getInstance(myProject), path);
-              }
-              catch (IncorrectOperationException ignored) { }
-            }
-          });
+      CommandProcessor.getInstance().executeCommand(myProject, () -> ApplicationManager.getApplication().runWriteAction(() -> {
+        try {
+          String path = FileUtil.toSystemIndependentName(targetDirectoryName);
+          myTargetDirectory = DirectoryUtil.mkdirs(PsiManager.getInstance(myProject), path);
         }
-      }, RefactoringBundle.message("create.directory"), null);
+        catch (IncorrectOperationException ignored) { }
+      }), RefactoringBundle.message("create.directory"), null);
 
       if (myTargetDirectory == null) {
         Messages.showErrorDialog(myProject, RefactoringBundle.message("cannot.create.directory"), RefactoringBundle.message("error.title"));

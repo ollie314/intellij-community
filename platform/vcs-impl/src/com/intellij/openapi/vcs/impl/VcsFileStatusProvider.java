@@ -20,7 +20,6 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.vcs.*;
 import com.intellij.openapi.vcs.changes.*;
 import com.intellij.openapi.vcs.history.VcsRevisionNumber;
@@ -41,6 +40,7 @@ public class VcsFileStatusProvider implements FileStatusProvider, VcsBaseContent
   private final ChangeListManager myChangeListManager;
   private final VcsDirtyScopeManager myDirtyScopeManager;
   private final VcsConfiguration myConfiguration;
+  private final VcsBaseContentProvider[] myAdditionalProviders;
   private boolean myHaveEmptyContentRevisions;
 
   private static final Logger LOG = Logger.getInstance("#com.intellij.openapi.vcs.impl.VcsFileStatusProvider");
@@ -58,6 +58,7 @@ public class VcsFileStatusProvider implements FileStatusProvider, VcsBaseContent
     myConfiguration = configuration;
     myHaveEmptyContentRevisions = true;
     myFileStatusManager.setFileStatusProvider(this);
+    myAdditionalProviders = VcsBaseContentProvider.EP_NAME.getExtensions(project);
 
     changeListManager.addChangeListListener(new ChangeListAdapter() {
       @Override
@@ -152,27 +153,64 @@ public class VcsFileStatusProvider implements FileStatusProvider, VcsBaseContent
 
   @Override
   @Nullable
-  public Pair<VcsRevisionNumber, String> getBaseRevision(@NotNull final VirtualFile file) {
+  public BaseContent getBaseRevision(@NotNull final VirtualFile file) {
+    if (!isHandledByVcs(file)) {
+      VcsBaseContentProvider provider = findProviderFor(file);
+      return provider == null ? null : provider.getBaseRevision(file);
+    }
     final Change change = ChangeListManager.getInstance(myProject).getChange(file);
-    if (change != null) {
-      final ContentRevision beforeRevision = change.getBeforeRevision();
-      if (beforeRevision instanceof BinaryContentRevision) return null;
-      if (beforeRevision != null) {
-        String content;
-        try {
-          content = beforeRevision.getContent();
-        }
-        catch (VcsException ex) {
-          content = null;
-        }
-        if (content == null) {
-          myHaveEmptyContentRevisions = true;
-          return null;
-        }
-        return Pair.create(beforeRevision.getRevisionNumber(), content);
-      }
-      return null;
+    if (change == null) return null;
+    final ContentRevision beforeRevision = change.getBeforeRevision();
+    if (beforeRevision == null) return null;
+    if (beforeRevision instanceof BinaryContentRevision) return null;
+    return new BaseContentImpl(beforeRevision);
+  }
+
+  @Nullable
+  private VcsBaseContentProvider findProviderFor(@NotNull VirtualFile file) {
+    for (VcsBaseContentProvider support : myAdditionalProviders) {
+      if (support.isSupported(file)) return support;
     }
     return null;
+  }
+
+  @Override
+  public boolean isSupported(@NotNull VirtualFile file) {
+    return isHandledByVcs(file) || findProviderFor(file) != null;
+  }
+
+  private boolean isHandledByVcs(@NotNull VirtualFile file) {
+    return file.isInLocalFileSystem() && myVcsManager.getVcsFor(file) != null;
+  }
+
+  private class BaseContentImpl implements BaseContent {
+    @NotNull private final ContentRevision myContentRevision;
+
+    public BaseContentImpl(@NotNull ContentRevision contentRevision) {
+      myContentRevision = contentRevision;
+    }
+
+    @NotNull
+    @Override
+    public VcsRevisionNumber getRevisionNumber() {
+      return myContentRevision.getRevisionNumber();
+    }
+
+    @Nullable
+    @Override
+    public String loadContent() {
+      String content;
+      try {
+        content = myContentRevision.getContent();
+      }
+      catch (VcsException ex) {
+        content = null;
+      }
+      if (content == null) {
+        myHaveEmptyContentRevisions = true;
+        return null;
+      }
+      return content;
+    }
   }
 }

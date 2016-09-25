@@ -60,7 +60,7 @@ public class RedundantCastUtil {
     if (parent instanceof PsiExpressionList) parent = parent.getParent();
     if (parent instanceof PsiReferenceExpression) parent = parent.getParent();
     if (parent instanceof PsiAnonymousClass) parent = parent.getParent();
-    MyIsRedundantVisitor visitor = new MyIsRedundantVisitor(false);
+    MyIsRedundantVisitor visitor = new MyIsRedundantVisitor(true);
     parent.accept(visitor);
     return visitor.isRedundant;
   }
@@ -71,29 +71,30 @@ public class RedundantCastUtil {
     return arg;
   }
 
-  public static void removeCast(PsiTypeCastExpression castExpression) {
-    if (castExpression == null) return;
+  public static PsiExpression removeCast(PsiTypeCastExpression castExpression) {
+    if (castExpression == null) return null;
     PsiExpression operand = castExpression.getOperand();
     if (operand instanceof PsiParenthesizedExpression) {
       final PsiParenthesizedExpression parExpr = (PsiParenthesizedExpression)operand;
       operand = parExpr.getExpression();
     }
-    if (operand == null) return;
+    if (operand == null) return null;
 
-    PsiElement toBeReplaced = castExpression;
+    PsiExpression toBeReplaced = castExpression;
 
     PsiElement parent = castExpression.getParent();
     while (parent instanceof PsiParenthesizedExpression) {
-      toBeReplaced = parent;
+      toBeReplaced = (PsiExpression)parent;
       parent = parent.getParent();
     }
 
     try {
-      toBeReplaced.replace(operand);
+      return (PsiExpression)toBeReplaced.replace(operand);
     }
     catch (IncorrectOperationException e) {
       LOG.error(e);
     }
+    return toBeReplaced;
   }
 
   private static class MyCollectingVisitor extends MyIsRedundantVisitor {
@@ -361,7 +362,7 @@ public class RedundantCastUtil {
               final PsiCall call = LambdaUtil.treeWalkUp(expression);
               if (call != null) {
                 final PsiCall callCopy = (PsiCall)call.copy();
-                newCall = PsiTreeUtil.getParentOfType(callCopy.findElementAt(expression.getTextRange().getStartOffset() - call.getTextRange().getStartOffset()), expression.getClass());
+                newCall = PsiTreeUtil.getParentOfType(callCopy.findElementAt(argumentList.getTextRange().getStartOffset() - call.getTextRange().getStartOffset()), expression.getClass());
               }
               else {
                 newCall = (PsiCall)expression.copy();
@@ -536,7 +537,8 @@ public class RedundantCastUtil {
             final PsiExpression thenExpression = ((PsiConditionalExpression)parent).getThenExpression();
             final PsiExpression elseExpression = ((PsiConditionalExpression)parent).getElseExpression();
             final PsiExpression opposite = thenExpression == typeCast ? elseExpression : thenExpression;
-            if (opposite == null || !Comparing.equal(conditionalType, opposite.getType())) return;
+            if (opposite == null || conditionalType instanceof PsiPrimitiveType &&
+                                    !Comparing.equal(conditionalType, opposite.getType())) return;
           }
         } else if (parent instanceof PsiSynchronizedStatement && (expr instanceof PsiExpression && ((PsiExpression)expr).getType() instanceof PsiPrimitiveType)) {
           return;
@@ -661,6 +663,10 @@ public class RedundantCastUtil {
               !(PsiTypesUtil.getExpectedTypeByParent((PsiExpression)parent) instanceof PsiPrimitiveType)) {
             return;
           }
+        }
+
+        if (operand instanceof PsiFunctionalExpression && !castTo.equals(PsiTypesUtil.getExpectedTypeByParent(parent))) {
+          return;
         }
       }
 

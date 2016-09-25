@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,6 @@ import com.intellij.psi.stubs.LightStubBuilder;
 import com.intellij.psi.stubs.StubElement;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.tree.TokenSet;
-import com.intellij.util.io.StringRef;
 import org.jetbrains.annotations.NotNull;
 
 public class JavaLightStubBuilder extends LightStubBuilder {
@@ -47,7 +46,7 @@ public class JavaLightStubBuilder extends LightStubBuilder {
         refText = JavaSourceUtil.getReferenceText(tree, ref);
       }
     }
-    return new PsiJavaFileStubImpl((PsiJavaFile)file, StringRef.fromString(refText), false);
+    return new PsiJavaFileStubImpl((PsiJavaFile)file, refText, null, false);
   }
 
   @Override
@@ -95,13 +94,17 @@ public class JavaLightStubBuilder extends LightStubBuilder {
     if (nodeType == JavaElementType.PARAMETER_LIST && parentType == JavaElementType.LAMBDA_EXPRESSION) {
       return true;
     }
+    if (nodeType == JavaDocElementType.DOC_COMMENT) {
+      return true;
+    }
 
     return false;
   }
 
   private static class CodeBlockVisitor extends RecursiveTreeElementWalkingVisitor implements LighterLazyParseableNode.Visitor {
     private static final TokenSet BLOCK_ELEMENTS = TokenSet.create(
-      JavaElementType.ANNOTATION, JavaElementType.CLASS, JavaElementType.ANONYMOUS_CLASS);
+      JavaElementType.ANNOTATION, JavaElementType.CLASS, JavaElementType.ANONYMOUS_CLASS,
+      JavaElementType.LAMBDA_EXPRESSION, JavaElementType.METHOD_REF_EXPRESSION);
 
     private boolean result = true;
 
@@ -115,17 +118,18 @@ public class JavaLightStubBuilder extends LightStubBuilder {
       super.visitNode(element);
     }
 
-    private IElementType last = null;
-    private boolean seenNew = false;
+    private IElementType last;
+    private boolean seenNew;
 
     @Override
+    @SuppressWarnings("IfStatementWithIdenticalBranches")
     public boolean visit(IElementType type) {
       if (ElementType.JAVA_COMMENT_OR_WHITESPACE_BIT_SET.contains(type)) {
         return true;
       }
 
-      // annotations
-      if (type == JavaTokenType.AT) {
+      // annotations, method refs & lambdas
+      if (type == JavaTokenType.AT || type == JavaTokenType.ARROW || type == JavaTokenType.DOUBLE_COLON) {
         return (result = false);
       }
       // anonymous classes

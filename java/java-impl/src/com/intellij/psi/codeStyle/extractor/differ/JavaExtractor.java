@@ -47,14 +47,11 @@ public class JavaExtractor implements LangCodeStyleExtractor {
                 final JavaCodeFragment file = JavaCodeFragmentFactory.getInstance(project).
                     createCodeBlockCodeFragment(myOrigText, myFile, false);
 
-                WriteCommandAction.runWriteCommandAction(myProject, "CodeStyleSettings extractor", "CodeStyleSettings extractor", new Runnable() {
-                    @Override
-                    public void run() {
-                        final ASTNode treeElement = SourceTreeToPsiMap.psiElementToTree(file);
-                        assert (treeElement != null);
+                WriteCommandAction.runWriteCommandAction(myProject, "CodeStyleSettings extractor", "CodeStyleSettings extractor", () -> {
+                    final ASTNode treeElement = SourceTreeToPsiMap.psiElementToTree(file);
+                    assert (treeElement != null);
 
-                        SourceTreeToPsiMap.treeElementToPsi(new CodeFormatterFacade(mySettings, file.getLanguage()).processElement(treeElement));
-                    }
+                    SourceTreeToPsiMap.treeElementToPsi(new CodeFormatterFacade(mySettings, file.getLanguage()).processElement(treeElement));
                 }, file);
                 return file.getText();
             }
@@ -64,6 +61,6 @@ public class JavaExtractor implements LangCodeStyleExtractor {
     @NotNull
     @Override
     public Collection<Value.VAR_KIND> getCustomVarKinds() {
-        return new LinkedList<Value.VAR_KIND>();
+        return new LinkedList<>();
     }
 }

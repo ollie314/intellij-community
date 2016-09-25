@@ -153,9 +153,10 @@ public class HashSetQueue<T> extends AbstractCollection<T> implements Queue<T> {
 
   @NotNull
   @Override
-  public Iterator<T> iterator() {
-    return new Iterator<T>() {
+  public PositionalIterator<T> iterator() {
+    return new PositionalIterator<T>() {
       private QueueEntry<T> cursor = TOMB;
+      private long count;
       @Override
       public boolean hasNext() {
         return cursor.next != TOMB;
@@ -164,6 +165,7 @@ public class HashSetQueue<T> extends AbstractCollection<T> implements Queue<T> {
       @Override
       public T next() {
         cursor = cursor.next;
+        count++;
         return cursor.t;
       }
 
@@ -172,6 +174,60 @@ public class HashSetQueue<T> extends AbstractCollection<T> implements Queue<T> {
         if (cursor == TOMB) throw new NoSuchElementException();
         HashSetQueue.this.remove(cursor.t);
       }
+
+      @NotNull
+      @Override
+      public IteratorPosition<T> position() {
+        return new MyIteratorPosition<T>(cursor, count, TOMB);
+      }
     };
+  }
+
+  private static class MyIteratorPosition<T> implements PositionalIterator.IteratorPosition<T> {
+    private final QueueEntry<T> cursor;
+    private final long count;
+    private final QueueEntry<T> TOMB;
+
+    private MyIteratorPosition(@NotNull QueueEntry<T> cursor, long count, QueueEntry<T> TOMB) {
+      this.cursor = cursor;
+      this.count = count;
+      this.TOMB = TOMB;
+    }
+
+    @Override
+    public T peek() {
+      if (cursor == TOMB) {
+        throw new IllegalStateException("Iterator is before the first element. Must call .next() first.");
+      }
+      return cursor.t;
+    }
+
+    @Override
+    public PositionalIterator.IteratorPosition<T> next() {
+      return cursor.next == TOMB ? null : new MyIteratorPosition<T>(cursor.next, count + 1, TOMB);
+    }
+
+    @Override
+    public int compareTo(@NotNull PositionalIterator.IteratorPosition<T> o) {
+      return compare(count, ((MyIteratorPosition)o).count);
+    }
+
+    private static int compare(long x, long y) {
+        return x < y ? -1 : x == y ? 0 : 1;
+    }
+  }
+
+  public interface PositionalIterator<T> extends Iterator<T> {
+    /**
+     * @return the current position of this iterator.
+     * The position of the newly created iterator is before the first element of the queue (so the {@link IteratorPosition#peek()} value is undefined)
+     */
+    @NotNull
+    IteratorPosition<T> position();
+
+    interface IteratorPosition<T> extends Comparable<IteratorPosition<T>>  {
+      T peek();
+      IteratorPosition<T> next();
+    }
   }
 }

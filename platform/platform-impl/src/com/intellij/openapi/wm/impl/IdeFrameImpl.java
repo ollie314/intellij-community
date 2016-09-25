@@ -32,8 +32,10 @@ import com.intellij.openapi.actionSystem.impl.MouseGestureManager;
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationInfo;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.ex.ApplicationInfoEx;
 import com.intellij.openapi.application.ex.ApplicationManagerEx;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
 import com.intellij.openapi.ui.impl.ShadowPainter;
@@ -51,7 +53,6 @@ import com.intellij.openapi.wm.impl.welcomeScreen.WelcomeFrame;
 import com.intellij.ui.*;
 import com.intellij.ui.mac.MacMainFrameDecorator;
 import com.intellij.util.Alarm;
-import com.intellij.util.io.storage.HeavyProcessLatch;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.accessibility.AccessibleContextAccessor;
 import org.jetbrains.annotations.NotNull;
@@ -67,12 +68,16 @@ import java.awt.image.BufferedImage;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.io.File;
+import java.lang.reflect.Field;
 
 /**
  * @author Anton Katilin
  * @author Vladimir Kondratyev
  */
 public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContextAccessor, DataProvider {
+
+  private static final Logger LOG = Logger.getInstance("#com.intellij.openapi.wm.impl.IdeFrameImpl");
+
   public static final Key<Boolean> SHOULD_OPEN_IN_FULL_SCREEN = Key.create("should.open.in.full.screen");
 
   private static final String FULL_SCREEN = "FullScreen";
@@ -86,7 +91,7 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContex
   private Project myProject;
 
   private IdeRootPane myRootPane;
-  private final BalloonLayout myBalloonLayout;
+  private BalloonLayout myBalloonLayout;
   private IdeFrameDecorator myFrameDecorator;
   private PropertyChangeListener myWindowsBorderUpdater = null;
   private boolean myRestoreFullScreen;
@@ -96,7 +101,7 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContex
                       DataManager dataManager,
                       Application application) {
     super(applicationInfoEx.getFullApplicationName());
-    myRootPane = createRootPane(actionManager, UISettings.getInstance(), dataManager, application);
+    myRootPane = createRootPane(actionManager, dataManager, application);
     setRootPane(myRootPane);
     setBackground(UIUtil.getPanelBackground());
     AppUIUtil.updateWindowIcon(this);
@@ -139,7 +144,7 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContex
       };
       Toolkit.getDefaultToolkit().addPropertyChangeListener("win.xpstyle.themeActive", myWindowsBorderUpdater);
       if (!SystemInfo.isJavaVersionAtLeast("1.8")) {
-        final Ref<Dimension> myDimensionRef = new Ref<Dimension>(new Dimension());
+        final Ref<Dimension> myDimensionRef = new Ref<>(new Dimension());
         final Alarm alarm = new Alarm(Alarm.ThreadToUse.SWING_THREAD);
         final Runnable runnable = new Runnable() {
           @Override
@@ -202,10 +207,9 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContex
   }
 
   protected IdeRootPane createRootPane(ActionManagerEx actionManager,
-                                       UISettings uiSettings,
                                        DataManager dataManager,
                                        Application application) {
-    return new IdeRootPane(actionManager, uiSettings, dataManager, application, this);
+    return new IdeRootPane(actionManager, dataManager, application, this);
   }
 
   @NotNull
@@ -234,12 +238,7 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContex
   @Override
   public void show() {
     super.show();
-    SwingUtilities.invokeLater(new Runnable() {
-      @Override
-      public void run() {
-        setFocusableWindowState(true);
-      }
-    });
+    SwingUtilities.invokeLater(() -> setFocusableWindowState(true));
   }
 
   /**
@@ -414,15 +413,12 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContex
     super.setVisible(b);
 
     if (b && myRestoreFullScreen) {
-      SwingUtilities.invokeLater(new Runnable() {
-        @Override
-        public void run() {
-          toggleFullScreen(true);
-          if (SystemInfo.isMacOSLion) {
-            setBounds(ScreenUtil.getScreenRectangle(getLocationOnScreen()));
-          }
-          myRestoreFullScreen = false;
+      SwingUtilities.invokeLater(() -> {
+        toggleFullScreen(true);
+        if (SystemInfo.isMacOSLion) {
+          setBounds(ScreenUtil.getScreenRectangle(getLocationOnScreen()));
         }
+        myRestoreFullScreen = false;
       });
     }
   }
@@ -468,19 +464,18 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContex
 
   public void dispose() {
     if (SystemInfo.isMac && isInFullScreen()) {
-      ((MacMainFrameDecorator)myFrameDecorator).exitFullScreenAndDispose();
+      ((MacMainFrameDecorator)myFrameDecorator).toggleFullScreenNow();
     }
-    else {
-      disposeImpl();
-    }
-  }
-
-  public void disposeImpl() {
     if (isTemporaryDisposed()) {
       super.dispose();
       return;
     }
     MouseGestureManager.getInstance().remove(this);
+
+    if (myBalloonLayout != null) {
+      ((BalloonLayoutImpl)myBalloonLayout).dispose();
+      myBalloonLayout = null;
+    }
 
     // clear both our and swing hard refs
     if (myRootPane != null) {
@@ -564,7 +559,7 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContex
   }
 
   public Rectangle suggestChildFrameBounds() {
-//todo [kirillk] a dummy implementation
+    //todo [kirillk] a dummy implementation
     final Rectangle b = getBounds();
     b.x += 100;
     b.width -= 200;
@@ -585,6 +580,9 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContex
   @NotNull
   @Override
   public ActionCallback toggleFullScreen(boolean state) {
+
+    if (temporaryFixForIdea156004(state)) return ActionCallback.DONE;
+
     if (myFrameDecorator != null) {
       return myFrameDecorator.toggleFullScreen(state);
     }
@@ -594,6 +592,29 @@ public class IdeFrameImpl extends JFrame implements IdeFrameEx, AccessibleContex
     }
 
     return ActionCallback.DONE;
+  }
+
+  private boolean temporaryFixForIdea156004(final boolean state) {
+    if (SystemInfo.isMac) {
+      try {
+        Field modalBlockerField = Window.class.getDeclaredField("modalBlocker");
+        modalBlockerField.setAccessible(true);
+        final Window modalBlocker = (Window)modalBlockerField.get(this);
+        if (modalBlocker != null) {
+          ApplicationManager.getApplication().invokeLater(() -> {
+            toggleFullScreen(state);
+          }, ModalityState.NON_MODAL);
+          return true;
+        }
+      }
+      catch (NoSuchFieldException e) {
+        LOG.error(e);
+      }
+      catch (IllegalAccessException e) {
+        LOG.error(e);
+      }
+    }
+    return false;
   }
 
   @Override

@@ -22,7 +22,9 @@ package com.intellij.refactoring;
 
 import com.intellij.JavaTestUtil;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.openapi.roots.LanguageLevelProjectExtension;
 import com.intellij.openapi.vfs.LocalFileSystem;
+import com.intellij.pom.java.LanguageLevel;
 import com.intellij.psi.*;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.refactoring.changeSignature.JavaMethodDescriptor;
@@ -69,7 +71,7 @@ public class IntroduceParameterObjectTest extends MultiFileTestCase{
         new JavaIntroduceParameterObjectClassDescriptor("Param", "", null, false, createInner, null, datas, method, false);
       final List<ParameterInfoImpl> parameters = new JavaMethodDescriptor(method).getParameters();
       IntroduceParameterObjectProcessor processor =
-        new IntroduceParameterObjectProcessor<PsiMethod, ParameterInfoImpl, JavaIntroduceParameterObjectClassDescriptor>(
+        new IntroduceParameterObjectProcessor<>(
           method, classDescriptor,
           parameters,
           delegate);
@@ -132,6 +134,18 @@ public class IntroduceParameterObjectTest extends MultiFileTestCase{
     doTest();
   }
 
+  public void testTypeParametersWithSubstitution() throws Exception {
+    final LanguageLevelProjectExtension projectExtension = LanguageLevelProjectExtension.getInstance(getProject());
+    final LanguageLevel oldLevel = projectExtension.getLanguageLevel();
+    try {
+      projectExtension.setLanguageLevel(LanguageLevel.HIGHEST);
+      doTest();
+    }
+    finally {
+      projectExtension.setLanguageLevel(oldLevel);
+    }
+  }
+
   public void testSameTypeAndVarargs() throws Exception {
     doTest(false, false, method -> {
       final PsiParameter[] parameters = method.getParameterList().getParameters();
@@ -155,6 +169,14 @@ public class IntroduceParameterObjectTest extends MultiFileTestCase{
         datas[i] = new ParameterInfoImpl(i, parameter.getName(), parameter.getType());
       }
       return datas;
+    });
+  }
+
+  public void testIncludeOneParameter() throws Exception {
+    doTestExistingClass("Param", "", false, "public", method -> {
+      final PsiParameter[] parameters = method.getParameterList().getParameters();
+      PsiParameter parameter = parameters[1];
+      return new ParameterInfoImpl[]{new ParameterInfoImpl(1, parameter.getName(), parameter.getType())};
     });
   }
 
@@ -182,6 +204,15 @@ public class IntroduceParameterObjectTest extends MultiFileTestCase{
 
   private void doTestExistingClass(final String existingClassName, final String existingClassPackage, final boolean generateAccessors,
                                    final String newVisibility) throws Exception {
+    doTestExistingClass(existingClassName, existingClassPackage, generateAccessors, newVisibility,
+                        IntroduceParameterObjectTest::generateParams);
+  }
+
+  private void doTestExistingClass(final String existingClassName,
+                                   final String existingClassPackage,
+                                   final boolean generateAccessors,
+                                   final String newVisibility,
+                                   final Function<PsiMethod, ParameterInfoImpl[]> function) throws Exception {
     doTest((rootDir, rootAfter) -> {
       PsiClass aClass = myJavaFacade.findClass("Test", GlobalSearchScope.projectScope(getProject()));
       if (aClass == null) {
@@ -190,13 +221,13 @@ public class IntroduceParameterObjectTest extends MultiFileTestCase{
       assertNotNull("Class Test not found", aClass);
 
       final PsiMethod method = aClass.findMethodsByName("foo", false)[0];
-      final ParameterInfoImpl[] mergedParams = generateParams(method);
+      final ParameterInfoImpl[] mergedParams = function.fun(method);
       final JavaIntroduceParameterObjectClassDescriptor classDescriptor =
         new JavaIntroduceParameterObjectClassDescriptor(existingClassName, existingClassPackage, null, true, false, newVisibility,
                                                         mergedParams, method, generateAccessors);
       final List<ParameterInfoImpl> parameters = new JavaMethodDescriptor(method).getParameters();
       IntroduceParameterObjectProcessor processor =
-        new IntroduceParameterObjectProcessor<PsiMethod, ParameterInfoImpl, JavaIntroduceParameterObjectClassDescriptor>(
+        new IntroduceParameterObjectProcessor<>(
           method, classDescriptor,
           parameters,
           false);

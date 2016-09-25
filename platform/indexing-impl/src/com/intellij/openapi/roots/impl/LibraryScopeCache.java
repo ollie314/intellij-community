@@ -20,6 +20,7 @@ import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.module.impl.scopes.JdkScope;
 import com.intellij.openapi.module.impl.scopes.LibraryRuntimeClasspathScope;
+import com.intellij.openapi.module.impl.scopes.ModulesScope;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.*;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -91,19 +92,15 @@ public class LibraryScopeCache {
 
   @NotNull
   public GlobalSearchScope getLibrariesOnlyScope() {
-    return getScopeForLibraryUsedIn(Module.EMPTY_ARRAY);
+    return myLibrariesOnlyScope;
   }
 
   @NotNull
-  private GlobalSearchScope getScopeForLibraryUsedIn(@NotNull Module[] modulesLibraryIsUsedIn) {
-    GlobalSearchScope scope = myLibraryScopes.get(modulesLibraryIsUsedIn);
-    if (scope != null) {
-      return scope;
-    }
-    GlobalSearchScope newScope = modulesLibraryIsUsedIn.length == 0
-                                 ? myLibrariesOnlyScope
-                                 : new LibraryRuntimeClasspathScope(myProject, modulesLibraryIsUsedIn);
-    return ConcurrencyUtil.cacheOrGet(myLibraryScopes, modulesLibraryIsUsedIn, newScope);
+  private GlobalSearchScope getScopeForLibraryUsedIn(@NotNull List<Module> modulesLibraryIsUsedIn) {
+    Module[] array = modulesLibraryIsUsedIn.toArray(Module.EMPTY_ARRAY);
+    GlobalSearchScope scope = myLibraryScopes.get(array);
+    return scope != null ? scope : ConcurrencyUtil.cacheOrGet(myLibraryScopes, array,
+                                                              new LibraryRuntimeClasspathScope(myProject, modulesLibraryIsUsedIn));
   }
 
   /**
@@ -128,7 +125,7 @@ public class LibraryScopeCache {
 
   @NotNull
   private GlobalSearchScope calcLibraryScope(@NotNull List<OrderEntry> orderEntries) {
-    List<Module> modulesLibraryUsedIn = new ArrayList<Module>();
+    List<Module> modulesLibraryUsedIn = new ArrayList<>();
 
     LibraryOrderEntry lib = null;
     for (OrderEntry entry : orderEntries) {
@@ -145,17 +142,11 @@ public class LibraryScopeCache {
       }
     }
 
-    Comparator<Module> comparator = new Comparator<Module>() {
-      @Override
-      public int compare(@NotNull Module o1, @NotNull Module o2) {
-        return o1.getName().compareTo(o2.getName());
-      }
-    };
+    Comparator<Module> comparator = (o1, o2) -> o1.getName().compareTo(o2.getName());
     Collections.sort(modulesLibraryUsedIn, comparator);
     List<Module> uniquesList = ContainerUtil.removeDuplicatesFromSorted(modulesLibraryUsedIn, comparator);
-    Module[] uniques = uniquesList.toArray(new Module[uniquesList.size()]);
 
-    GlobalSearchScope allCandidates = getScopeForLibraryUsedIn(uniques);
+    GlobalSearchScope allCandidates = uniquesList.isEmpty() ? myLibrariesOnlyScope : getScopeForLibraryUsedIn(uniquesList);
     if (lib != null) {
       final LibraryRuntimeClasspathScope preferred = new LibraryRuntimeClasspathScope(myProject, lib);
       // prefer current library
@@ -199,17 +190,28 @@ public class LibraryScopeCache {
 
   @NotNull
   private GlobalSearchScope calcLibraryUseScope(@NotNull List<OrderEntry> entries) {
-    List<GlobalSearchScope> united = ContainerUtil.newArrayList();
-    united.add(getLibrariesOnlyScope());
-    Set<Module> modulesInvolved = new THashSet<>(entries.size());
+    Set<Module> modulesWithLibrary = new THashSet<>(entries.size());
+    Set<Module> modulesWithSdk = new THashSet<>(entries.size());
     for (OrderEntry entry : entries) {
-      Module ownerModule = entry.getOwnerModule();
-      united.add(GlobalSearchScope.moduleWithDependentsScope(ownerModule));
-      modulesInvolved.add(ownerModule);
+      (entry instanceof JdkOrderEntry ? modulesWithSdk : modulesWithLibrary).add(entry.getOwnerModule());
     }
+    modulesWithSdk.removeAll(modulesWithLibrary);
+
     // optimisation: if the library attached to all modules (often the case with JDK) then replace the 'union of all modules' scope with just 'project'
-    if (modulesInvolved.size() == ModuleManager.getInstance(myProject).getModules().length) {
+    if (modulesWithSdk.size() + modulesWithLibrary.size() == ModuleManager.getInstance(myProject).getModules().length) {
       return GlobalSearchScope.allScope(myProject);
+    }
+
+    List<GlobalSearchScope> united = ContainerUtil.newArrayList();
+    if (!modulesWithSdk.isEmpty()) {
+      united.add(new ModulesScope(modulesWithSdk, myProject));
+      united.add(myLibrariesOnlyScope.intersectWith(new LibraryRuntimeClasspathScope(myProject, modulesWithSdk)));
+    } else {
+      united.add(myLibrariesOnlyScope);
+    }
+
+    for (Module module : modulesWithLibrary) {
+      united.add(GlobalSearchScope.moduleWithDependentsScope(module));
     }
 
     return GlobalSearchScope.union(united.toArray(new GlobalSearchScope[united.size()]));

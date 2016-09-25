@@ -82,7 +82,7 @@ public final class FileEditorProviderManagerImpl extends FileEditorProviderManag
   @NotNull
   public FileEditorProvider[] getProviders(@NotNull final Project project, @NotNull final VirtualFile file) {
     // Collect all possible editors
-    List<FileEditorProvider> sharedProviders = new ArrayList<FileEditorProvider>();
+    List<FileEditorProvider> sharedProviders = new ArrayList<>();
     boolean doNotShowTextEditor = false;
     for (final FileEditorProvider provider : myProviders) {
       if (ApplicationManager.getApplication().runReadAction(new Computable<Boolean>() {
@@ -101,12 +101,7 @@ public final class FileEditorProviderManagerImpl extends FileEditorProviderManag
 
     // Throw out default editors provider if necessary
     if (doNotShowTextEditor) {
-      ContainerUtil.retainAll(sharedProviders, new Condition<FileEditorProvider>() {
-        @Override
-        public boolean value(FileEditorProvider provider) {
-          return !(provider instanceof TextEditorProvider);
-        }
-      });
+      ContainerUtil.retainAll(sharedProviders, provider -> !(provider instanceof TextEditorProvider));
     }
 
     // Sort editors according policies
@@ -151,14 +146,9 @@ public final class FileEditorProviderManagerImpl extends FileEditorProviderManag
     mySelectedProviders.putAll(state.mySelectedProviders);
   }
 
-  private static final Function<FileEditorProvider, String> EDITOR_PROVIDER_STRING_FUNCTION = new Function<FileEditorProvider, String>() {
-    @Override
-    public String fun(FileEditorProvider provider) {
-      return provider.getEditorTypeId();
-    }
-  };
+  private static final Function<FileEditorProvider, String> EDITOR_PROVIDER_STRING_FUNCTION = provider -> provider.getEditorTypeId();
 
-  private final Map<String, String> mySelectedProviders = new HashMap<String, String>();
+  private final Map<String, String> mySelectedProviders = new HashMap<>();
 
   void providerSelected(EditorComposite composite) {
     if (!(composite instanceof EditorWithProviderComposite)) return;

@@ -20,6 +20,7 @@ import com.intellij.codeInsight.template.JavaCodeContextType;
 import com.intellij.codeInsight.template.TemplateContextType;
 import com.intellij.codeInsight.template.TemplateManager;
 import com.intellij.dupLocator.iterators.NodeIterator;
+import com.intellij.ide.highlighter.JavaFileType;
 import com.intellij.lang.Language;
 import com.intellij.lang.java.JavaLanguage;
 import com.intellij.openapi.editor.Document;
@@ -271,7 +272,7 @@ public class JavaStructuralSearchProfile extends StructuralSearchProfile {
       if (startChild == endChild) return PsiElement.EMPTY_ARRAY; // nothing produced
 
       final PsiCodeBlock codeBlock = elementFactory.createCodeBlock();
-      final List<PsiElement> result = new ArrayList<PsiElement>(3);
+      final List<PsiElement> result = new ArrayList<>(3);
       assert startChild != null;
       for (PsiElement el = startChild.getNextSibling(); el != endChild && el != null; el = el.getNextSibling()) {
         if (el instanceof PsiErrorElement) continue;
@@ -290,7 +291,7 @@ public class JavaStructuralSearchProfile extends StructuralSearchProfile {
       return new PsiElement[] { childStatement };
     }
     else {
-      return PsiFileFactory.getInstance(project).createFileFromText("__dummy.java", text).getChildren();
+      return PsiFileFactory.getInstance(project).createFileFromText("__dummy.java", JavaFileType.INSTANCE, text).getChildren();
     }
   }
 
@@ -310,14 +311,26 @@ public class JavaStructuralSearchProfile extends StructuralSearchProfile {
     return false;
   }
 
-  private static boolean shouldTryClassPattern(PsiElement[] result) {
-    if (result.length == 3 && PsiModifier.STATIC.equals(result[0].getText()) && result[1] instanceof PsiWhiteSpace &&
-        result[2] instanceof PsiBlockStatement) {
-      // looks like static initializer
+  private static boolean shouldTryClassPattern(PsiElement[] elements) {
+    if (elements.length < 2) {
+      return false;
+    }
+    final PsiElement firstElement = elements[0];
+    final PsiElement secondElement = elements[1];
+
+    if (firstElement instanceof PsiDeclarationStatement && PsiTreeUtil.lastChild(firstElement) instanceof PsiErrorElement) {
+      // might be method
       return true;
     }
-    else if (result.length > 1 && result[0] instanceof PsiDeclarationStatement && !result[0].getText().endsWith(";")) {
-      // might be method
+    else if (firstElement instanceof PsiErrorElement &&
+             secondElement instanceof PsiExpressionStatement &&
+             PsiTreeUtil.lastChild(secondElement) instanceof PsiErrorElement) {
+      // might be generic method
+      return true;
+    }
+    else if (elements.length == 3 && PsiModifier.STATIC.equals(firstElement.getText()) && secondElement instanceof PsiWhiteSpace &&
+        elements[2] instanceof PsiBlockStatement) {
+      // looks like static initializer
       return true;
     }
     return false;

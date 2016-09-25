@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,10 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package com.intellij.codeInspection;
 
 import com.intellij.analysis.AnalysisScope;
+import com.intellij.codeInsight.daemon.HighlightDisplayKey;
 import com.intellij.codeInspection.ex.*;
 import com.intellij.conversion.ConversionListener;
 import com.intellij.conversion.ConversionService;
@@ -37,7 +37,6 @@ import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.profile.Profile;
-import com.intellij.profile.codeInspection.InspectionProfileManager;
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager;
 import com.intellij.psi.PsiDirectory;
 import com.intellij.psi.PsiManager;
@@ -93,24 +92,21 @@ public class InspectionApplication {
     }
 
     final ApplicationEx application = ApplicationManagerEx.getApplicationEx();
-    application.runReadAction(new Runnable() {
-      @Override
-      public void run() {
-        try {
-          final ApplicationInfoEx appInfo = (ApplicationInfoEx)ApplicationInfo.getInstance();
-          logMessage(1, InspectionsBundle.message("inspection.application.starting.up", 
-                                                  appInfo.getFullApplicationName() + " (build " + appInfo.getBuild().asString() + ")"));
-          application.doNotSave();
-          logMessageLn(1, InspectionsBundle.message("inspection.done"));
+    application.runReadAction(() -> {
+      try {
+        final ApplicationInfoEx appInfo = (ApplicationInfoEx)ApplicationInfo.getInstance();
+        logMessage(1, InspectionsBundle.message("inspection.application.starting.up",
+                                                appInfo.getFullApplicationName() + " (build " + appInfo.getBuild().asString() + ")"));
+        application.doNotSave();
+        logMessageLn(1, InspectionsBundle.message("inspection.done"));
 
-          InspectionApplication.this.run();
-        }
-        catch (Exception e) {
-          LOG.error(e);
-        }
-        finally {
-          if (myErrorCodeRequired) application.exit(true, true);
-        }
+        this.run();
+      }
+      catch (Exception e) {
+        LOG.error(e);
+      }
+      finally {
+        if (myErrorCodeRequired) application.exit(true, true);
       }
     });
   }
@@ -146,12 +142,7 @@ public class InspectionApplication {
         return;
       }
 
-      ApplicationManager.getApplication().runWriteAction(new Runnable() {
-        @Override
-        public void run(){
-          VirtualFileManager.getInstance().refreshWithoutFileWatcher(false);
-        }
-      });
+      ApplicationManager.getApplication().runWriteAction(() -> VirtualFileManager.getInstance().refreshWithoutFileWatcher(false));
 
       PatchProjectUtil.patchProject(myProject);
 
@@ -171,7 +162,7 @@ public class InspectionApplication {
       if (mySourceDirectory == null) {
         final String scopeName = System.getProperty("idea.analyze.scope");
         final NamedScope namedScope = scopeName != null ? NamedScopesHolder.getScope(myProject, scopeName) : null;
-        scope = namedScope != null ? new AnalysisScope(GlobalSearchScopesCore.filterScope(myProject, namedScope), myProject) 
+        scope = namedScope != null ? new AnalysisScope(GlobalSearchScopesCore.filterScope(myProject, namedScope), myProject)
                                    : new AnalysisScope(myProject);
       }
       else {
@@ -190,7 +181,7 @@ public class InspectionApplication {
       logMessageLn(1, InspectionsBundle.message("inspection.done"));
 
       if (!myRunWithEditorSettings) {
-        logMessageLn(1, InspectionsBundle.message("inspection.application.chosen.profile.log message", inspectionProfile.getName()));
+        logMessageLn(1, InspectionsBundle.message("inspection.application.chosen.profile.log.message", inspectionProfile.getName()));
       }
 
       InspectionsReportConverter reportConverter = getReportConverter(myOutputFormat);
@@ -217,19 +208,16 @@ public class InspectionApplication {
         }
       }
 
-      final List<File> inspectionsResults = new ArrayList<File>();
-      ProgressManager.getInstance().runProcess(new Runnable() {
-        @Override
-        public void run() {
-          if (!GlobalInspectionContextUtil.canRunInspections(myProject, false)) {
-            gracefulExit();
-            return;
-          }
-          inspectionContext.launchInspectionsOffline(scope, resultsDataPath, myRunGlobalToolsOnly, inspectionsResults);
-          logMessageLn(1, "\n" + InspectionsBundle.message("inspection.capitalized.done") + "\n");
-          if (!myErrorCodeRequired) {
-            closeProject();
-          }
+      final List<File> inspectionsResults = new ArrayList<>();
+      ProgressManager.getInstance().runProcess(() -> {
+        if (!GlobalInspectionContextUtil.canRunInspections(myProject, false)) {
+          gracefulExit();
+          return;
+        }
+        inspectionContext.launchInspectionsOffline(scope, resultsDataPath, myRunGlobalToolsOnly, inspectionsResults);
+        logMessageLn(1, "\n" + InspectionsBundle.message("inspection.capitalized.done") + "\n");
+        if (!myErrorCodeRequired) {
+          closeProject();
         }
       }, new ProgressIndicatorBase() {
         private String lastPrefix = "";
@@ -256,8 +244,9 @@ public class InspectionApplication {
             if (!isIndeterminate() && getFraction() > 0) {
               final int percent = (int)(getFraction() * 100);
               if (myLastPercent == percent) return;
+              String prefix = getPrefix(text);
               myLastPercent = percent;
-              String msg = InspectionsBundle.message("inspection.display.name") + " " + percent + "%";
+              String msg = (prefix != null ? prefix : InspectionsBundle.message("inspection.display.name")) + " " + percent + "%";
               logMessageLn(2, msg);
             }
             return;
@@ -268,7 +257,8 @@ public class InspectionApplication {
       });
       final String descriptionsFile = resultsDataPath + File.separatorChar + DESCRIPTIONS + XML_EXTENSION;
       describeInspections(descriptionsFile,
-                          myRunWithEditorSettings ? null : inspectionProfile.getName());
+                          myRunWithEditorSettings ? null : inspectionProfile.getName(),
+                          (InspectionProfile)inspectionProfile);
       inspectionsResults.add(new File(descriptionsFile));
       // convert report
       if (reportConverter != null) {
@@ -350,7 +340,7 @@ public class InspectionApplication {
         if (inspectionProfile != null) return inspectionProfile;
       }
 
-      inspectionProfile = InspectionProjectProfileManager.getInstance(myProject).getInspectionProfile();
+      inspectionProfile = InspectionProjectProfileManager.getInstance(myProject).getCurrentProfile();
       logError("Using default project profile");
     }
     return inspectionProfile;
@@ -358,7 +348,7 @@ public class InspectionApplication {
 
   @Nullable
   private Profile loadProfileByPath(final String profilePath) throws IOException, JDOMException {
-    Profile inspectionProfile = InspectionProfileManager.getInstance().loadProfile(profilePath);
+    Profile inspectionProfile = ApplicationInspectionProfileManager.getInstanceImpl().loadProfile(profilePath);
     if (inspectionProfile != null) {
       logMessageLn(1, "Loaded profile \'" + inspectionProfile.getName() + "\' from file \'" + profilePath + "\'");
     }
@@ -388,7 +378,7 @@ public class InspectionApplication {
 
 
   @Nullable
-  private InspectionsReportConverter getReportConverter(@Nullable final String outputFormat) {
+  private static InspectionsReportConverter getReportConverter(@Nullable final String outputFormat) {
     for (InspectionsReportConverter converter : InspectionsReportConverter.EP_NAME.getExtensions()) {
       if (converter.getFormatName().equals(outputFormat)) {
         return converter;
@@ -459,14 +449,14 @@ public class InspectionApplication {
     }
   }
 
-  private static void describeInspections(@NonNls String myOutputPath, final String name) throws IOException {
-    final InspectionToolWrapper[] toolWrappers = InspectionProfileImpl.getDefaultProfile().getInspectionTools(null);
-    final Map<String, Set<InspectionToolWrapper>> map = new HashMap<String, Set<InspectionToolWrapper>>();
+  private static void describeInspections(@NonNls String myOutputPath, final String name, final InspectionProfile profile) throws IOException {
+    final InspectionToolWrapper[] toolWrappers = profile.getInspectionTools(null);
+    final Map<String, Set<InspectionToolWrapper>> map = new HashMap<>();
     for (InspectionToolWrapper toolWrapper : toolWrappers) {
       final String groupName = toolWrapper.getGroupDisplayName();
       Set<InspectionToolWrapper> groupInspections = map.get(groupName);
       if (groupInspections == null) {
-        groupInspections = new HashSet<InspectionToolWrapper>();
+        groupInspections = new HashSet<>();
         map.put(groupName, groupInspections);
       }
       groupInspections.add(toolWrapper);
@@ -485,14 +475,17 @@ public class InspectionApplication {
         final Set<InspectionToolWrapper> entries = map.get(groupName);
         for (InspectionToolWrapper toolWrapper : entries) {
           xmlWriter.startNode("inspection");
-          xmlWriter.addAttribute("shortName", toolWrapper.getShortName());
+          final String shortName = toolWrapper.getShortName();
+          xmlWriter.addAttribute("shortName", shortName);
           xmlWriter.addAttribute("displayName", toolWrapper.getDisplayName());
+          final boolean toolEnabled = profile.isToolEnabled(HighlightDisplayKey.find(shortName));
+          xmlWriter.addAttribute("enabled", Boolean.toString(toolEnabled));
           final String description = toolWrapper.loadDescription();
           if (description != null) {
             xmlWriter.setValue(description);
           }
           else {
-            LOG.error(toolWrapper.getShortName() + " descriptionUrl==" + toolWrapper);
+            LOG.error(shortName + " descriptionUrl==" + toolWrapper);
           }
           xmlWriter.endNode();
         }

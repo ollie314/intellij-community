@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -84,18 +84,15 @@ public class TogglePopupHintsPanel extends EditorBasedWidget implements StatusBa
 
   @Override
   public Consumer<MouseEvent> getClickConsumer() {
-    return new Consumer<MouseEvent>() {
-      @Override
-      public void consume(final MouseEvent e) {
-        Point point = new Point(0, 0);
-        final PsiFile file = getCurrentFile();
-        if (file != null) {
-          if (!DaemonCodeAnalyzer.getInstance(file.getProject()).isHighlightingAvailable(file)) return;
-          final HectorComponent component = new HectorComponent(file);
-          final Dimension dimension = component.getPreferredSize();
-          point = new Point(point.x - dimension.width, point.y - dimension.height);
-          component.showComponent(new RelativePoint(e.getComponent(), point));
-        }
+    return e -> {
+      Point point = new Point(0, 0);
+      final PsiFile file = getCurrentFile();
+      if (file != null) {
+        if (!DaemonCodeAnalyzer.getInstance(file.getProject()).isHighlightingAvailable(file)) return;
+        final HectorComponent component = new HectorComponent(file);
+        final Dimension dimension = component.getPreferredSize();
+        point = new Point(point.x - dimension.width, point.y - dimension.height);
+        component.showComponent(new RelativePoint(e.getComponent(), point));
       }
     };
   }
@@ -130,7 +127,7 @@ public class TogglePopupHintsPanel extends EditorBasedWidget implements StatusBa
       else if (HighlightingLevelManager.getInstance(myProject).shouldInspect(file)) {
         myCurrentIcon = AllIcons.Ide.HectorOn;
         myToolTipText = "Current inspection profile: " +
-                        InspectionProjectProfileManager.getInstance(file.getProject()).getInspectionProfile().getName() +
+                        InspectionProjectProfileManager.getInstance(file.getProject()).getCurrentProfile().getName() +
                         ".\n";
       }
       else if (HighlightingLevelManager.getInstance(myProject).shouldHighlight(file)) {

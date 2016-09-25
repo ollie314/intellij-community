@@ -15,19 +15,19 @@
  */
 package com.intellij.vcs.log.ui.actions;
 
+import com.intellij.codeInsight.completion.CompletionParameters;
 import com.intellij.codeInsight.completion.CompletionResultSet;
 import com.intellij.codeInsight.completion.InsertHandler;
-import com.intellij.codeInsight.completion.InsertionContext;
 import com.intellij.codeInsight.lookup.LookupElement;
 import com.intellij.codeInsight.lookup.LookupElementBuilder;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.ui.popup.JBPopupListener;
 import com.intellij.openapi.ui.popup.LightweightWindowEvent;
-import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.util.Function;
@@ -36,6 +36,7 @@ import com.intellij.util.textCompletion.DefaultTextCompletionValueDescriptor;
 import com.intellij.util.textCompletion.ValuesCompletionProvider;
 import com.intellij.util.ui.ColorIcon;
 import com.intellij.util.ui.UIUtil;
+import com.intellij.vcs.log.VcsLogRefs;
 import com.intellij.vcs.log.VcsRef;
 import com.intellij.vcs.log.ui.VcsLogColorManager;
 import com.intellij.vcs.log.ui.frame.VcsLogGraphTable;
@@ -47,12 +48,12 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
+import java.util.concurrent.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class GoToHashOrRefPopup {
   private static final Logger LOG = Logger.getInstance(GoToHashOrRefPopup.class);
@@ -65,7 +66,7 @@ public class GoToHashOrRefPopup {
   @Nullable private VcsRef mySelectedRef;
 
   public GoToHashOrRefPopup(@NotNull final Project project,
-                            @NotNull Collection<VcsRef> variants,
+                            @NotNull VcsLogRefs variants,
                             Collection<VirtualFile> roots,
                             @NotNull Function<String, Future> onSelectedHash,
                             @NotNull Function<VcsRef, Future> onSelectedRef,
@@ -83,23 +84,20 @@ public class GoToHashOrRefPopup {
                                    : myOnSelectedRef.fun(mySelectedRef));
             myFuture = future;
             showProgress();
-            ApplicationManager.getApplication().executeOnPooledThread(new Runnable() {
-              @Override
-              public void run() {
-                try {
-                  future.get();
-                  okPopup();
-                }
-                catch (CancellationException ex) {
-                  cancelPopup();
-                }
-                catch (InterruptedException ex) {
-                  cancelPopup();
-                }
-                catch (ExecutionException ex) {
-                  LOG.error(ex);
-                  cancelPopup();
-                }
+            ApplicationManager.getApplication().executeOnPooledThread(() -> {
+              try {
+                future.get();
+                okPopup();
+              }
+              catch (CancellationException ex) {
+                cancelPopup();
+              }
+              catch (InterruptedException ex) {
+                cancelPopup();
+              }
+              catch (ExecutionException ex) {
+                LOG.error(ex);
+                cancelPopup();
               }
             });
           }
@@ -135,21 +133,11 @@ public class GoToHashOrRefPopup {
   }
 
   private void cancelPopup() {
-    ApplicationManager.getApplication().invokeLater(new Runnable() {
-      @Override
-      public void run() {
-        myPopup.cancel();
-      }
-    });
+    ApplicationManager.getApplication().invokeLater(() -> myPopup.cancel());
   }
 
   private void okPopup() {
-    ApplicationManager.getApplication().invokeLater(new Runnable() {
-      @Override
-      public void run() {
-        myPopup.closeOk(null);
-      }
-    });
+    ApplicationManager.getApplication().invokeLater(() -> myPopup.closeOk(null));
   }
 
   public void show(@NotNull JComponent anchor) {
@@ -157,24 +145,61 @@ public class GoToHashOrRefPopup {
   }
 
   private class VcsRefCompletionProvider extends ValuesCompletionProvider<VcsRef> {
+    private static final int TIMEOUT = 100;
+    @NotNull private final VcsLogRefs myRefs;
+    @NotNull private final Collection<VirtualFile> myRoots;
 
     public VcsRefCompletionProvider(@NotNull Project project,
-                                    @NotNull Collection<VcsRef> variants,
+                                    @NotNull VcsLogRefs refs,
                                     @NotNull Collection<VirtualFile> roots,
                                     @NotNull VcsLogColorManager colorManager,
                                     @NotNull Comparator<VcsRef> comparator) {
-      super(new VcsRefDescriptor(project, colorManager, comparator, roots), variants);
+      super(new VcsRefDescriptor(project, colorManager, comparator, roots), ContainerUtil.emptyList());
+      myRefs = refs;
+      myRoots = roots;
+    }
+
+    @Override
+    public void fillCompletionVariants(@NotNull CompletionParameters parameters,
+                                       @NotNull String prefix,
+                                       @NotNull CompletionResultSet result) {
+      addValues(result, filterAndSort(result, myRefs.getBranches().stream()));
+
+      Future<List<VcsRef>> future = ApplicationManager.getApplication()
+        .executeOnPooledThread(() -> filterAndSort(result, myRefs.stream().filter(ref -> !ref.getType().isBranch())));
+      while (true) {
+        try {
+          List<VcsRef> tags = future.get(TIMEOUT, TimeUnit.MILLISECONDS);
+          if (tags != null) {
+            addValues(result, tags);
+            break;
+          }
+        }
+        catch (InterruptedException | CancellationException e) {
+          break;
+        }
+        catch (TimeoutException ignored) {
+        }
+        catch (ExecutionException e) {
+          LOG.error(e);
+          break;
+        }
+        ProgressManager.checkCanceled();
+      }
+      result.stopHere();
+    }
+
+    public void addValues(@NotNull CompletionResultSet result, @NotNull Collection<? extends VcsRef> values) {
+      for (VcsRef completionVariant : values) {
+        result.addElement(installInsertHandler(myDescriptor.createLookupBuilder(completionVariant)));
+      }
     }
 
     @NotNull
-    @Override
-    protected Collection<? extends VcsRef> getValues(@NotNull String prefix, @NotNull CompletionResultSet result) {
-      return ContainerUtil.filter(myValues, new Condition<VcsRef>() {
-        @Override
-        public boolean value(VcsRef vcsRef) {
-          return result.getPrefixMatcher().prefixMatches(vcsRef.getName());
-        }
-      });
+    private List<VcsRef> filterAndSort(@NotNull CompletionResultSet result, @NotNull Stream<VcsRef> stream) {
+      return ContainerUtil
+        .sorted(stream.filter(ref -> myRoots.contains(ref.getRoot()) && result.getPrefixMatcher().prefixMatches(ref.getName()))
+                  .collect(Collectors.toList()), myDescriptor);
     }
   }
 
@@ -243,24 +268,18 @@ public class GoToHashOrRefPopup {
     @Nullable
     @Override
     protected InsertHandler<LookupElement> createInsertHandler(@NotNull VcsRef item) {
-      return new InsertHandler<LookupElement>() {
-        @Override
-        public void handleInsert(InsertionContext context, LookupElement item) {
-          mySelectedRef = (VcsRef)item.getObject();
-          ApplicationManager.getApplication().invokeLater(new Runnable() {
-            @Override
-            public void run() {
-              // handleInsert is called in the middle of some other code that works with editor
-              // (see CodeCompletionHandlerBase.insertItem)
-              // for example, scrolls editor
-              // problem is that in onOk we make text field not editable
-              // by some reason this is done by disposing its editor and creating a new one
-              // so editor gets disposed here and CodeCompletionHandlerBase can not finish doing whatever it is doing with it
-              // I counter this by invoking onOk in invokeLater
-              myTextField.onOk();
-            }
-          });
-        }
+      return (context, item1) -> {
+        mySelectedRef = (VcsRef)item1.getObject();
+        ApplicationManager.getApplication().invokeLater(() -> {
+          // handleInsert is called in the middle of some other code that works with editor
+          // (see CodeCompletionHandlerBase.insertItem)
+          // for example, scrolls editor
+          // problem is that in onOk we make text field not editable
+          // by some reason this is done by disposing its editor and creating a new one
+          // so editor gets disposed here and CodeCompletionHandlerBase can not finish doing whatever it is doing with it
+          // I counter this by invoking onOk in invokeLater
+          myTextField.onOk();
+        });
       };
     }
   }

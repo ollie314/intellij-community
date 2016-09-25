@@ -29,8 +29,8 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiWhiteSpace;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.tree.TokenSet;
+import com.intellij.testFramework.LightVirtualFile;
 import com.jetbrains.python.psi.*;
-import com.jetbrains.python.psi.impl.PyFileImpl;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -56,6 +56,7 @@ public class PythonFoldingBuilder extends CustomFoldingBuilder implements DumbAw
                                           @NotNull PsiElement root,
                                           @NotNull Document document,
                                           boolean quick) {
+    if (root instanceof PyFile && ((PyFile)root).getVirtualFile() instanceof LightVirtualFile) return;
     appendDescriptors(root.getNode(), descriptors);
   }
 
@@ -201,7 +202,7 @@ public class PythonFoldingBuilder extends CustomFoldingBuilder implements DumbAw
 
   @Override
   protected String getLanguagePlaceholderText(@NotNull ASTNode node, @NotNull TextRange range) {
-    if (PyFileImpl.isImport(node, false)) {
+    if (isImport(node)) {
       return "import ...";
     }
     if (node.getElementType() == PyElementTypes.STRING_LITERAL_EXPRESSION) {
@@ -231,7 +232,7 @@ public class PythonFoldingBuilder extends CustomFoldingBuilder implements DumbAw
 
   @Override
   protected boolean isRegionCollapsedByDefault(@NotNull ASTNode node) {
-    if (PyFileImpl.isImport(node, false)) {
+    if (isImport(node)) {
       return CodeFoldingSettings.getInstance().COLLAPSE_IMPORTS;
     }
     if (node.getElementType() == PyElementTypes.STRING_LITERAL_EXPRESSION) {
@@ -257,12 +258,17 @@ public class PythonFoldingBuilder extends CustomFoldingBuilder implements DumbAw
   }
 
   @Override
-  protected boolean isCustomFoldingCandidate(ASTNode node) {
+  protected boolean isCustomFoldingCandidate(@NotNull ASTNode node) {
     return node.getElementType() == PyTokenTypes.END_OF_LINE_COMMENT;
   }
 
   @Override
-  protected boolean isCustomFoldingRoot(ASTNode node) {
+  protected boolean isCustomFoldingRoot(@NotNull ASTNode node) {
     return node.getPsi() instanceof PyFile || node.getElementType() == PyElementTypes.STATEMENT_LIST;
   }
+
+  private static boolean isImport(@NotNull ASTNode node) {
+    return PyElementTypes.IMPORT_STATEMENTS.contains(node.getElementType());
+  }
+
 }

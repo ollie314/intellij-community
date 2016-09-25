@@ -58,19 +58,20 @@ public final class EditorHistoryManager implements PersistentStateComponent<Elem
   /**
    * State corresponding to the most recent file is the last
    */
-  private final List<HistoryEntry> myEntriesList = new ArrayList<HistoryEntry>();
+  private final List<HistoryEntry> myEntriesList = new ArrayList<>();
 
-  EditorHistoryManager(@NotNull Project project, @NotNull UISettings uiSettings) {
+  EditorHistoryManager(@NotNull Project project) {
     myProject = project;
 
-    uiSettings.addUISettingsListener(new UISettingsListener() {
+    MessageBusConnection connection = project.getMessageBus().connect();
+
+    connection.subscribe(UISettingsListener.TOPIC, new UISettingsListener() {
       @Override
-      public void uiSettingsChanged(UISettings source) {
+      public void uiSettingsChanged(UISettings uiSettings) {
         trimToSize();
       }
-    }, project);
+    });
 
-    MessageBusConnection connection = project.getMessageBus().connect();
     connection.subscribe(FileEditorManagerListener.Before.FILE_EDITOR_MANAGER, new FileEditorManagerListener.Before.Adapter() {
       @Override
       public void beforeFileClosed(@NotNull FileEditorManager source, @NotNull VirtualFile file) {
@@ -137,8 +138,10 @@ public final class EditorHistoryManager implements PersistentStateComponent<Elem
       for (int i = states.length - 1; i >= 0; i--) {
         final FileEditorProvider provider = oldProviders [i];
         LOG.assertTrue(provider != null);
+        FileEditor editor = editors[i];
+        if (!editor.isValid()) continue;
         providers[i] = provider;
-        states[i] = editors[i].getState(FileEditorStateLevel.FULL);
+        states[i] = editor.getState(FileEditorStateLevel.FULL);
       }
       addEntry(HistoryEntry.createHeavy(myProject, file, providers, states, providers[selectedProviderIndex]));
       trimToSize();
@@ -214,7 +217,7 @@ public final class EditorHistoryManager implements PersistentStateComponent<Elem
    * @return array of valid files that are in the history, oldest first. May contain duplicates.
    */
   public synchronized VirtualFile[] getFiles(){
-    final List<VirtualFile> result = new ArrayList<VirtualFile>(myEntriesList.size());
+    final List<VirtualFile> result = new ArrayList<>(myEntriesList.size());
     for (HistoryEntry entry : myEntriesList) {
       VirtualFile file = entry.getFile();
       if (file != null) result.add(file);
@@ -378,12 +381,9 @@ public final class EditorHistoryManager implements PersistentStateComponent<Elem
     public void selectionChanged(@NotNull final FileEditorManagerEvent event){
       // updateHistoryEntry does commitDocument which is 1) very expensive and 2) cannot be performed from within PSI change listener
       // so defer updating history entry until documents committed to improve responsiveness
-      PsiDocumentManager.getInstance(myProject).performWhenAllCommitted(new Runnable() {
-        @Override
-        public void run() {
-          updateHistoryEntry(event.getOldFile(), event.getOldEditor(), event.getOldProvider(), false);
-          updateHistoryEntry(event.getNewFile(), true);
-        }
+      PsiDocumentManager.getInstance(myProject).performWhenAllCommitted(() -> {
+        updateHistoryEntry(event.getOldFile(), event.getOldEditor(), event.getOldProvider(), false);
+        updateHistoryEntry(event.getNewFile(), true);
       });
     }
   }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@ import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ModuleRootModificationUtil;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.platform.DirectoryProjectGenerator;
 import com.intellij.remote.RemoteSdkCredentials;
 import com.jetbrains.python.remote.PythonRemoteInterpreterManager;
 import com.jetbrains.python.remote.RemoteProjectSettings;
@@ -34,7 +33,7 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.*;
 import java.io.File;
 
-public class PythonBaseProjectGenerator extends PythonProjectGenerator implements DirectoryProjectGenerator {
+public class PythonBaseProjectGenerator extends PythonProjectGenerator<PyNewProjectSettings>  {
   @NotNull
   @Nls
   @Override
@@ -60,21 +59,18 @@ public class PythonBaseProjectGenerator extends PythonProjectGenerator implement
   }
 
   @Override
-  public void generateProject(@NotNull final Project project, @NotNull VirtualFile baseDir, final Object settings,
-                              @NotNull final Module module) {
+  public void configureProject(@NotNull final Project project, 
+                               @NotNull VirtualFile baseDir, 
+                               @Nullable final PyNewProjectSettings settings,
+                               @NotNull final Module module) {
     if (settings instanceof RemoteProjectSettings) {
       PythonRemoteInterpreterManager manager = PythonRemoteInterpreterManager.getInstance();
       assert manager != null;
       manager.createDeployment(project, baseDir, (RemoteProjectSettings)settings,
-                               (RemoteSdkCredentials)((RemoteProjectSettings)settings).getSdk().getSdkAdditionalData());
+                               (RemoteSdkCredentials)settings.getSdk().getSdkAdditionalData());
     }
-    else if (settings instanceof PyNewProjectSettings) {
-      ApplicationManager.getApplication().runWriteAction(new Runnable() {
-        @Override
-        public void run() {
-          ModuleRootModificationUtil.setModuleSdk(module, ((PyNewProjectSettings)settings).getSdk());
-        }
-      });
+    else if (settings != null) {
+      ApplicationManager.getApplication().runWriteAction(() -> ModuleRootModificationUtil.setModuleSdk(module, settings.getSdk()));
     }
   }
 

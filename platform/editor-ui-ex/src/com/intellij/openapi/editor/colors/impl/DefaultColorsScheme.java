@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-/**
- * @author Yura Cangea
- */
 package com.intellij.openapi.editor.colors.impl;
 
 import com.intellij.openapi.editor.colors.ColorKey;
@@ -30,6 +27,9 @@ import org.jetbrains.annotations.Nullable;
 import java.awt.*;
 
 public class DefaultColorsScheme extends AbstractColorsScheme implements ReadOnlyColorsScheme {
+  
+  public final static String EDITABLE_COPY_PREFIX = "_@user_";
+  
   private String myName;
 
   public DefaultColorsScheme() {
@@ -93,6 +93,25 @@ public class DefaultColorsScheme extends AbstractColorsScheme implements ReadOnl
     EditorColorsSchemeImpl newScheme = new EditorColorsSchemeImpl(this);
     copyTo(newScheme);
     newScheme.setName(DEFAULT_SCHEME_NAME);
+    newScheme.setDefaultMetaInfo(this);
     return newScheme;
+  }
+
+  /**
+   * Tells if there is an editable user copy of the scheme to be edited.
+   * 
+   * @return True if the editable copy shall exist, false if the scheme is non-editable.
+   */
+  public boolean hasEditableCopy() {
+    return true;
+  }
+  
+  public String getEditableCopyName() {
+    return EDITABLE_COPY_PREFIX + myName;
+  }
+
+  @Override
+  public boolean isVisible() {
+    return false;
   }
 }

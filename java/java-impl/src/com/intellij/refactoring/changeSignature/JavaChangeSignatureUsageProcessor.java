@@ -24,8 +24,6 @@ import com.intellij.lang.java.JavaLanguage;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Condition;
-import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.*;
@@ -34,6 +32,8 @@ import com.intellij.psi.codeStyle.JavaCodeStyleManager;
 import com.intellij.psi.codeStyle.VariableKind;
 import com.intellij.psi.scope.processor.VariablesProcessor;
 import com.intellij.psi.scope.util.PsiScopesUtil;
+import com.intellij.psi.search.LocalSearchScope;
+import com.intellij.psi.search.searches.ReferencesSearch;
 import com.intellij.psi.util.*;
 import com.intellij.refactoring.RefactoringBundle;
 import com.intellij.refactoring.rename.RenameUtil;
@@ -81,7 +81,7 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
       return new ConflictSearcher((JavaChangeInfo)info).findConflicts(refUsages);
     }
     else {
-      return new MultiMap<PsiElement, String>();
+      return new MultiMap<>();
     }
   }
 
@@ -317,7 +317,7 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
     //methods' throws lists are already modified, may use ExceptionUtil.collectUnhandledExceptions
     newExceptions = filterCheckedExceptions(newExceptions);
 
-    PsiElement context = PsiTreeUtil.getParentOfType(ref, PsiTryStatement.class, PsiMethod.class);
+    PsiElement context = PsiTreeUtil.getParentOfType(ref, PsiTryStatement.class, PsiMethod.class, PsiLambdaExpression.class);
     if (context instanceof PsiTryStatement) {
       PsiTryStatement tryStatement = (PsiTryStatement)context;
       PsiCodeBlock tryBlock = tryStatement.getTryBlock();
@@ -346,7 +346,16 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
         //Add new try statement
         PsiElementFactory elementFactory = JavaPsiFacade.getElementFactory(ref.getProject());
         PsiTryStatement tryStatement = (PsiTryStatement)elementFactory.createStatementFromText("try {} catch (Exception e) {}", null);
-        PsiStatement anchor = PsiTreeUtil.getParentOfType(ref, PsiStatement.class);
+        PsiStatement anchor;
+        PsiElement lambdaBody = context instanceof PsiLambdaExpression ? ((PsiLambdaExpression)context).getBody() : null;
+        if (lambdaBody instanceof PsiExpression) {
+          PsiCodeBlock codeBlock = (PsiCodeBlock)((PsiLambdaExpression)RefactoringUtil.expandExpressionLambdaToCodeBlock(lambdaBody)).getBody();
+          LOG.assertTrue(codeBlock != null);
+          anchor = codeBlock.getStatements()[0];
+        }
+        else {
+          anchor = PsiTreeUtil.getParentOfType(ref, PsiStatement.class);
+        }
         LOG.assertTrue(anchor != null);
         tryStatement.getTryBlock().add(anchor);
         tryStatement = (PsiTryStatement)anchor.getParent().addAfter(tryStatement, anchor);
@@ -358,8 +367,12 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
     }
   }
 
+  public static boolean hasNewCheckedExceptions(JavaChangeInfo changeInfo) {
+    return filterCheckedExceptions(getPrimaryChangedExceptionInfo(changeInfo)).length > 0;
+  }
+
   private static PsiClassType[] filterCheckedExceptions(PsiClassType[] exceptions) {
-    List<PsiClassType> result = new ArrayList<PsiClassType>();
+    List<PsiClassType> result = new ArrayList<>();
     for (PsiClassType exceptionType : exceptions) {
       if (!ExceptionUtil.isUncheckedException(exceptionType)) result.add(exceptionType);
     }
@@ -393,7 +406,7 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
   }
 
   private static PsiClassType[] filterUnhandledExceptions(PsiClassType[] exceptions, PsiElement place) {
-    List<PsiClassType> result = new ArrayList<PsiClassType>();
+    List<PsiClassType> result = new ArrayList<>();
     for (PsiClassType exception : exceptions) {
       if (!ExceptionUtil.isHandled(exception, place)) result.add(exception);
     }
@@ -410,7 +423,8 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
   //This methods works equally well for primary usages as well as for propagated callers' usages
   private static void fixActualArgumentsList(PsiExpressionList list,
                                              JavaChangeInfo changeInfo,
-                                             boolean toInsertDefaultValue, PsiSubstitutor substitutor) throws IncorrectOperationException {
+                                             boolean toInsertDefaultValue,
+                                             PsiSubstitutor substitutor) throws IncorrectOperationException {
     final PsiElementFactory factory = JavaPsiFacade.getInstance(list.getProject()).getElementFactory();
     if (changeInfo.isParameterSetOrOrderChanged()) {
       if (changeInfo instanceof JavaChangeInfoImpl && ((JavaChangeInfoImpl)changeInfo).isPropagationEnabled) {
@@ -418,7 +432,7 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
         for (ParameterInfoImpl info : createdParmsInfo) {
           PsiExpression newArg;
           if (toInsertDefaultValue) {
-            newArg = createDefaultValue(changeInfo, factory, info, list);
+            newArg = createDefaultValue(changeInfo, factory, info, list, substitutor);
           }
           else {
             newArg = factory.createExpressionFromText(info.getName(), list);
@@ -486,12 +500,12 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
               continue;
             }
           }
-          newArgs[i] = createActualArgument(changeInfo, list, newParms[i], toInsertDefaultValue, args);
+          newArgs[i] = createActualArgument(changeInfo, list, newParms[i], toInsertDefaultValue, args, substitutor);
         }
         if (changeInfo.isArrayToVarargs()) {
           if (newVarargInitializers == null) {
             newArgs[newNonVarargCount] =
-              createActualArgument(changeInfo, list, newParms[newNonVarargCount], toInsertDefaultValue, args);
+              createActualArgument(changeInfo, list, newParms[newNonVarargCount], toInsertDefaultValue, args, substitutor);
           }
           else {
             System.arraycopy(newVarargInitializers, 0, newArgs, newNonVarargCount, newVarargInitializers.length);
@@ -503,7 +517,7 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
           for (int i = newNonVarargCount; i < newArgsLength; i++){
             final int oldIndex = newParms[newNonVarargCount].getOldIndex();
             if (oldIndex >= 0 && oldIndex != nonVarargCount) {
-              newArgs[i] = createActualArgument(changeInfo, list, newParms[newNonVarargCount], toInsertDefaultValue, args);
+              newArgs[i] = createActualArgument(changeInfo, list, newParms[newNonVarargCount], toInsertDefaultValue, args, substitutor);
             } else {
               System.arraycopy(args, nonVarargCount, newArgs, newNonVarargCount, newVarargCount);
               break;
@@ -526,7 +540,8 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
                                                     final PsiExpressionList list,
                                                     final JavaParameterInfo info,
                                                     final boolean toInsertDefaultValue,
-                                                    final PsiExpression[] args) throws IncorrectOperationException {
+                                                    final PsiExpression[] args,
+                                                    PsiSubstitutor substitutor) throws IncorrectOperationException {
     final PsiElementFactory factory = JavaPsiFacade.getInstance(list.getProject()).getElementFactory();
     final int index = info.getOldIndex();
     if (index >= 0 && index < args.length) {
@@ -534,7 +549,7 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
     }
     else {
       if (toInsertDefaultValue) {
-        return createDefaultValue(changeInfo, factory, info, list);
+        return createDefaultValue(changeInfo, factory, info, list, substitutor);
       }
       else {
         return factory.createExpressionFromText(info.getName(), list);
@@ -546,7 +561,7 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
   private static PsiExpression createDefaultValue(JavaChangeInfo changeInfo,
                                                   final PsiElementFactory factory,
                                                   final JavaParameterInfo info,
-                                                  final PsiExpressionList list)
+                                                  final PsiExpressionList list, PsiSubstitutor substitutor)
     throws IncorrectOperationException {
     if (info.isUseAnySingleVariable()) {
       final PsiResolveHelper resolveHelper = JavaPsiFacade.getInstance(list.getProject()).getResolveHelper();
@@ -576,7 +591,7 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
         final PsiClass parentClass = PsiTreeUtil.getParentOfType(list, PsiClass.class);
         if (parentClass != null) {
           PsiClass containingClass = parentClass;
-          final Set<PsiClass> containingClasses = new HashSet<PsiClass>();
+          final Set<PsiClass> containingClasses = new HashSet<>();
           while (containingClass != null) {
             if (type.isAssignableFrom(factory.createType(containingClass, PsiSubstitutor.EMPTY))) {
               containingClasses.add(containingClass);
@@ -593,7 +608,7 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
     }
     final PsiCallExpression callExpression = PsiTreeUtil.getParentOfType(list, PsiCallExpression.class);
     final String defaultValue = info.getDefaultValue();
-    return callExpression != null ? (PsiExpression)info.getActualValue(callExpression)
+    return callExpression != null ? (PsiExpression)info.getActualValue(callExpression, substitutor)
                                   : !StringUtil.isEmpty(defaultValue) ? factory.createExpressionFromText(defaultValue, list) : null;
   }
 
@@ -634,7 +649,7 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
               if (defaultValue == null && parameter.getOldIndex() == -1) {
                 ((ParameterInfoImpl)parameter).setDefaultValue("");
                 if (!ApplicationManager.getApplication().isUnitTestMode()) {
-                  final PsiType type = ((ParameterInfoImpl)parameter).getTypeWrapper().getType(element, element.getManager());
+                  final PsiType type = ((ParameterInfoImpl)parameter).getTypeWrapper().getType(element);
                   final DefaultValueChooser chooser =
                     new DefaultValueChooser(project, parameter.getName(), PsiTypesUtil.getDefaultValueOfType(type));
                   if (chooser.showAndGet()) {
@@ -706,14 +721,13 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
   private static void addDelegateArguments(JavaChangeInfo changeInfo, PsiElementFactory factory, final PsiCallExpression callExpression) throws IncorrectOperationException {
     final JavaParameterInfo[] newParms = changeInfo.getNewParameters();
     final String[] oldParameterNames = changeInfo.getOldParameterNames();
-    for (int i = 0; i < newParms.length; i++) {
-      JavaParameterInfo newParm = newParms[i];
+    for (JavaParameterInfo newParm : newParms) {
       final PsiExpression actualArg;
       if (newParm.getOldIndex() >= 0) {
         actualArg = factory.createExpressionFromText(oldParameterNames[newParm.getOldIndex()], callExpression);
       }
       else {
-        actualArg = (PsiExpression)changeInfo.getActualValue(i, callExpression);
+        actualArg = (PsiExpression)newParm.getActualValue(callExpression, PsiSubstitutor.EMPTY);
       }
       final PsiExpressionList argumentList = callExpression.getArgumentList();
       if (actualArg != null && argumentList != null) {
@@ -844,7 +858,7 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
                                           boolean toInsertThrows) throws IncorrectOperationException {
     LOG.assertTrue(toInsertParams || toInsertThrows);
     if (toInsertParams) {
-      List<PsiParameter> newParameters = new ArrayList<PsiParameter>();
+      List<PsiParameter> newParameters = new ArrayList<>();
       ContainerUtil.addAll(newParameters, caller.getParameterList().getParameters());
       final JavaParameterInfo[] primaryNewParms = changeInfo.getNewParameters();
       PsiSubstitutor substitutor =
@@ -864,7 +878,7 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
     }
 
     if (toInsertThrows) {
-      List<PsiJavaCodeReferenceElement> newThrowns = new ArrayList<PsiJavaCodeReferenceElement>();
+      List<PsiJavaCodeReferenceElement> newThrowns = new ArrayList<>();
       final PsiReferenceList throwsList = caller.getThrowsList();
       ContainerUtil.addAll(newThrowns, throwsList.getReferenceElements());
       final ThrownExceptionInfo[] primaryNewExns = changeInfo.getNewExceptions();
@@ -902,7 +916,7 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
     final PsiParameter[] parameters = method.getParameterList().getParameters();
     final JavaParameterInfo[] newParms = changeInfo.getNewParameters();
     LOG.assertTrue(parameters.length <= newParamsLength);
-    final Set<PsiParameter> newParameters = new HashSet<PsiParameter>();
+    final Set<PsiParameter> newParameters = new HashSet<>();
     final String[] oldParameterNames = changeInfo.getOldParameterNames();
     for (int i = 0; i < newParamsLength; i++) {
       JavaParameterInfo newParm = newParms[i];
@@ -911,27 +925,19 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
         newParameters.add(parameters[i]);
       }
     }
-    RefactoringUtil.fixJavadocsForParams(method, newParameters, new Condition<Pair<PsiParameter, String>>() {
-      @Override
-      public boolean value(Pair<PsiParameter, String> pair) {
-        final PsiParameter parameter = pair.first;
-        final String oldParamName = pair.second;
-        final int idx = ArrayUtil.find(oldParameterNames, oldParamName);
-        return idx >= 0 && idx == method.getParameterList().getParameterIndex(parameter) && changeInfo.getNewParameters()[idx].getOldIndex() == idx;
-      }
-    }, new Condition<String>() {
-      @Override
-      public boolean value(String paramName) {
-        return ArrayUtil.find(oldParameterNames, paramName) >= 0;
-      }
-    });
+    RefactoringUtil.fixJavadocsForParams(method, newParameters, pair -> {
+      final PsiParameter parameter = pair.first;
+      final String oldParamName = pair.second;
+      final int idx = ArrayUtil.find(oldParameterNames, oldParamName);
+      return idx >= 0 && idx == method.getParameterList().getParameterIndex(parameter) && changeInfo.getNewParameters()[idx].getOldIndex() == idx;
+    }, paramName -> ArrayUtil.find(oldParameterNames, paramName) >= 0);
   }
 
   private static PsiParameter createNewParameter(JavaChangeInfo changeInfo, JavaParameterInfo newParm,
                                                  PsiSubstitutor... substitutor) throws IncorrectOperationException {
     final PsiParameterList list = changeInfo.getMethod().getParameterList();
     final PsiElementFactory factory = JavaPsiFacade.getInstance(list.getProject()).getElementFactory();
-    PsiType type = newParm.createType(list, list.getManager());
+    PsiType type = newParm.createType(list);
     for (PsiSubstitutor psiSubstitutor : substitutor) {
       type = psiSubstitutor.substitute(type);
     }
@@ -942,7 +948,7 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
                                                         final PsiParameterList list,
                                                         boolean[] toRemoveParm, 
                                                         final PsiElement methodBody) throws IncorrectOperationException {
-    List<FieldConflictsResolver> conflictResolvers = new ArrayList<FieldConflictsResolver>();
+    List<FieldConflictsResolver> conflictResolvers = new ArrayList<>();
     for (PsiParameter parameter : newParms) {
       conflictResolvers.add(new FieldConflictsResolver(parameter.getName(), methodBody));
     }
@@ -984,9 +990,9 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
     }
 
     public MultiMap<PsiElement, String> findConflicts(Ref<UsageInfo[]> refUsages) {
-      MultiMap<PsiElement, String> conflictDescriptions = new MultiMap<PsiElement, String>();
-      addMethodConflicts(conflictDescriptions);
-      Set<UsageInfo> usagesSet = new HashSet<UsageInfo>(Arrays.asList(refUsages.get()));
+      MultiMap<PsiElement, String> conflictDescriptions = new MultiMap<>();
+      final PsiMethod prototype = addMethodConflicts(conflictDescriptions);
+      Set<UsageInfo> usagesSet = new HashSet<>(Arrays.asList(refUsages.get()));
       RenameUtil.removeConflictUsages(usagesSet);
       if (myChangeInfo.isVisibilityChanged()) {
         try {
@@ -996,7 +1002,13 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
           LOG.error(e);
         }
       }
-      
+
+      final boolean[] toRemove = myChangeInfo.toRemoveParm();
+      //introduce parameter object deletes parameters but replaces their usages with generated code
+      final boolean checkUnusedParameter = myChangeInfo.checkUnusedParameter();
+      if (checkUnusedParameter) {
+        checkParametersToDelete(myChangeInfo.getMethod(), toRemove, conflictDescriptions);
+      }
       checkContract(conflictDescriptions, myChangeInfo.getMethod());
 
       for (UsageInfo usageInfo : usagesSet) {
@@ -1006,9 +1018,14 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
           final PsiMethod baseMethod = ((OverriderUsageInfo)usageInfo).getBaseMethod();
           final int delta = baseMethod.getParameterList().getParametersCount() - method.getParameterList().getParametersCount();
           if (delta > 0) {
-            final boolean[] toRemove = myChangeInfo.toRemoveParm();
             if (toRemove[toRemove.length - 1]) { //todo check if implicit parameter is not the last one
               conflictDescriptions.putValue(baseMethod, "Implicit last parameter should not be deleted");
+            }
+          }
+          else if (prototype != null && baseMethod == myChangeInfo.getMethod()) {
+            ConflictsUtil.checkMethodConflicts(method.getContainingClass(), method, prototype, conflictDescriptions);
+            if (checkUnusedParameter) {
+              checkParametersToDelete(method, toRemove, conflictDescriptions);
             }
           }
 
@@ -1020,6 +1037,19 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
       }
 
       return conflictDescriptions;
+    }
+
+    private static void checkParametersToDelete(PsiMethod method, boolean[] toRemove, MultiMap<PsiElement, String> conflictDescriptions) {
+      final PsiParameter[] parameters = method.getParameterList().getParameters();
+      final PsiCodeBlock body = method.getBody();
+      if (body != null) {
+        final LocalSearchScope searchScope = new LocalSearchScope(body);
+        for (int i = 0; i < toRemove.length; i++) {
+          if (toRemove[i] && ReferencesSearch.search(parameters[i], searchScope).findFirst() != null) {
+            conflictDescriptions.putValue(parameters[i], StringUtil.capitalize(RefactoringUIUtil.getDescription(parameters[i], true)) + " is used in method body");
+          }
+        }
+      }
     }
 
     private static void checkContract(MultiMap<PsiElement, String> conflictDescriptions, PsiMethod method) {
@@ -1069,15 +1099,15 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
     }
 
 
-    private void addMethodConflicts(MultiMap<PsiElement, String> conflicts) {
+    private PsiMethod addMethodConflicts(MultiMap<PsiElement, String> conflicts) {
       String newMethodName = myChangeInfo.getNewName();
       try {
-        PsiMethod prototype;
         final PsiMethod method = myChangeInfo.getMethod();
-        if (!StdLanguages.JAVA.equals(method.getLanguage())) return;
+        if (!StdLanguages.JAVA.equals(method.getLanguage())) return null;
         PsiManager manager = method.getManager();
         PsiElementFactory factory = JavaPsiFacade.getInstance(manager.getProject()).getElementFactory();
         final CanonicalTypes.Type returnType = myChangeInfo.getNewReturnType();
+        PsiMethod prototype;
         if (returnType != null) {
           prototype = factory.createMethod(newMethodName, returnType.getType(method, manager));
         }
@@ -1098,11 +1128,13 @@ public class JavaChangeSignatureUsageProcessor implements ChangeSignatureUsagePr
           prototype.getParameterList().add(param);
         }
 
-        ConflictsUtil.checkMethodConflicts(method.getContainingClass(), method, prototype, conflicts);
+        ConflictsUtil.checkMethodConflicts(method.getContainingClass(), myChangeInfo.isGenerateDelegate() ? null : method, prototype, conflicts);
+        return prototype;
       }
       catch (IncorrectOperationException e) {
         LOG.error(e);
       }
+      return null;
     }
   }
 

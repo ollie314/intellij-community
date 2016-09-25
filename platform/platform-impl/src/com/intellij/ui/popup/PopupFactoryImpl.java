@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2012 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,7 +50,6 @@ import com.intellij.ui.components.panels.NonOpaquePanel;
 import com.intellij.ui.popup.list.ListPopupImpl;
 import com.intellij.ui.popup.mock.MockConfirmation;
 import com.intellij.ui.popup.tree.TreePopupImpl;
-import com.intellij.util.Function;
 import com.intellij.util.ObjectUtils;
 import com.intellij.util.PlatformIcons;
 import com.intellij.util.containers.ContainerUtil;
@@ -88,7 +87,7 @@ public class PopupFactoryImpl extends JBPopupFactory {
 
   private static final Logger LOG = Logger.getInstance("#com.intellij.ui.popup.PopupFactoryImpl");
 
-  private final Map<Disposable, List<Balloon>> myStorage = new WeakHashMap<Disposable, List<Balloon>>();
+  private final Map<Disposable, List<Balloon>> myStorage = new WeakHashMap<>();
 
   @NotNull
   @Override
@@ -105,7 +104,7 @@ public class PopupFactoryImpl extends JBPopupFactory {
   @NotNull
   @Override
   public JBPopup createMessage(String text) {
-    return createListPopup(new BaseListPopupStep<String>(null, new String[]{text}));
+    return createListPopup(new BaseListPopupStep<>(null, new String[]{text}));
   }
 
   @Override
@@ -189,16 +188,40 @@ public class PopupFactoryImpl extends JBPopupFactory {
                                   maxRowCount, null);
   }
 
-  private static ListPopup createActionGroupPopup(final String title,
+  @NotNull
+  public ListPopup createActionGroupPopup(String title,
+                                          @NotNull ActionGroup actionGroup,
+                                          @NotNull DataContext dataContext,
+                                          ActionSelectionAid aid,
+                                          boolean showDisabledActions,
+                                          Runnable disposeCallback,
+                                          int maxRowCount,
+                                          Condition<AnAction> preselectActionCondition,
+                                          @Nullable String actionPlace) {
+    return new ActionGroupPopup(title,
+                                actionGroup,
+                                dataContext,
+                                aid == ActionSelectionAid.ALPHA_NUMBERING || aid == ActionSelectionAid.NUMBERING,
+                                aid == ActionSelectionAid.ALPHA_NUMBERING,
+                                showDisabledActions,
+                                aid == ActionSelectionAid.MNEMONICS,
+                                disposeCallback,
+                                maxRowCount,
+                                preselectActionCondition,
+                                actionPlace);
+  }
+
+  private static ListPopup createActionGroupPopup(String title,
                                                   @NotNull ActionGroup actionGroup,
                                                   @NotNull DataContext dataContext,
                                                   boolean showNumbers,
                                                   boolean useAlphaAsNumbers,
                                                   boolean showDisabledActions,
                                                   boolean honorActionMnemonics,
-                                                  final Runnable disposeCallback,
-                                                  final int maxRowCount,
-                                                  final Condition<AnAction> preselectActionCondition, @Nullable final String actionPlace) {
+                                                  Runnable disposeCallback,
+                                                  int maxRowCount,
+                                                  Condition<AnAction> preselectActionCondition,
+                                                  @Nullable String actionPlace) {
     return new ActionGroupPopup(title, actionGroup, dataContext, showNumbers, useAlphaAsNumbers, showDisabledActions, honorActionMnemonics,
                                 disposeCallback, maxRowCount, preselectActionCondition, actionPlace);
   }
@@ -335,12 +358,7 @@ public class PopupFactoryImpl extends JBPopupFactory {
       final ActionPopupStep actionPopupStep = ObjectUtils.tryCast(listStep, ActionPopupStep.class);
       if (actionPopupStep == null) return;
 
-      List<ToggleAction> filtered = ContainerUtil.mapNotNull(selectedValues, new Function<Object, ToggleAction>() {
-        @Override
-        public ToggleAction fun(Object o) {
-          return getActionByClass(o, actionPopupStep, ToggleAction.class);
-        }
-      });
+      List<ToggleAction> filtered = ContainerUtil.mapNotNull(selectedValues, o -> getActionByClass(o, actionPopupStep, ToggleAction.class));
 
       for (ToggleAction action : filtered) {
         actionPopupStep.performAction(action, 0);
@@ -400,12 +418,7 @@ public class PopupFactoryImpl extends JBPopupFactory {
                                           ActionSelectionAid selectionAidMethod,
                                           boolean showDisabledActions,
                                           @Nullable String actionPlace) {
-    return createActionGroupPopup(title, actionGroup, dataContext,
-                                  selectionAidMethod == ActionSelectionAid.NUMBERING || selectionAidMethod == ActionSelectionAid.ALPHA_NUMBERING,
-                                  selectionAidMethod == ActionSelectionAid.ALPHA_NUMBERING,
-                                  showDisabledActions,
-                                  selectionAidMethod == ActionSelectionAid.MNEMONICS,
-                                  null, -1, null, actionPlace);
+    return createActionGroupPopup(title, actionGroup, dataContext, selectionAidMethod, showDisabledActions, null, -1, null, actionPlace);
   }
 
   @NotNull
@@ -417,13 +430,7 @@ public class PopupFactoryImpl extends JBPopupFactory {
                                           boolean showDisabledActions,
                                           Runnable disposeCallback,
                                           int maxRowCount) {
-    return createActionGroupPopup(title, actionGroup, dataContext,
-                                  selectionAidMethod == ActionSelectionAid.NUMBERING || selectionAidMethod == ActionSelectionAid.ALPHA_NUMBERING,
-                                  selectionAidMethod == ActionSelectionAid.ALPHA_NUMBERING,
-                                  showDisabledActions,
-                                  selectionAidMethod == ActionSelectionAid.MNEMONICS,
-                                  disposeCallback,
-                                  maxRowCount);
+    return createActionGroupPopup(title, actionGroup, dataContext, selectionAidMethod, showDisabledActions, disposeCallback, maxRowCount, null, null);
   }
 
   @NotNull
@@ -445,14 +452,9 @@ public class PopupFactoryImpl extends JBPopupFactory {
     final List<ActionItem> items = makeActionItemsFromActionGroup(actionGroup, dataContext, showNumbers, useAlphaAsNumbers,
                                                                   showDisabledActions, honorActionMnemonics);
     return new ActionPopupStep(items, title, component, showNumbers || honorActionMnemonics && itemsHaveMnemonics(items),
-                               new Condition<AnAction>() {
-                                 @Override
-                                 public boolean value(AnAction action) {
-                                   return defaultOptionIndex >= 0 &&
-                                          defaultOptionIndex < items.size() &&
-                                          items.get(defaultOptionIndex).getAction().equals(action);
-                                 }
-                               }, autoSelectionEnabled, showDisabledActions);
+                               action -> defaultOptionIndex >= 0 &&
+                                      defaultOptionIndex < items.size() &&
+                                      items.get(defaultOptionIndex).getAction().equals(action), autoSelectionEnabled, showDisabledActions);
   }
 
   @NotNull
@@ -672,7 +674,8 @@ public class PopupFactoryImpl extends JBPopupFactory {
     Point p = editor.visualPositionToXY(new VisualPosition(visualPosition.line + 1, visualPosition.column));
 
     final Rectangle visibleArea = editor.getScrollingModel().getVisibleArea();
-    return visibleArea.contains(p) ? p : null;
+    return !visibleArea.contains(p) && !visibleArea.contains(p.x, p.y - editor.getLineHeight())
+           ? null : p;
   }
 
   @Override
@@ -856,12 +859,7 @@ public class PopupFactoryImpl extends JBPopupFactory {
                                    myPreselectActionCondition, false);
       }
       else {
-        myFinalRunnable = new Runnable() {
-          @Override
-          public void run() {
-            performAction(action, eventModifiers);
-          }
-        };
+        myFinalRunnable = () -> performAction(action, eventModifiers);
         return FINAL_CHOICE;
       }
     }
@@ -958,11 +956,11 @@ public class PopupFactoryImpl extends JBPopupFactory {
                               final boolean showDisabled, final boolean honorActionMnemonics)
     {
       myUseAlphaAsNumbers = useAlphaAsNumbers;
-      myListModel = new ArrayList<ActionItem>();
+      myListModel = new ArrayList<>();
       myDataContext = dataContext;
       myShowNumbers = showNumbers;
       myShowDisabled = showDisabled;
-      myAction2presentation = new HashMap<AnAction, Presentation>();
+      myAction2presentation = new HashMap<>();
       myCurrentNumber = 0;
       myPrependWithSeparator = false;
       mySeparatorText = null;
@@ -1169,10 +1167,7 @@ public class PopupFactoryImpl extends JBPopupFactory {
   @NotNull
   @Override
   public BalloonBuilder createHtmlTextBalloonBuilder(@NotNull final String htmlContent, @Nullable final Icon icon, final Color fillColor,
-                                                     @Nullable final HyperlinkListener listener)
-  {
-
-
+                                                     @Nullable final HyperlinkListener listener) {
     JEditorPane text = IdeTooltipManager.initPane(htmlContent, new HintHint().setAwtTooltip(true), null);
 
     if (listener != null) {

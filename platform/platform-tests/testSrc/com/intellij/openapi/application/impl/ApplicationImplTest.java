@@ -17,14 +17,13 @@ package com.intellij.openapi.application.impl;
 
 import com.intellij.concurrency.JobSchedulerImpl;
 import com.intellij.openapi.Disposable;
-import com.intellij.openapi.application.AccessToken;
-import com.intellij.openapi.application.Application;
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.*;
 import com.intellij.openapi.application.ex.ApplicationEx;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.progress.impl.ProgressManagerImpl;
+import com.intellij.openapi.progress.util.ProgressIndicatorBase;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.EmptyRunnable;
 import com.intellij.openapi.util.ThrowableComputable;
@@ -32,6 +31,7 @@ import com.intellij.testFramework.LightPlatformTestCase;
 import com.intellij.testFramework.PlatformTestUtil;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.TimeoutUtil;
+import com.intellij.util.concurrency.Semaphore;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
@@ -41,8 +41,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.locks.StampedLock;
 
 public class ApplicationImplTest extends LightPlatformTestCase {
   @Override
@@ -161,151 +161,7 @@ public class ApplicationImplTest extends LightPlatformTestCase {
     }
   }
 
-
-  public void _testStampLockReadWritePreference() throws Throwable {
-    // take read lock1.
-    // try to take write lock - must wait (because of taken read lock)
-    // try to take read lock2 - must wait (because of write preference - write lock is pending)
-    // release read lock1 - write lock must be taken first
-    // release write - read lock2 must be taken
-
-    StampedLock lock = new StampedLock();
-    AtomicBoolean holdRead1 = new AtomicBoolean(true);
-    AtomicBoolean holdWrite = new AtomicBoolean(true);
-    AtomicBoolean read1Acquired = new AtomicBoolean(false);
-    AtomicBoolean read1Released = new AtomicBoolean(false);
-    AtomicBoolean read2Acquired = new AtomicBoolean(false);
-    AtomicBoolean read2Released = new AtomicBoolean(false);
-    AtomicBoolean writeAcquired = new AtomicBoolean(false);
-    AtomicBoolean writeReleased = new AtomicBoolean(false);
-    Thread readAction1 = new Thread(() -> {
-      try {
-        assertFalse(ApplicationManager.getApplication().isDispatchThread());
-        long stamp = lock.readLock();
-        try {
-          System.out.println("read lock1 acquired");
-          read1Acquired.set(true);
-          while (holdRead1.get() && ok());
-        }
-        finally {
-          lock.unlockRead(stamp);
-          read1Released.set(true);
-          System.out.println("read lock1 released");
-        }
-      }
-      catch (Throwable e) {
-        exception = e;
-        throw new RuntimeException(e);
-      }
-    }, "read lock1");
-    readAction1.start();
-
-    while (!read1Acquired.get() && ok());
-    AtomicBoolean aboutToAcquireWrite = new AtomicBoolean();
-    // readActions2 should try to acquire read action when write action is pending
-    Thread readActions2 = new Thread(() -> {
-      try {
-        assertFalse(ApplicationManager.getApplication().isDispatchThread());
-        while (!aboutToAcquireWrite.get() && ok());
-        TimeoutUtil.sleep(2000); // make sure it called writelock
-        long stamp = lock.readLock();
-        try {
-          System.out.println("read lock2 acquired");
-          read2Acquired.set(true);
-        }
-        finally {
-          lock.unlockRead(stamp);
-          read2Released.set(true);
-          System.out.println("read lock2 released");
-        }
-      }
-      catch (Throwable e) {
-        exception = e;
-        throw new RuntimeException(e);
-      }
-    }, "read lock2");
-    readActions2.start();
-
-    Thread checkThread = new Thread(()->{
-      try {
-        assertFalse(ApplicationManager.getApplication().isDispatchThread());
-        while (!aboutToAcquireWrite.get() && ok());
-        while (!read1Acquired.get() && ok());
-        TimeoutUtil.sleep(2000); // make sure it called writelock
-
-        long timeout = System.currentTimeMillis() + 10000;
-        while (System.currentTimeMillis() < timeout && ok()) {
-          assertTrue(aboutToAcquireWrite.get());
-          assertTrue(read1Acquired.get());
-          assertFalse(read1Released.get());
-          assertFalse(read2Acquired.get());
-          assertFalse(read2Released.get());
-          assertFalse(writeAcquired.get());
-          assertFalse(writeReleased.get());
-
-          assertEquals(0, lock.tryReadLock());
-          assertEquals(0, lock.tryWriteLock());
-        }
-
-        holdRead1.set(false);
-        while (!writeAcquired.get() && ok());
-
-        timeout = System.currentTimeMillis() + 10000;
-        while (System.currentTimeMillis() < timeout && ok()) {
-          assertTrue(aboutToAcquireWrite.get());
-          assertTrue(read1Acquired.get());
-          assertTrue(read1Released.get());
-          assertFalse(read2Acquired.get());
-          assertFalse(read2Released.get());
-          assertTrue(writeAcquired.get());
-          assertFalse(writeReleased.get());
-
-          assertEquals(0, lock.tryReadLock());
-        }
-
-        holdWrite.set(false);
-
-        while (!read2Acquired.get() && ok());
-        TimeoutUtil.sleep(1000); // wait for immediate release of read lock2
-
-        timeout = System.currentTimeMillis() + 10000;
-        while (System.currentTimeMillis() < timeout && ok()) {
-          assertTrue(aboutToAcquireWrite.get());
-          assertTrue(read1Acquired.get());
-          assertTrue(read1Released.get());
-          assertTrue(read2Acquired.get());
-          assertTrue(read2Released.get());
-          assertTrue(writeAcquired.get());
-          assertTrue(writeReleased.get());
-        }
-      }
-      catch (Throwable e) {
-        exception = e;
-        throw new RuntimeException(e);
-      }
-    }, "check");
-    checkThread.start();
-
-    aboutToAcquireWrite.set(true);
-    long stamp = lock.writeLock();
-    try {
-      System.out.println("write lock acquired");
-      writeAcquired.set(true);
-      while (holdWrite.get() && ok());
-    }
-    finally {
-      lock.unlockWrite(stamp);
-      writeReleased.set(true);
-      System.out.println("write lock released");
-    }
-
-    readAction1.join();
-    readActions2.join();
-    checkThread.join();
-    if (exception != null) throw exception;
-  }
-
-  private static long timeOut;
+  private long timeOut;
   private boolean ok() throws Throwable {
     if (exception != null) throw exception;
     if (System.currentTimeMillis() > timeOut) throw new RuntimeException("timeout");
@@ -566,12 +422,8 @@ public class ApplicationImplTest extends LightPlatformTestCase {
         assertFalse(ApplicationManager.getApplication().isDispatchThread());
         for (int i=0; i<100;i++) {
           //noinspection SSBasedInspection
-          SwingUtilities.invokeLater(() -> ApplicationManager.getApplication().runWriteAction(() -> {
-            TimeoutUtil.sleep(20);
-          }));
-          ApplicationManager.getApplication().runReadAction(() -> {
-            TimeoutUtil.sleep(20);
-          });
+          SwingUtilities.invokeLater(() -> ApplicationManager.getApplication().runWriteAction(() -> TimeoutUtil.sleep(20)));
+          ApplicationManager.getApplication().runReadAction(() -> TimeoutUtil.sleep(20));
         }
       }
       catch (Exception e) {
@@ -673,5 +525,22 @@ public class ApplicationImplTest extends LightPlatformTestCase {
         thread.join();
       }
     }).cpuBound().usesAllCPUCores().assertTiming();
+  }
+
+  public void testCheckCanceledReadAction() throws Exception {
+    Semaphore mayStartReadAction = new Semaphore();
+    mayStartReadAction.down();
+
+    ProgressIndicatorBase progress = new ProgressIndicatorBase();
+    Future<?> future = ApplicationManager.getApplication().executeOnPooledThread(() -> ProgressManager.getInstance().runProcess(() -> {
+      mayStartReadAction.waitFor();
+      ReadAction.run(() -> fail("should be canceled before entering read action"));
+    }, progress));
+
+    WriteAction.run(() -> {
+      mayStartReadAction.up();
+      progress.cancel();
+      future.get(1, TimeUnit.SECONDS);
+    });
   }
 }

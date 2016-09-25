@@ -116,10 +116,6 @@ public abstract class PlatformTestCase extends UsefulTestCase implements DataPro
   private static boolean ourPlatformPrefixInitialized;
   private static Set<VirtualFile> ourEternallyLivingFilesCache;
 
-  static {
-    Logger.setFactory(TestLoggerFactory.class);
-  }
-
   /**
    * If a temp directory is reused from some previous test run, there might be cached children in its VFS.
    * Ensure they're removed
@@ -708,12 +704,8 @@ public abstract class PlatformTestCase extends UsefulTestCase implements DataPro
     }
   }
 
-  protected boolean isRunInEdt() {
-    return true;
-  }
-
   protected void runBareRunnable(ThrowableRunnable<Throwable> runnable) throws Throwable {
-    if (isRunInEdt()) {
+    if (runInDispatchThread()) {
       EdtTestUtil.runInEdtAndWait(runnable);
     }
     else {
@@ -897,7 +889,7 @@ public abstract class PlatformTestCase extends UsefulTestCase implements DataPro
     VfsTestUtil.deleteFile(vFile1);
   }
 
-  protected static void move(@NotNull final VirtualFile vFile1, @NotNull final VirtualFile newFile) {
+  public static void move(@NotNull final VirtualFile vFile1, @NotNull final VirtualFile newFile) {
     new WriteCommandAction.Simple(null) {
       @Override
       protected void run() throws Throwable {

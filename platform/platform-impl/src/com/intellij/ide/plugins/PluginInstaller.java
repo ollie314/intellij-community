@@ -30,10 +30,10 @@ import com.intellij.openapi.updateSettings.impl.UpdateSettings;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.ui.GuiUtils;
 import com.intellij.util.ArrayUtil;
-import com.intellij.util.Function;
 import com.intellij.util.SmartList;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.io.ZipUtil;
+import com.intellij.util.ui.UIUtil;
 import gnu.trove.THashSet;
 import org.jetbrains.annotations.NotNull;
 
@@ -59,7 +59,7 @@ public class PluginInstaller {
                                          List<PluginId> allPlugins,
                                          @NotNull ProgressIndicator indicator) {
     updateUrls(pluginsToInstall, indicator);
-    Set<PluginNode> dependant = new THashSet<PluginNode>();
+    Set<PluginNode> dependant = new THashSet<>();
     boolean install = prepareToInstall(pluginsToInstall, allPlugins, dependant, indicator);
     for (PluginNode node : dependant) {
       if (!pluginsToInstall.contains(node)) {
@@ -111,7 +111,7 @@ public class PluginInstaller {
                                           List<PluginId> allPlugins,
                                           Set<PluginNode> installedDependant,
                                           @NotNull ProgressIndicator indicator) {
-    List<PluginId> pluginIds = new SmartList<PluginId>();
+    List<PluginId> pluginIds = new SmartList<>();
     for (PluginNode pluginNode : pluginsToInstall) {
       pluginIds.add(pluginNode.getPluginId());
     }
@@ -143,8 +143,8 @@ public class PluginInstaller {
     if (pluginNode.getDepends() != null && pluginNode.getDepends().size() > 0) {
       // prepare plugins list for install
       final PluginId[] optionalDependentPluginIds = pluginNode.getOptionalDependentPluginIds();
-      final List<PluginNode> depends = new ArrayList<PluginNode>();
-      final List<PluginNode> optionalDeps = new ArrayList<PluginNode>();
+      final List<PluginNode> depends = new ArrayList<>();
+      final List<PluginNode> optionalDeps = new ArrayList<>();
       for (int i = 0; i < pluginNode.getDepends().size(); i++) {
         PluginId depPluginId = pluginNode.getDepends().get(i);
         if (PluginManager.isPluginInstalled(depPluginId) || PluginManagerCore.isModuleDependency(depPluginId) ||
@@ -171,19 +171,11 @@ public class PluginInstaller {
       if (depends.size() > 0) { // has something to install prior installing the plugin
         final boolean[] proceed = new boolean[1];
         try {
-          GuiUtils.runOrInvokeAndWait(new Runnable() {
-            @Override
-            public void run() {
-              String title = IdeBundle.message("plugin.manager.dependencies.detected.title");
-              String deps = StringUtil.join(depends, new Function<PluginNode, String>() {
-                @Override
-                public String fun(PluginNode node) {
-                  return node.getName();
-                }
-              }, ", ");
-              String message = IdeBundle.message("plugin.manager.dependencies.detected.message", depends.size(), deps);
-              proceed[0] = Messages.showYesNoDialog(message, title, Messages.getWarningIcon()) == Messages.YES;
-            }
+          GuiUtils.runOrInvokeAndWait(() -> {
+            String title = IdeBundle.message("plugin.manager.dependencies.detected.title");
+            String deps = StringUtil.join(depends, node -> node.getName(), ", ");
+            String message = IdeBundle.message("plugin.manager.dependencies.detected.message", depends.size(), deps);
+            proceed[0] = Messages.showYesNoDialog(message, title, Messages.getWarningIcon()) == Messages.YES;
           });
         }
         catch (Exception e) {
@@ -197,19 +189,11 @@ public class PluginInstaller {
       if (optionalDeps.size() > 0) {
         final boolean[] proceed = new boolean[1];
         try {
-          GuiUtils.runOrInvokeAndWait(new Runnable() {
-            @Override
-            public void run() {
-              String title = IdeBundle.message("plugin.manager.dependencies.detected.title");
-              String deps = StringUtil.join(optionalDeps, new Function<PluginNode, String>() {
-                @Override
-                public String fun(PluginNode node) {
-                  return node.getName();
-                }
-              }, ", ");
-              String message = IdeBundle.message("plugin.manager.optional.dependencies.detected.message", optionalDeps.size(), deps);
-              proceed[0] = Messages.showYesNoDialog(message, title, Messages.getWarningIcon()) == Messages.YES;
-            }
+          GuiUtils.runOrInvokeAndWait(() -> {
+            String title = IdeBundle.message("plugin.manager.dependencies.detected.title");
+            String deps = StringUtil.join(optionalDeps, node -> node.getName(), ", ");
+            String message = IdeBundle.message("plugin.manager.optional.dependencies.detected.message", optionalDeps.size(), deps);
+            proceed[0] = Messages.showYesNoDialog(message, title, Messages.getWarningIcon()) == Messages.YES;
           });
         }
         catch (Exception e) {
@@ -248,6 +232,8 @@ public class PluginInstaller {
         if (pluginDescriptor != null) {
           StartupActionScriptManager.ActionCommand deleteOld = new StartupActionScriptManager.DeleteCommand(pluginDescriptor.getPath());
           StartupActionScriptManager.addActionCommand(deleteOld);
+
+          fireState(pluginDescriptor, false);
         }
         else {
           PluginManagerMain.LOG.error("Plugin not found: " + pluginId);
@@ -256,7 +242,10 @@ public class PluginInstaller {
     }
   }
 
-  public static void install(final File fromFile, final String pluginName, boolean deleteFromFile) throws IOException {
+  public static void install(@NotNull File fromFile,
+                             @NotNull String pluginName,
+                             boolean deleteFromFile,
+                             @NotNull IdeaPluginDescriptor descriptor) throws IOException {
     //noinspection HardCodedStringLiteral
     if (fromFile.getName().endsWith(".jar")) {
       // add command to copy file to the IDEA/plugins path
@@ -282,6 +271,38 @@ public class PluginInstaller {
     if (deleteFromFile) {
       StartupActionScriptManager.ActionCommand deleteTemp = new StartupActionScriptManager.DeleteCommand(fromFile);
       StartupActionScriptManager.addActionCommand(deleteTemp);
+    }
+
+    fireState(descriptor, true);
+  }
+
+  private static List<PluginStateListener> myStateListeners;
+
+  public static void addStateListener(@NotNull PluginStateListener listener) {
+    if (myStateListeners == null) {
+      myStateListeners = new ArrayList<>();
+    }
+    myStateListeners.add(listener);
+  }
+
+  public static void removeStateListener(@NotNull PluginStateListener listener) {
+    if (myStateListeners != null) {
+      myStateListeners.remove(listener);
+    }
+  }
+
+  private static void fireState(@NotNull IdeaPluginDescriptor descriptor, boolean install) {
+    if (myStateListeners != null) {
+      UIUtil.invokeLaterIfNeeded(() -> {
+        for (PluginStateListener listener : myStateListeners) {
+          if (install) {
+            listener.install(descriptor);
+          }
+          else {
+            listener.uninstall(descriptor);
+          }
+        }
+      });
     }
   }
 }

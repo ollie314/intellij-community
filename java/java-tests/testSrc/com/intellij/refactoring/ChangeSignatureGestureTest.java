@@ -112,6 +112,7 @@ public class ChangeSignatureGestureTest extends LightCodeInsightFixtureTestCase 
   public void testAddParamChangeReturnType() {
     doTest(() -> {
       myFixture.type("int param");
+      PsiDocumentManager.getInstance(getProject()).commitAllDocuments();
       CaretModel model = myFixture.getEditor().getCaretModel();
       PsiElement element = myFixture.getElementAtCaret();
       PsiMethod method = PsiTreeUtil.getParentOfType(element, PsiMethod.class, false);
@@ -168,7 +169,13 @@ public class ChangeSignatureGestureTest extends LightCodeInsightFixtureTestCase 
   }
 
   public void testDeleteParamInSuperUsed() {
-    doDeleteTest();
+    try {
+      BaseRefactoringProcessor.ConflictsInTestsException.setTestIgnore(true);
+      doDeleteTest();
+    }
+    finally {
+      BaseRefactoringProcessor.ConflictsInTestsException.setTestIgnore(false);
+    }
   }
 
   private void doDeleteTest() {

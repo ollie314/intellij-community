@@ -28,6 +28,7 @@ import com.intellij.debugger.ui.tree.DebuggerTreeNode;
 import com.intellij.debugger.ui.tree.ValueDescriptor;
 import com.intellij.debugger.ui.tree.render.*;
 import com.intellij.debugger.ui.tree.render.Renderer;
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.components.State;
@@ -126,12 +127,8 @@ public class NodeRendererSettings implements PersistentStateComponent<Element> {
     return DebuggerUtilsEx.elementsEqual(getState(), ((NodeRendererSettings)o).getState());
   }
 
-  public void addListener(NodeRendererSettingsListener listener) {
-    myDispatcher.addListener(listener);
-  }
-
-  public void removeListener(NodeRendererSettingsListener listener) {
-    myDispatcher.removeListener(listener);
+  public void addListener(NodeRendererSettingsListener listener, Disposable disposable) {
+    myDispatcher.addListener(listener, disposable);
   }
 
   @SuppressWarnings({"HardCodedStringLiteral"})
@@ -266,10 +263,6 @@ public class NodeRendererSettings implements PersistentStateComponent<Element> {
     return allRenderers;
   }
 
-  public boolean isBase(final Renderer renderer) {
-    return renderer == myPrimitiveRenderer || renderer == myArrayRenderer || renderer == myClassRenderer;
-  }
-
   public Renderer readRenderer(Element root) throws InvalidDataException {
     if (root == null) {
       return null;
@@ -331,7 +324,18 @@ public class NodeRendererSettings implements PersistentStateComponent<Element> {
     else if(rendererId.equals(CompoundNodeRenderer.UNIQUE_ID) || rendererId.equals(REFERENCE_RENDERER)) {
       return createCompoundReferenceRenderer("unnamed", CommonClassNames.JAVA_LANG_OBJECT, null, null);
     }
+    else if (rendererId.equals(CompoundTypeRenderer.UNIQUE_ID)) {
+      return createCompoundTypeRenderer("unnamed", CommonClassNames.JAVA_LANG_OBJECT, null, null);
+    }
     return null;
+  }
+
+  public CompoundTypeRenderer createCompoundTypeRenderer(
+    @NonNls final String rendererName, @NonNls final String className, final ValueLabelRenderer labelRenderer, final ChildrenRenderer childrenRenderer
+  ) {
+    CompoundTypeRenderer renderer = new CompoundTypeRenderer(this, rendererName, labelRenderer, childrenRenderer);
+    renderer.setClassName(className);
+    return renderer;
   }
 
   public CompoundReferenceRenderer createCompoundReferenceRenderer(
@@ -352,7 +356,7 @@ public class NodeRendererSettings implements PersistentStateComponent<Element> {
     return childrenRenderer;
   }
 
-  private static EnumerationChildrenRenderer createEnumerationChildrenRenderer(@NonNls String[][] expressions) {
+  public static EnumerationChildrenRenderer createEnumerationChildrenRenderer(@NonNls String[][] expressions) {
     final EnumerationChildrenRenderer childrenRenderer = new EnumerationChildrenRenderer();
     if (expressions != null && expressions.length > 0) {
       final ArrayList<Pair<String, TextWithImports>> childrenList = new ArrayList<>(expressions.length);
@@ -386,11 +390,7 @@ public class NodeRendererSettings implements PersistentStateComponent<Element> {
   }
 
   private static class MapEntryLabelRenderer extends ReferenceRenderer implements ValueLabelRenderer{
-    private static final Computable<String> NULL_LABEL_COMPUTABLE = new Computable<String>() {
-      public String compute() {
-        return "null";
-      }
-    };
+    private static final Computable<String> NULL_LABEL_COMPUTABLE = () -> "null";
 
     private final MyCachedEvaluator myKeyExpression = new MyCachedEvaluator();
     private final MyCachedEvaluator myValueExpression = new MyCachedEvaluator();
@@ -426,11 +426,9 @@ public class NodeRendererSettings implements PersistentStateComponent<Element> {
       if (eval != null) {
         final WatchItemDescriptor evalDescriptor = new WatchItemDescriptor(evaluationContext.getProject(), evaluator.getReferenceExpression(), eval);
         evalDescriptor.setShowIdLabel(false);
-        return new Pair<>(new Computable<String>() {
-          public String compute() {
-            evalDescriptor.updateRepresentation((EvaluationContextImpl)evaluationContext, listener);
-            return evalDescriptor.getValueLabel();
-          }
+        return new Pair<>(() -> {
+          evalDescriptor.updateRepresentation((EvaluationContextImpl)evaluationContext, listener);
+          return evalDescriptor.getValueLabel();
         }, evalDescriptor);
       }
       return new Pair<>(NULL_LABEL_COMPUTABLE, null);

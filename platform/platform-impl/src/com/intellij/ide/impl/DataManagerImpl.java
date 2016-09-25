@@ -19,6 +19,7 @@ import com.intellij.ide.DataManager;
 import com.intellij.ide.IdeEventQueue;
 import com.intellij.ide.impl.dataRules.*;
 import com.intellij.openapi.actionSystem.*;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
@@ -51,10 +52,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class DataManagerImpl extends DataManager {
   private static final Logger LOG = Logger.getInstance("#com.intellij.ide.impl.DataManagerImpl");
-  private final ConcurrentMap<String, GetDataRule> myDataConstantToRuleMap = new ConcurrentHashMap<String, GetDataRule>();
+  private final ConcurrentMap<String, GetDataRule> myDataConstantToRuleMap = new ConcurrentHashMap<>();
   private WindowManagerEx myWindowManager;
 
   public DataManagerImpl() {
@@ -83,7 +85,7 @@ public class DataManagerImpl extends DataManager {
 
       GetDataRule dataRule = getDataRule(dataId);
       if (dataRule != null) {
-        final Set<String> ids = alreadyComputedIds == null ? new THashSet<String>() : alreadyComputedIds;
+        final Set<String> ids = alreadyComputedIds == null ? new THashSet<>() : alreadyComputedIds;
         ids.add(dataId);
         data = dataRule.getData(new DataProvider() {
           @Override
@@ -209,16 +211,22 @@ public class DataManagerImpl extends DataManager {
 
   @Override
   public AsyncResult<DataContext> getDataContextFromFocus() {
-    final AsyncResult<DataContext> context = new AsyncResult<DataContext>();
-
-    IdeFocusManager.getGlobalInstance().doWhenFocusSettlesDown(new Runnable() {
-      @Override
-      public void run() {
-        context.setDone(getDataContext());
-      }
-    });
-
+    AsyncResult<DataContext> context = new AsyncResult<>();
+    doWhenFocusSettlesDownInModality(context, ModalityState.current());
     return context;
+  }
+
+  private void doWhenFocusSettlesDownInModality(AsyncResult<DataContext> context, ModalityState modality) {
+    AtomicBoolean immediate = new AtomicBoolean(true);
+    IdeFocusManager.getGlobalInstance().doWhenFocusSettlesDown(() -> {
+      if (immediate.get()) {
+        context.setDone(getDataContext());
+        return;
+      }
+
+      ApplicationManager.getApplication().invokeLater(() -> doWhenFocusSettlesDownInModality(context, modality), modality);
+    });
+    immediate.set(false);
   }
 
   public DataContext getDataContextTest(Component component) {
@@ -325,7 +333,7 @@ public class DataManagerImpl extends DataManager {
     public static final NullResult INSTANCE = new NullResult();
   }
   
-  private static final Set<String> ourSafeKeys = new HashSet<String>(Arrays.asList(
+  private static final Set<String> ourSafeKeys = new HashSet<>(Arrays.asList(
     CommonDataKeys.PROJECT.getName(),
     CommonDataKeys.EDITOR.getName(),
     PlatformDataKeys.IS_MODAL_CONTEXT.getName(),
@@ -340,11 +348,11 @@ public class DataManagerImpl extends DataManager {
     // that have DataContext as a field.
     private final Reference<Component> myRef;
     private Map<Key, Object> myUserData;
-    private final Map<String, Object> myCachedData = new WeakValueHashMap<String, Object>();
+    private final Map<String, Object> myCachedData = new WeakValueHashMap<>();
 
     public MyDataContext(final Component component) {
       myEventCount = -1;
-      myRef = component == null ? null : new WeakReference<Component>(component);
+      myRef = component == null ? null : new WeakReference<>(component);
     }
 
     public void setEventCount(int eventCount, Object caller) {
@@ -391,7 +399,7 @@ public class DataManagerImpl extends DataManager {
       if (PlatformDataKeys.MODALITY_STATE.is(dataId)) {
         return component != null ? ModalityState.stateForComponent(component) : ModalityState.NON_MODAL;
       }
-      if (CommonDataKeys.EDITOR.is(dataId)) {
+      if (CommonDataKeys.EDITOR.is(dataId) || CommonDataKeys.HOST_EDITOR.is(dataId)) {
         Editor editor = (Editor)((DataManagerImpl)DataManager.getInstance()).getData(dataId, component);
         return validateEditor(editor);
       }
@@ -418,7 +426,7 @@ public class DataManagerImpl extends DataManager {
     private Map<Key, Object> getOrCreateMap() {
       Map<Key, Object> userData = myUserData;
       if (userData == null) {
-        myUserData = userData = new WeakValueHashMap<Key, Object>();
+        myUserData = userData = new WeakValueHashMap<>();
       }
       return userData;
     }

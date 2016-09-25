@@ -43,7 +43,6 @@ public abstract class LightPlatformCodeInsightFixtureTestCase extends UsefulTest
   public LightPlatformCodeInsightFixtureTestCase() { }
 
   /** @deprecated call {@link #LightPlatformCodeInsightFixtureTestCase()} instead (to be removed in IDEA 16) */
-  @SuppressWarnings("unused")
   protected LightPlatformCodeInsightFixtureTestCase(boolean autodetect) { }
 
   protected CodeInsightTestFixture myFixture;
@@ -122,11 +121,11 @@ public abstract class LightPlatformCodeInsightFixtureTestCase extends UsefulTest
   }
 
   protected boolean isWriteActionRequired() {
-    return true;
+    return false;
   }
 
   protected void doRunTests() throws Throwable {
-    LightPlatformCodeInsightFixtureTestCase.super.runTest();
+    super.runTest();
   }
 
   protected Project getProject() {

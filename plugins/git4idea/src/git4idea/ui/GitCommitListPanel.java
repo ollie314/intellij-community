@@ -16,7 +16,10 @@
 package git4idea.ui;
 
 import com.intellij.dvcs.DvcsUtil;
-import com.intellij.openapi.actionSystem.*;
+import com.intellij.openapi.actionSystem.AnAction;
+import com.intellij.openapi.actionSystem.DataKey;
+import com.intellij.openapi.actionSystem.DataSink;
+import com.intellij.openapi.actionSystem.TypeSafeDataProvider;
 import com.intellij.openapi.vcs.VcsDataKeys;
 import com.intellij.openapi.vcs.changes.Change;
 import com.intellij.openapi.vcs.changes.committed.CommittedChangesTreeBrowser;
@@ -54,7 +57,7 @@ public class GitCommitListPanel extends JPanel implements TypeSafeDataProvider {
   public GitCommitListPanel(@NotNull List<GitCommit> commits, @Nullable String emptyText) {
     myCommits = commits;
 
-    myTable = new TableView<GitCommit>();
+    myTable = new TableView<>();
     updateModel();
     myTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
     myTable.setStriped(true);
@@ -87,7 +90,7 @@ public class GitCommitListPanel extends JPanel implements TypeSafeDataProvider {
       public void valueChanged(final ListSelectionEvent e) {
         List<GitCommit> commits = myTable.getSelectedObjects();
 
-        final List<Change> changes = new ArrayList<Change>();
+        final List<Change> changes = new ArrayList<>();
         // We need changes in asc order for zipChanges, and they are in desc order in Table
         ListIterator<GitCommit> iterator = commits.listIterator(commits.size());
         while (iterator.hasPrevious()) {
@@ -138,7 +141,7 @@ public class GitCommitListPanel extends JPanel implements TypeSafeDataProvider {
   }
 
   private void updateModel() {
-    myTable.setModelAndUpdateColumns(new ListTableModel<GitCommit>(generateColumnsInfo(myCommits), myCommits, 0));
+    myTable.setModelAndUpdateColumns(new ListTableModel<>(generateColumnsInfo(myCommits), myCommits, 0));
   }
 
   @NotNull

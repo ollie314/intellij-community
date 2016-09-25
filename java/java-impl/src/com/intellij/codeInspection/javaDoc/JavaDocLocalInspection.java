@@ -10,7 +10,6 @@ import com.intellij.codeInspection.*;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Condition;
 import com.intellij.pom.Navigatable;
 import com.intellij.profile.codeInspection.InspectionProfileManager;
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager;
@@ -68,7 +67,7 @@ public class JavaDocLocalInspection extends JavaDocLocalInspectionBase {
       super(new GridBagLayout());
       GridBagConstraints gc =
         new GridBagConstraints(0, GridBagConstraints.RELATIVE, 2, 1, 1, 0, GridBagConstraints.NORTH, GridBagConstraints.HORIZONTAL,
-                               new Insets(0, 0, 0, 0), 0, 0);
+                               JBUI.emptyInsets(), 0, 0);
 
       String title = InspectionsBundle.message("inspection.javadoc.dialog.title");
       FieldPanel additionalTagsPanel = new FieldPanel(InspectionsBundle.message("inspection.javadoc.label.text"), title, null, null);
@@ -336,15 +335,10 @@ public class JavaDocLocalInspection extends JavaDocLocalInspectionBase {
       PsiElement parent = element == null ? null : element.getParent();
       if (!(parent instanceof PsiDocComment)) return null;
       final PsiDocComment docComment = (PsiDocComment)parent;
-      final PsiDocCommentOwner owner = docComment.getOwner();
+      final PsiJavaDocumentedElement owner = docComment.getOwner();
       if (!(owner instanceof PsiMethod)) return null;
       PsiParameter[] parameters = ((PsiMethod)owner).getParameterList().getParameters();
-      PsiParameter myParam = ContainerUtil.find(parameters, new Condition<PsiParameter>() {
-        @Override
-        public boolean value(PsiParameter psiParameter) {
-          return myName.equals(psiParameter.getName());
-        }
-      });
+      PsiParameter myParam = ContainerUtil.find(parameters, psiParameter -> myName.equals(psiParameter.getName()));
       if (myParam == null) return null;
 
       PsiDocTag[] tags = docComment.findTagsByName("param");
@@ -403,7 +397,7 @@ public class JavaDocLocalInspection extends JavaDocLocalInspectionBase {
     @Override
     public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
       myInspection.registerAdditionalTag(myTag);
-      InspectionProfile profile = InspectionProjectProfileManager.getInstance(project).getInspectionProfile();
+      InspectionProfile profile = InspectionProjectProfileManager.getInstance(project).getCurrentProfile();
       InspectionProfileManager.getInstance().fireProfileChanged(profile);
     }
 

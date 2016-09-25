@@ -28,6 +28,8 @@ import com.intellij.openapi.application.ex.ApplicationInfoEx;
 import com.intellij.openapi.components.ApplicationComponent;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.options.ShowSettingsUtil;
+import com.intellij.openapi.progress.ProgressIndicator;
+import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.updateSettings.UpdateStrategyCustomization;
 import com.intellij.openapi.updateSettings.impl.pluginsAdvertisement.PluginsAdvertiser;
 import com.intellij.openapi.util.BuildNumber;
@@ -48,17 +50,7 @@ public class UpdateCheckerComponent implements ApplicationComponent {
   private static final long CHECK_INTERVAL = DateFormatUtil.DAY;
 
   private final Alarm myCheckForUpdatesAlarm = new Alarm(Alarm.ThreadToUse.SWING_THREAD);
-  private final Runnable myCheckRunnable = new Runnable() {
-    @Override
-    public void run() {
-      UpdateChecker.updateAndShowResult().doWhenDone(new Runnable() {
-        @Override
-        public void run() {
-          queueNextCheck(CHECK_INTERVAL);
-        }
-      });
-    }
-  };
+  private final Runnable myCheckRunnable = () -> UpdateChecker.updateAndShowResult().doWhenDone(() -> queueNextCheck(CHECK_INTERVAL));
   private final UpdateSettings mySettings;
 
   public UpdateCheckerComponent(@NotNull Application app, @NotNull UpdateSettings settings) {
@@ -66,6 +58,7 @@ public class UpdateCheckerComponent implements ApplicationComponent {
     updateDefaultChannel();
     checkSecureConnection(app);
     scheduleOnStartCheck(app);
+    cleanupPatch();
   }
 
   private void updateDefaultChannel() {
@@ -99,12 +92,7 @@ public class UpdateCheckerComponent implements ApplicationComponent {
           @Override
           protected void hyperlinkActivated(@NotNull Notification notification, @NotNull HyperlinkEvent e) {
             notification.expire();
-            app.invokeLater(new Runnable() {
-              @Override
-              public void run() {
-                ShowSettingsUtil.getInstance().showSettingsDialog(null, UpdateSettingsConfigurable.class);
-              }
-            }, ModalityState.NON_MODAL);
+            app.invokeLater(() -> ShowSettingsUtil.getInstance().showSettingsDialog(null, UpdateSettingsConfigurable.class), ModalityState.NON_MODAL);
           }
         }).notify(null);
     }
@@ -130,6 +118,15 @@ public class UpdateCheckerComponent implements ApplicationComponent {
         }
       }
     });
+  }
+
+  private static void cleanupPatch() {
+    new Task.Backgroundable(null, IdeBundle.message("update.cleaning.patch.progress"), false) {
+      @Override
+      public void run(@NotNull ProgressIndicator indicator) {
+        UpdateInstaller.cleanupPatch();
+      }
+    }.queue();
   }
 
   private void queueNextCheck(long interval) {

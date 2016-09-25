@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -201,7 +201,8 @@ public class IntroduceConstantHandler extends BaseExpressionToFieldHandler {
     if (editor != null) {
       final TextAttributes attributes = EditorColorsManager.getInstance().getGlobalScheme().getAttributes(EditorColors.SEARCH_RESULT_ATTRIBUTES);
       final TextRange textRange = errorElement.getTextRange();
-      HighlightManager.getInstance(project).addRangeHighlight(editor, textRange.getStartOffset(), textRange.getEndOffset(), attributes, true, new ArrayList<RangeHighlighter>());
+      HighlightManager.getInstance(project).addRangeHighlight(editor, textRange.getStartOffset(), textRange.getEndOffset(), attributes, true,
+                                                              new ArrayList<>());
     }
   }
 
@@ -228,8 +229,9 @@ public class IntroduceConstantHandler extends BaseExpressionToFieldHandler {
   }
 
   private static class IsStaticFinalInitializerExpression extends ClassMemberReferencesVisitor {
-    private PsiElement myElementReference = null;
+    private PsiElement myElementReference;
     private final PsiExpression myInitializer;
+    private boolean myCheckThrowables = true;
 
     public IsStaticFinalInitializerExpression(PsiClass aClass, PsiExpression initializer) {
       super(aClass);
@@ -251,10 +253,23 @@ public class IntroduceConstantHandler extends BaseExpressionToFieldHandler {
     @Override
     public void visitCallExpression(PsiCallExpression callExpression) {
       super.visitCallExpression(callExpression);
+      if (!myCheckThrowables) return;
       final List<PsiClassType> checkedExceptions = ExceptionUtil.getThrownCheckedExceptions(new PsiElement[]{callExpression});
       if (!checkedExceptions.isEmpty()) {
         myElementReference = callExpression;
       }
+    }
+
+    @Override
+    public void visitClass(PsiClass aClass) {
+      myCheckThrowables = false;
+      super.visitClass(aClass);
+    }
+
+    @Override
+    public void visitLambdaExpression(PsiLambdaExpression expression) {
+      myCheckThrowables = false;
+      super.visitLambdaExpression(expression);
     }
 
     protected void visitClassMemberReferenceElement(PsiMember classMember, PsiJavaCodeReferenceElement classMemberReference) {

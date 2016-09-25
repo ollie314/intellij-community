@@ -31,7 +31,9 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.ex.ComboBoxAction;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.actions.EditorActionUtil;
+import com.intellij.openapi.editor.event.DocumentListener;
 import com.intellij.openapi.editor.event.EditorMouseEvent;
 import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.project.DumbAware;
@@ -54,7 +56,7 @@ public class TextDiffViewerUtil {
 
   @NotNull
   public static List<AnAction> createEditorPopupActions() {
-    List<AnAction> result = new ArrayList<AnAction>();
+    List<AnAction> result = new ArrayList<>();
     result.add(ActionManager.getInstance().getAction("CompareClipboardWithSelection"));
 
     result.add(Separator.getInstance());
@@ -98,6 +100,14 @@ public class TextDiffViewerUtil {
     }
 
     return result;
+  }
+
+  public static void installDocumentListeners(@NotNull DocumentListener listener,
+                                              @NotNull List<Document> documents,
+                                              @NotNull Disposable disposable) {
+    for (Document document : ContainerUtil.newHashSet(documents)) {
+      document.addDocumentListener(listener, disposable);
+    }
   }
 
   public static void checkDifferentDocuments(@NotNull ContentDiffRequest request) {
@@ -154,10 +164,6 @@ public class TextDiffViewerUtil {
   public static abstract class ComboBoxSettingAction<T> extends ComboBoxAction implements DumbAware {
     private DefaultActionGroup myChildren;
 
-    public ComboBoxSettingAction() {
-      setEnabledInModalContext(true);
-    }
-
     @Override
     public void update(AnActionEvent e) {
       Presentation presentation = e.getPresentation();
@@ -202,7 +208,6 @@ public class TextDiffViewerUtil {
 
       public MyAction(@NotNull T setting) {
         super(getText(setting));
-        setEnabledInModalContext(true);
         mySetting = setting;
       }
 
@@ -293,7 +298,6 @@ public class TextDiffViewerUtil {
     public ToggleAutoScrollAction(@NotNull TextDiffSettings settings) {
       super("Synchronize Scrolling", AllIcons.Actions.SynchronizeScrolling);
       mySettings = settings;
-      setEnabledInModalContext(true);
     }
 
     @Override
@@ -313,7 +317,6 @@ public class TextDiffViewerUtil {
     public ToggleExpandByDefaultAction(@NotNull TextDiffSettings settings) {
       super("Collapse unchanged fragments", AllIcons.Actions.Collapseall);
       mySettings = settings;
-      setEnabledInModalContext(true);
     }
 
     @Override
@@ -345,7 +348,6 @@ public class TextDiffViewerUtil {
       super("Disable editing", null, AllIcons.Nodes.Padlock);
       myContext = context;
       mySettings = getTextSettings(context);
-      setEnabledInModalContext(true);
     }
 
     protected void applyDefaults() {

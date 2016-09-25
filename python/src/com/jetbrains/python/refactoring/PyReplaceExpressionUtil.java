@@ -54,7 +54,7 @@ public class PyReplaceExpressionUtil implements PyElementTypes {
    * </ul>
    */
   public static final Key<Pair<PsiElement, TextRange>> SELECTION_BREAKS_AST_NODE =
-    new Key<Pair<PsiElement, TextRange>>("python.selection.breaks.ast.node");
+    new Key<>("python.selection.breaks.ast.node");
 
   private PyReplaceExpressionUtil() {}
 
@@ -236,12 +236,7 @@ public class PyReplaceExpressionUtil implements PyElementTypes {
     final StringBuilder builder = new StringBuilder();
     builder.append("{");
     final PyKeyValueExpression[] elements = dict.getElements();
-    builder.append(StringUtil.join(elements, new Function<PyKeyValueExpression, String>() {
-      @Override
-      public String fun(PyKeyValueExpression expression) {
-        return expression.getText();
-      }
-    }, ","));
+    builder.append(StringUtil.join(elements, expression -> expression.getText(), ","));
     if (elements.length > 0) {
       builder.append(",");
     }

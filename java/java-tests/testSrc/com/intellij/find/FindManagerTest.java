@@ -790,6 +790,20 @@ public class FindManagerTest extends DaemonAnalyzerTestCase {
     assertSize(1, findUsages(findModel));
   }
 
+  public void testRegExpInString() {
+    FindModel findModel = FindManagerTestUtils.configureFindModel("^*$");
+
+    String prefix = "<foo bar=\"";
+    String text = prefix + "\" />";
+
+    findModel.setSearchContext(FindModel.SearchContext.IN_STRING_LITERALS);
+    findModel.setRegularExpressions(true);
+    LightVirtualFile file = new LightVirtualFile("A.xml", text);
+
+    FindResult findResult = myFindManager.findString(text, prefix.length(), findModel, file);
+    assertTrue(findResult.isStringFound());
+  }
+
   public void testFindExceptComments() {
     FindModel findModel = FindManagerTestUtils.configureFindModel("done");
 
@@ -906,21 +920,34 @@ public class FindManagerTest extends DaemonAnalyzerTestCase {
     runAsyncTest("/*" + text + "*/", findModel);
   }
 
+  public void testProperInsensitiveSearchForRegExp() throws Exception {
+    createFile("a.java", "Цитрус цитрус");
+    FindModel findModel = FindManagerTestUtils.configureFindModel("цитрус");
+    findModel.setRegularExpressions(true);
+    assertSize(2, findUsages(findModel));
+  }
+
+  public void testProperHandlingOfEmptyLinesWhenReplacingWithRegExp() throws Exception {
+    doTestRegexpReplace(
+      "foo\n\n\n",
+      "^",
+      "// ",
+      "// foo\n// \n// \n");
+  }
+
   private void runAsyncTest(String text, FindModel findModel) throws InterruptedException {
     final Ref<FindResult> result = new Ref<>();
     final CountDownLatch progressStarted = new CountDownLatch(1);
     final ProgressIndicatorBase progressIndicatorBase = new ProgressIndicatorBase();
-    final Thread thread = new Thread(() -> {
-      ProgressManager.getInstance().runProcess(() -> {
-        try {
-          progressStarted.countDown();
-          result.set(myFindManager.findString(text, 0, findModel, new LightVirtualFile("foo.java")));
-        }
-        catch (ProcessCanceledException ex) {
-          result.set(new FindResultImpl());
-        }
-      }, progressIndicatorBase);
-    }, "runAsyncTest");
+    final Thread thread = new Thread(() -> ProgressManager.getInstance().runProcess(() -> {
+      try {
+        progressStarted.countDown();
+        result.set(myFindManager.findString(text, 0, findModel, new LightVirtualFile("foo.java")));
+      }
+      catch (ProcessCanceledException ex) {
+        result.set(new FindResultImpl());
+      }
+    }, progressIndicatorBase), "runAsyncTest");
     thread.start();
 
     progressStarted.await();

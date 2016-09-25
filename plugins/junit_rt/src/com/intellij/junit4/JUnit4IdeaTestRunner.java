@@ -15,9 +15,10 @@
  */
 package com.intellij.junit4;
 
-import com.intellij.rt.execution.junit.*;
-import com.intellij.rt.execution.junit.segments.OutputObjectRegistry;
-import com.intellij.rt.execution.junit.segments.PacketProcessor;
+import com.intellij.rt.execution.junit.ComparisonFailureData;
+import com.intellij.rt.execution.junit.IDEAJUnitListener;
+import com.intellij.rt.execution.junit.IDEAJUnitListenerEx;
+import com.intellij.rt.execution.junit.IdeaTestRunner;
 import org.junit.internal.requests.ClassRequest;
 import org.junit.internal.requests.FilterRequest;
 import org.junit.runner.*;
@@ -32,14 +33,14 @@ import java.util.List;
 
 /** @noinspection UnusedDeclaration*/
 public class JUnit4IdeaTestRunner implements IdeaTestRunner {
-  private RunListener myTestsListener;
-  private OutputObjectRegistry myRegistry;
+  private JUnit4TestListener myTestsListener;
 
   public int startRunnerWithArgs(String[] args, ArrayList listeners, String name, int count, boolean sendTree) {
+    myTestsListener = new JUnit4TestListener();
     try {
       Result result;
       if (count == 1) {
-        result = startRunnerWithArgs(args, listeners, name, sendTree);
+        result = startRunnerWithArgs(args, listeners, name, sendTree, count);
         if (result == null) {
           return -1;
         }
@@ -49,24 +50,23 @@ public class JUnit4IdeaTestRunner implements IdeaTestRunner {
           boolean success = true;
           int i = 0;
           while (i++ < count) {
-            result = startRunnerWithArgs(args, listeners, name, sendTree);
+            result = startRunnerWithArgs(args, listeners, name, sendTree, count);
             if (result == null) {
               return -1;
             }
-            sendTree = false;
             success &= result.wasSuccessful();
+            sendTree = false;
           }
-          
+
           return success ? 0 : -1;
         }
         else {
           boolean success = true;
           while (true) {
-            result = startRunnerWithArgs(args, listeners, name, sendTree);
+            result = startRunnerWithArgs(args, listeners, name, sendTree, count);
             if (result == null) {
               return -1;
             }
-            sendTree = false;
             success &= result.wasSuccessful();
             if (count == -2 && !success) {
               return -1;
@@ -86,8 +86,8 @@ public class JUnit4IdeaTestRunner implements IdeaTestRunner {
       return -2;
     }
   }
-  
-  private Result startRunnerWithArgs(String[] args, ArrayList listeners, String name, boolean sendTree) throws
+
+  private Result startRunnerWithArgs(String[] args, ArrayList listeners, String name, boolean sendTree, int count) throws
                                                                                                         InstantiationException,
                                                                                                         IllegalAccessException,
                                                                                                         ClassNotFoundException,
@@ -101,13 +101,11 @@ public class JUnit4IdeaTestRunner implements IdeaTestRunner {
       return null;
     }
 
-    if (myTestsListener instanceof JUnit4TestListener) {
-      if (sendTree) {
+    if (sendTree) {
+      do {
         ((JUnit4TestListener)myTestsListener).sendTree(description);
       }
-    }
-    else {
-      TreeSender.sendTree(this, description, sendTree);
+      while (--count > 0);
     }
 
     final JUnitCore runner = new JUnitCore();
@@ -191,15 +189,6 @@ public class JUnit4IdeaTestRunner implements IdeaTestRunner {
   }
 
 
-  public void setStreams(Object segmentedOut, Object segmentedErr, int lastIdx) {
-    if (JUnitStarter.SM_RUNNER) {
-      myTestsListener = new JUnit4TestListener();
-    } else {
-      myRegistry = new JUnit4OutputObjectRegistry((PacketProcessor)segmentedOut, lastIdx);
-      myTestsListener = new JUnit4TestResultsSender(myRegistry);
-    }
-  }
-
   public Object getTestToStart(String[] args, String name) {
     final Request request = JUnit4TestRunnerUtil.buildRequest(args, name, false);
     if (request == null) return null;
@@ -217,10 +206,6 @@ public class JUnit4IdeaTestRunner implements IdeaTestRunner {
 
   public List getChildTests(Object description) {
     return ((Description)description).getChildren();
-  }
-
-  public OutputObjectRegistry getRegistry() {
-    return myRegistry;
   }
 
   public String getTestClassName(Object child) {

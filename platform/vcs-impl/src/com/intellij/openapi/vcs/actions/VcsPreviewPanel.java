@@ -50,20 +50,10 @@ class VcsPreviewPanel implements PreviewPanel {
   private final EditorEx myEditor;
 
   public VcsPreviewPanel() {
-    StringBuilder sb = new StringBuilder();
-    sb.append(
-      "Deleted line below\n\n" +
-      "Modified line\n\n" +
-      "Added line\n\n" +
-      "Line with modified whitespaces\n\n" +
-      "Added line\n" +
-      "Line with modified whitespaces and deletion after\n"
-    );
-    int additionalLines = Math.max(0, AnnotationsSettings.COLOR_COUNT - StringUtil.countNewLines(sb));
-    sb.append(StringUtil.repeat("\n", additionalLines));
-
-    DocumentImpl document = new DocumentImpl(sb);
+    DocumentImpl document = new DocumentImpl("", true);
     myEditor = (EditorEx)EditorFactory.getInstance().createViewer(document);
+    myEditor.getGutterComponentEx().setForceShowRightFreePaintersArea(true);
+    myEditor.getSettings().setFoldingOutlineShown(true);
   }
 
   @Override
@@ -82,6 +72,21 @@ class VcsPreviewPanel implements PreviewPanel {
 
   @Override
   public void updateView() {
+    EditorColorsScheme colorsScheme = myEditor.getColorsScheme();
+
+    StringBuilder sb = new StringBuilder();
+    sb.append(
+      "Deleted line below\n\n" +
+      "Modified line\n\n" +
+      "Added line\n\n" +
+      "Line with modified whitespaces\n\n" +
+      "Added line\n" +
+      "Line with modified whitespaces and deletion after\n"
+    );
+    int additionalLines = Math.max(0, AnnotationsSettings.getInstance().getOrderedColors(colorsScheme).size() - StringUtil.countNewLines(sb));
+    sb.append(StringUtil.repeat("\n", additionalLines));
+
+    myEditor.getDocument().setText(sb);
     myEditor.getMarkupModel().removeAllHighlighters();
     myEditor.getGutterComponentEx().closeAllAnnotations();
 
@@ -91,8 +96,9 @@ class VcsPreviewPanel implements PreviewPanel {
     addHighlighter(createModifiedRange(6, Range.EQUAL), EditorColors.WHITESPACES_MODIFIED_LINES_COLOR);
     addHighlighter(createModifiedRange(8, Range.INSERTED, Range.EQUAL, Range.DELETED), EditorColors.WHITESPACES_MODIFIED_LINES_COLOR);
 
-    List<Color> annotationColors = AnnotationsSettings.getInstance().getOrderedColors(myEditor.getColorsScheme());
-    myEditor.getGutterComponentEx().registerTextAnnotation(new MyTextAnnotationGutterProvider(annotationColors));
+    List<Color> annotationColors = AnnotationsSettings.getInstance().getOrderedColors(colorsScheme);
+    List<Integer> anchorIndexes = AnnotationsSettings.getInstance().getAnchorIndexes(colorsScheme);
+    myEditor.getGutterComponentEx().registerTextAnnotation(new MyTextAnnotationGutterProvider(annotationColors, anchorIndexes));
   }
 
   @NotNull
@@ -123,6 +129,11 @@ class VcsPreviewPanel implements PreviewPanel {
     RangeHighlighter highlighter = LineStatusMarkerRenderer.createRangeHighlighter(range, textRange, myEditor.getMarkupModel());
     highlighter.setLineMarkerRenderer(new LineStatusMarkerRenderer(range) {
       @Override
+      public boolean canDoAction(MouseEvent e) {
+        return isInsideMarkerArea(e);
+      }
+
+      @Override
       public void doAction(Editor editor, MouseEvent e) {
         myDispatcher.getMulticaster().selectionInPreviewChanged(colorKey.getExternalName());
       }
@@ -140,16 +151,21 @@ class VcsPreviewPanel implements PreviewPanel {
 
   private static class MyTextAnnotationGutterProvider implements TextAnnotationGutterProvider {
     @NotNull private final List<Color> myBackgroundColors;
+    @NotNull private final List<Integer> myAnchorIndexes;
 
-    public MyTextAnnotationGutterProvider(@NotNull List<Color> backgroundColors) {
+    public MyTextAnnotationGutterProvider(@NotNull List<Color> backgroundColors, @NotNull List<Integer> anchorIndexes) {
       myBackgroundColors = backgroundColors;
+      myAnchorIndexes = anchorIndexes;
     }
 
     @Nullable
     @Override
     public String getLineText(int line, Editor editor) {
       if (line < myBackgroundColors.size()) {
-        return "Annotation background #" + (line + 1);
+        int anchorIndex = myAnchorIndexes.indexOf(line);
+        String text = "Annotation background";
+        if (anchorIndex != -1) text += " #" + (anchorIndex + 1);
+        return text;
       }
       return null;
     }

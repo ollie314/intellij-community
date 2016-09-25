@@ -59,7 +59,7 @@ public class VisibilityInspection extends GlobalJavaBatchInspectionTool {
   private static final Logger LOG = Logger.getInstance("#com.intellij.codeInspection.visibility.VisibilityInspection");
   public boolean SUGGEST_PACKAGE_LOCAL_FOR_MEMBERS = true;
   public boolean SUGGEST_PACKAGE_LOCAL_FOR_TOP_CLASSES = true;
-  public boolean SUGGEST_PRIVATE_FOR_INNERS = false;
+  public boolean SUGGEST_PRIVATE_FOR_INNERS;
   private static final String DISPLAY_NAME = InspectionsBundle.message("inspection.visibility.display.name");
   @NonNls public static final String SHORT_NAME = "WeakerAccess";
   private static final String CAN_BE_PRIVATE = InspectionsBundle.message("inspection.visibility.compose.suggestion", VisibilityUtil.toPresentableText(PsiModifier.PRIVATE));
@@ -475,26 +475,6 @@ public class VisibilityInspection extends GlobalJavaBatchInspectionTool {
                   return false;
                 }
               });
-
-              if (entryPointsManager.isAddNonJavaEntries()) {
-                final RefClass ownerClass = refMethod.getOwnerClass();
-                if (refMethod.isConstructor() && ownerClass.getDefaultConstructor() != null) {
-                  final PsiClass psiClass = ownerClass.getElement();
-                  String qualifiedName = psiClass != null ? psiClass.getQualifiedName() : null;
-                  if (qualifiedName != null) {
-                    final Project project = manager.getProject();
-                    PsiSearchHelper.SERVICE.getInstance(project)
-                      .processUsagesInNonJavaFiles(qualifiedName, new PsiNonJavaFileReferenceProcessor() {
-                        @Override
-                        public boolean process(PsiFile file, int startOffset, int endOffset) {
-                          entryPointsManager.addEntryPoint(refMethod, false);
-                          ignoreElement(processor, refMethod);
-                          return false;
-                        }
-                      }, GlobalSearchScope.projectScope(project));
-                  }
-                }
-              }
             }
           }
 
@@ -515,6 +495,24 @@ public class VisibilityInspection extends GlobalJavaBatchInspectionTool {
                   return false;
                 }
               });
+
+              final RefMethod defaultConstructor = refClass.getDefaultConstructor();
+              if (entryPointsManager.isAddNonJavaEntries() && defaultConstructor != null) {
+                final PsiClass psiClass = refClass.getElement();
+                String qualifiedName = psiClass != null ? psiClass.getQualifiedName() : null;
+                if (qualifiedName != null) {
+                  final Project project = manager.getProject();
+                  PsiSearchHelper.SERVICE.getInstance(project)
+                    .processUsagesInNonJavaFiles(qualifiedName, new PsiNonJavaFileReferenceProcessor() {
+                      @Override
+                      public boolean process(PsiFile file, int startOffset, int endOffset) {
+                        entryPointsManager.addEntryPoint(defaultConstructor, false);
+                        ignoreElement(processor, defaultConstructor);
+                        return false;
+                      }
+                    }, GlobalSearchScope.projectScope(project));
+                }
+              }
             }
           }
         });

@@ -46,7 +46,6 @@ import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.TypeConversionUtil;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.ProcessingContext;
-import com.intellij.util.Processor;
 import com.intellij.util.SystemProperties;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.text.CharArrayUtil;
@@ -114,7 +113,7 @@ public class JavaDocCompletionContributor extends CompletionContributor {
             result.addElement(item);
           }
 
-          JavaCompletionContributor.addAllClasses(parameters, result, new InheritorsHolder(result));
+          JavaCompletionContributor.addAllClasses(parameters, result, new JavaCompletionSession(result));
         }
 
         if (tag != null && "author".equals(tag.getName())) {
@@ -312,7 +311,7 @@ public class JavaDocCompletionContributor extends CompletionContributor {
       }
 
       InspectionProfile inspectionProfile =
-        InspectionProjectProfileManager.getInstance(position.getProject()).getInspectionProfile();
+        InspectionProjectProfileManager.getInstance(position.getProject()).getCurrentProfile();
       JavaDocLocalInspection inspection =
         (JavaDocLocalInspection)inspectionProfile.getUnwrappedTool(JavaDocLocalInspectionBase.SHORT_NAME, position);
       if (inspection != null) {
@@ -353,15 +352,12 @@ public class JavaDocCompletionContributor extends CompletionContributor {
       if ("see".equals(tagName)) {
         PsiMember member = PsiTreeUtil.getParentOfType(comment, PsiMember.class);
         if (member instanceof PsiClass) {
-          InheritanceUtil.processSupers((PsiClass)member, false, new Processor<PsiClass>() {
-            @Override
-            public boolean process(PsiClass psiClass) {
-              String name = psiClass.getQualifiedName();
-              if (StringUtil.isNotEmpty(name) && !CommonClassNames.JAVA_LANG_OBJECT.equals(name)) {
-                result.add("see " + name);
-              }
-              return true;
+          InheritanceUtil.processSupers((PsiClass)member, false, psiClass -> {
+            String name = psiClass.getQualifiedName();
+            if (StringUtil.isNotEmpty(name) && !CommonClassNames.JAVA_LANG_OBJECT.equals(name)) {
+              result.add("see " + name);
             }
+            return true;
           });
         }
       }

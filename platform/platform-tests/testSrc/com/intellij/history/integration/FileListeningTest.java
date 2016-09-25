@@ -80,12 +80,12 @@ public class FileListeningTest extends IntegrationTestCase {
     myRoot.refresh(false, true);
 
     List<Change> changes = getVcs().getChangeListInTests().getChangesInTests().get(0).getChanges();
-    List<String> actual = new SmartList<String>();
+    List<String> actual = new SmartList<>();
     for (Change each : changes) {
       actual.add(((StructuralChange)each).getPath());
     }
 
-    List<String> expected = new ArrayList<String>(Arrays.asList(dir, subsubdir1, dir1_file, subsubdir1_file));
+    List<String> expected = new ArrayList<>(Arrays.asList(dir, subsubdir1, dir1_file, subsubdir1_file));
 
     Collections.sort(actual);
     Collections.sort(expected);
@@ -104,12 +104,7 @@ public class FileListeningTest extends IntegrationTestCase {
 
   private static StringBuilder buildDBFileStructure(@NotNull VirtualFile from, int level, @NotNull StringBuilder builder) {
     List<VirtualFile> children = ContainerUtil.newArrayList(((NewVirtualFile)from).getCachedChildren());
-    Collections.sort(children, new Comparator<VirtualFile>() {
-      @Override
-      public int compare(VirtualFile o1, VirtualFile o2) {
-        return o1.getName().compareTo(o2.getName());
-      }
-    });
+    Collections.sort(children, (o1, o2) -> o1.getName().compareTo(o2.getName()));
     for (VirtualFile eachChild : children) {
       builder.append(StringUtil.repeat(" ", level)).append(eachChild.getName()).append("\n");
       buildDBFileStructure(eachChild, level + 1, builder);
@@ -332,11 +327,6 @@ public class FileListeningTest extends IntegrationTestCase {
   }
 
   private static void sortEntries(final List<Entry> entries) {
-    Collections.sort(entries, new Comparator<Entry>() {
-      @Override
-      public int compare(@NotNull Entry o1, @NotNull Entry o2) {
-        return o1.getName().compareTo(o2.getName());
-      }
-    });
+    Collections.sort(entries, (o1, o2) -> o1.getName().compareTo(o2.getName()));
   }
 }

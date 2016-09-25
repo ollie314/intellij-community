@@ -37,7 +37,7 @@ import java.util.concurrent.Future;
  * {@link #runReadAction}. Multiple read actions can run at the same time without locking each other.
  * <p>
  * Write actions can be called only from the Swing thread using {@link #runWriteAction} method.
- * If there are read actions running at this moment <code>runWriteAction</code> is blocked until they are completed.
+ * If there are read actions running at this moment {@code runWriteAction} is blocked until they are completed.
  */
 public interface Application extends ComponentManager {
   /**
@@ -262,6 +262,11 @@ public interface Application extends ComponentManager {
   void invokeAndWait(@NotNull Runnable runnable, @NotNull ModalityState modalityState) throws ProcessCanceledException;
 
   /**
+   * Same as {@link #invokeAndWait(Runnable, ModalityState)}, using {@link ModalityState#defaultModalityState()}.
+   */
+  void invokeAndWait(@NotNull Runnable runnable) throws ProcessCanceledException;
+
+  /**
    * Returns current modality state corresponding to the currently opened modal dialogs. Can only be invoked on AWT thread.
    *
    * @return the current modality state.
@@ -347,12 +352,9 @@ public interface Application extends ComponentManager {
    */
   boolean isCommandLine();
 
-  @Override
-  boolean isDisposed();
-
   /**
    * Requests pooled thread to execute the action.
-   * This pool is<ul>
+   * This pool is an<ul>
    * <li>Unbounded.</li>
    * <li>Application-wide, always active, non-shutdownable singleton.</li>
    * </ul>

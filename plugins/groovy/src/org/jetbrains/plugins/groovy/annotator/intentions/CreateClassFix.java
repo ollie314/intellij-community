@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -62,7 +62,7 @@ public abstract class CreateClassFix {
     return new CreateClassActionBase(GrCreateClassKind.CLASS, expression.getReferenceElement()) {
 
       @Override
-      protected void processIntention(@NotNull PsiElement element, Project project, Editor editor) throws IncorrectOperationException {
+      protected void processIntention(@NotNull PsiElement element, @NotNull Project project, Editor editor) throws IncorrectOperationException {
         final PsiFile file = element.getContainingFile();
         if (!(file instanceof GroovyFileBase)) return;
         GroovyFileBase groovyFile = (GroovyFileBase)file;
@@ -137,7 +137,7 @@ public abstract class CreateClassFix {
 
       method = (GrMethod)targetClass.addBefore(method, null);
       final PsiElement context = PsiTreeUtil.getParentOfType(refElement, PsiMethod.class, PsiClass.class, PsiFile.class);
-      IntentionUtils.createTemplateForMethod(argTypes, paramTypesExpressions, method, targetClass, new TypeConstraint[0], true, context);
+      IntentionUtils.createTemplateForMethod(argTypes, paramTypesExpressions, method, targetClass, TypeConstraint.EMPTY_ARRAY, true, context);
     }
     finally {
       writeLock.finish();
@@ -147,7 +147,7 @@ public abstract class CreateClassFix {
   public static IntentionAction createClassFixAction(final GrReferenceElement refElement, GrCreateClassKind type) {
     return new CreateClassActionBase(type, refElement) {
       @Override
-      protected void processIntention(@NotNull PsiElement element, Project project, Editor editor) throws IncorrectOperationException {
+      protected void processIntention(@NotNull PsiElement element, @NotNull Project project, Editor editor) throws IncorrectOperationException {
         final PsiFile file = element.getContainingFile();
         if (!(file instanceof GroovyFileBase)) return;
         GroovyFileBase groovyFile = (GroovyFileBase)file;
@@ -174,12 +174,9 @@ public abstract class CreateClassFix {
         PsiClass template = createTemplate(factory, name);
 
         if (template == null) {
-          ApplicationManager.getApplication().invokeLater(new Runnable() {
-            @Override
-            public void run() {
-              if (editor != null && editor.getComponent().isDisplayable()) {
-                HintManager.getInstance().showErrorHint(editor, GroovyIntentionsBundle.message("cannot.create.class"));
-              }
+          ApplicationManager.getApplication().invokeLater(() -> {
+            if (editor != null && editor.getComponent().isDisplayable()) {
+              HintManager.getInstance().showErrorHint(editor, GroovyIntentionsBundle.message("cannot.create.class"));
             }
           });
           return;
@@ -290,12 +287,9 @@ public abstract class CreateClassFix {
   }
 
   private static void bindRef(@NotNull final PsiClass targetClass, @NotNull final GrReferenceElement ref) {
-    ApplicationManager.getApplication().runWriteAction(new Runnable() {
-      @Override
-      public void run() {
-        final PsiElement newRef = ref.bindToElement(targetClass);
-        JavaCodeStyleManager.getInstance(targetClass.getProject()).shortenClassReferences(newRef);
-      }
+    ApplicationManager.getApplication().runWriteAction(() -> {
+      final PsiElement newRef = ref.bindToElement(targetClass);
+      JavaCodeStyleManager.getInstance(targetClass.getProject()).shortenClassReferences(newRef);
     });
   }
 

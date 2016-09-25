@@ -64,7 +64,7 @@ public class ExternalProjectsManager implements PersistentStateComponent<Externa
   private final ExternalSystemRunManagerListener myRunManagerListener;
   private final ExternalSystemTaskActivator myTaskActivator;
   private final ExternalSystemShortcutsManager myShortcutsManager;
-  private final List<ExternalProjectsView> myProjectsViews = new SmartList<ExternalProjectsView>();
+  private final List<ExternalProjectsView> myProjectsViews = new SmartList<>();
 
 
   public static ExternalProjectsManager getInstance(@NotNull Project project) {
@@ -183,7 +183,7 @@ public class ExternalProjectsManager implements PersistentStateComponent<Externa
     return new ExternalProjectsStateProvider() {
       @Override
       public List<TasksActivation> getAllTasksActivation() {
-        List<TasksActivation> result = new SmartList<TasksActivation>();
+        List<TasksActivation> result = new SmartList<>();
         for (Map.Entry<String, ExternalProjectsState.State> systemState : myState.getExternalSystemsState().entrySet()) {
           ProjectSystemId systemId = new ProjectSystemId(systemState.getKey());
           for (Map.Entry<String, TaskActivationState> activationStateEntry : systemState.getValue().getExternalSystemsTaskActivation()
@@ -199,12 +199,7 @@ public class ExternalProjectsManager implements PersistentStateComponent<Externa
       public List<TasksActivation> getTasksActivation(@NotNull final ProjectSystemId systemId) {
         final Set<Map.Entry<String, TaskActivationState>> entries =
           myState.getExternalSystemsState().get(systemId.getId()).getExternalSystemsTaskActivation().entrySet();
-        return ContainerUtil.map(entries, new Function<Map.Entry<String, TaskActivationState>, TasksActivation>() {
-          @Override
-          public TasksActivation fun(Map.Entry<String, TaskActivationState> entry) {
-            return new TasksActivation(systemId, entry.getKey(), entry.getValue());
-          }
-        });
+        return ContainerUtil.map(entries, entry -> new TasksActivation(systemId, entry.getKey(), entry.getValue()));
       }
 
       @Override

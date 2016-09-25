@@ -23,9 +23,7 @@ import com.intellij.ide.highlighter.ProjectFileType;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ApplicationNamesInfo;
 import com.intellij.openapi.application.ModalityState;
-import com.intellij.openapi.components.ServiceKt;
 import com.intellij.openapi.components.StorageScheme;
-import com.intellij.openapi.components.impl.stores.IComponentStore;
 import com.intellij.openapi.components.impl.stores.IProjectStore;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -38,6 +36,7 @@ import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.*;
+import com.intellij.project.ProjectKt;
 import com.intellij.projectImport.ProjectOpenProcessor;
 import com.intellij.ui.AppIcon;
 import com.intellij.util.SystemProperties;
@@ -111,8 +110,7 @@ public class ProjectUtil {
       return strong.doOpenProject(virtualFile, projectToClose, forceOpenInNewFrame);
     }
 
-    if (path.endsWith(ProjectFileType.DOT_DEFAULT_EXTENSION) ||
-        virtualFile.isDirectory() && virtualFile.findChild(Project.DIRECTORY_STORE_FOLDER) != null) {
+    if (ProjectKt.isValidProjectPath(path, true)) {
       return openProject(path, projectToClose, forceOpenInNewFrame);
     }
 
@@ -130,14 +128,11 @@ public class ProjectUtil {
       final Project project = provider.doOpenProject(virtualFile, projectToClose, forceOpenInNewFrame);
 
       if (project != null) {
-        ApplicationManager.getApplication().invokeLater(new Runnable() {
-          @Override
-          public void run() {
-            if (!project.isDisposed()) {
-              final ToolWindow toolWindow = ToolWindowManager.getInstance(project).getToolWindow(ToolWindowId.PROJECT_VIEW);
-              if (toolWindow != null) {
-                toolWindow.activate(null);
-              }
+        ApplicationManager.getApplication().invokeLater(() -> {
+          if (!project.isDisposed()) {
+            final ToolWindow toolWindow = ToolWindowManager.getInstance(project).getToolWindow(ToolWindowId.PROJECT_VIEW);
+            if (toolWindow != null) {
+              toolWindow.activate(null);
             }
           }
         }, ModalityState.NON_MODAL);
@@ -157,10 +152,13 @@ public class ProjectUtil {
       return null;
     }
 
-    if (file.isDirectory() && !new File(file, Project.DIRECTORY_STORE_FOLDER).exists()) {
-      String message = IdeBundle.message("error.project.file.does.not.exist", new File(file, Project.DIRECTORY_STORE_FOLDER).getPath());
-      Messages.showErrorDialog(message, CommonBundle.getErrorTitle());
-      return null;
+    if (file.isDirectory()) {
+      File dir = new File(file, Project.DIRECTORY_STORE_FOLDER);
+      if (!dir.exists()) {
+        String message = IdeBundle.message("error.project.file.does.not.exist", dir.getPath());
+        Messages.showErrorDialog(message, CommonBundle.getErrorTitle());
+        return null;
+      }
     }
 
     Project existing = findAndFocusExistingProjectForPath(path);
@@ -209,15 +207,18 @@ public class ProjectUtil {
   public static boolean confirmLoadingFromRemotePath(@NotNull String path,
                                                      @NotNull @PropertyKey(resourceBundle = IdeBundle.BUNDLE) String msgKey,
                                                      @NotNull @PropertyKey(resourceBundle = IdeBundle.BUNDLE) String titleKey) {
+    return showYesNoDialog(IdeBundle.message(msgKey, path), titleKey);
+  }
+
+  public static boolean showYesNoDialog(@NotNull String message, @NotNull @PropertyKey(resourceBundle = IdeBundle.BUNDLE) String titleKey) {
     final Window window = getActiveFrameOrWelcomeScreen();
-    final String msg = IdeBundle.message(msgKey, path);
-    final String title = IdeBundle.message(titleKey);
     final Icon icon = Messages.getWarningIcon();
-    final int answer = window == null ? Messages.showYesNoDialog(msg, title, icon) : Messages.showYesNoDialog(window, msg, title, icon);
+    String title = IdeBundle.message(titleKey);
+    final int answer = window == null ? Messages.showYesNoDialog(message, title, icon) : Messages.showYesNoDialog(window, message, title, icon);
     return answer == Messages.YES;
   }
 
-  private static Window getActiveFrameOrWelcomeScreen() {
+  public static Window getActiveFrameOrWelcomeScreen() {
     Window window = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusedWindow();
     if (window != null)  return window;
 
@@ -231,7 +232,7 @@ public class ProjectUtil {
   }
 
   public static boolean isRemotePath(@NotNull String path) {
-    return path.contains("//") || path.contains("\\\\");
+    return path.contains("://") || path.contains("\\\\");
   }
 
   @Nullable
@@ -281,7 +282,7 @@ public class ProjectUtil {
   }
 
   public static boolean isSameProject(String path, @NotNull Project project) {
-    IProjectStore projectStore = (IProjectStore)ServiceKt.getStateStore(project);
+    IProjectStore projectStore = ProjectKt.getStateStore(project);
 
     String toOpen = FileUtil.toSystemIndependentName(path);
     String existing = projectStore.getProjectFilePath();
@@ -335,10 +336,5 @@ public class ProjectUtil {
     //noinspection HardCodedStringLiteral
     return userHome.replace('/', File.separatorChar) + File.separator + ApplicationNamesInfo.getInstance().getLowercaseProductName() +
            "Projects";
-  }
-
-  public static boolean isDirectoryBased(@NotNull Project project) {
-    IComponentStore store = ServiceKt.getStateStore(project);
-    return store instanceof IProjectStore && StorageScheme.DIRECTORY_BASED.equals(((IProjectStore)store).getStorageScheme());
   }
 }

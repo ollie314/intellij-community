@@ -1,3 +1,18 @@
+/*
+ * Copyright 2000-2016 JetBrains s.r.o.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.jetbrains.jsonSchema;
 
 import com.intellij.codeInsight.daemon.DaemonAnalyzerTestCase;
@@ -175,7 +190,7 @@ public class JsonSchemaHighlightingTest extends DaemonAnalyzerTestCase {
 
   @SuppressWarnings("Duplicates")
   public void testOneOf() throws Exception {
-    final List<String> subSchemas = new ArrayList<String>();
+    final List<String> subSchemas = new ArrayList<>();
     subSchemas.add("{\"type\": \"string\"}");
     subSchemas.add("{\"type\": \"boolean\"}");
     final String schema = schema("{\"oneOf\": [" + StringUtil.join(subSchemas, ", ") + "]}");
@@ -186,7 +201,7 @@ public class JsonSchemaHighlightingTest extends DaemonAnalyzerTestCase {
 
   @SuppressWarnings("Duplicates")
   public void testOneOfForTwoMatches() throws Exception {
-    final List<String> subSchemas = new ArrayList<String>();
+    final List<String> subSchemas = new ArrayList<>();
     subSchemas.add("{\"type\": \"string\", \"enum\": [\"a\", \"b\"]}");
     subSchemas.add("{\"type\": \"string\", \"enum\": [\"a\", \"c\"]}");
     final String schema = schema("{\"oneOf\": [" + StringUtil.join(subSchemas, ", ") + "]}");
@@ -196,8 +211,22 @@ public class JsonSchemaHighlightingTest extends DaemonAnalyzerTestCase {
   }
 
   @SuppressWarnings("Duplicates")
+  public void testOneOfSelectError() throws Exception {
+    final List<String> subSchemas = new ArrayList<>();
+    subSchemas.add("{\"type\": \"string\",\n" +
+                   "          \"enum\": [\n" +
+                   "            \"off\", \"warn\", \"error\"\n" +
+                   "          ]}");
+    subSchemas.add("{\"type\": \"integer\"}");
+    final String schema = schema("{\"oneOf\": [" + StringUtil.join(subSchemas, ", ") + "]}");
+    testImpl(schema, "{\"prop\": \"off\"}");
+    testImpl(schema, "{\"prop\": 12}");
+    testImpl(schema, "{\"prop\": <warning descr=\"Value should be one of: [\\\"off\\\", \\\"warn\\\", \\\"error\\\"]\">\"wrong\"</warning>}");
+  }
+
+  @SuppressWarnings("Duplicates")
   public void testAnyOf() throws Exception {
-    final List<String> subSchemas = new ArrayList<String>();
+    final List<String> subSchemas = new ArrayList<>();
     subSchemas.add("{\"type\": \"string\", \"enum\": [\"a\", \"b\"]}");
     subSchemas.add("{\"type\": \"string\", \"enum\": [\"a\", \"c\"]}");
     final String schema = schema("{\"anyOf\": [" + StringUtil.join(subSchemas, ", ") + "]}");
@@ -208,7 +237,7 @@ public class JsonSchemaHighlightingTest extends DaemonAnalyzerTestCase {
 
   @SuppressWarnings("Duplicates")
   public void testAllOf() throws Exception {
-    final List<String> subSchemas = new ArrayList<String>();
+    final List<String> subSchemas = new ArrayList<>();
     subSchemas.add("{\"type\": \"string\", \"enum\": [\"a\", \"b\"]}");
     subSchemas.add("{\"type\": \"string\", \"enum\": [\"a\", \"c\"]}");
     final String schema = schema("{\"allOf\": [" + StringUtil.join(subSchemas, ", ") + "]}");
@@ -277,7 +306,7 @@ public class JsonSchemaHighlightingTest extends DaemonAnalyzerTestCase {
 
     registerProvider(getProject(), schema);
     LanguageAnnotators.INSTANCE.addExplicitExtension(JsonLanguage.INSTANCE, annotator);
-    Disposer.register(myTestRootDisposable, new Disposable() {
+    Disposer.register(getTestRootDisposable(), new Disposable() {
       @Override
       public void dispose() {
         LanguageAnnotators.INSTANCE.removeExplicitExtension(JsonLanguage.INSTANCE, annotator);

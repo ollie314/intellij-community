@@ -29,18 +29,18 @@ import java.awt.*;
  */
 @SuppressWarnings("UseJBColor")
 public class EmptyColorScheme extends DefaultColorsScheme {
-  public final static String NAME = "Empty";
-  public final static EmptyColorScheme INSTANCE = new EmptyColorScheme();
+  public static final String NAME = "Empty";
+  public static final EmptyColorScheme INSTANCE = new EmptyColorScheme();
 
-  private final static TextAttributes EMPTY_TEXT = new TextAttributes(Color.BLACK, Color.white, null, EffectType.BOXED, Font.PLAIN);
-  private final static TextAttributes DEFAULT_ATTRS = new TextAttributes(Color.GRAY, null, null, EffectType.BOXED, Font.PLAIN);
+  private static final TextAttributes EMPTY_TEXT = new TextAttributes(Color.BLACK, Color.white, null, EffectType.BOXED, Font.PLAIN);
+  private static final TextAttributes DEFAULT_ATTRS = new TextAttributes(Color.GRAY, null, null, EffectType.BOXED, Font.PLAIN);
 
   private EmptyColorScheme() {
     myAttributesMap.put(HighlighterColors.TEXT, EMPTY_TEXT);
     initFonts();
   }
 
-  @Nullable
+  @NotNull
   @Override
   public TextAttributes getAttributes(TextAttributesKey key) {
     TextAttributes attributes = super.getAttributes(key);
@@ -57,5 +57,10 @@ public class EmptyColorScheme extends DefaultColorsScheme {
   @Override
   public String getName() {
     return NAME;
+  }
+
+  @Override
+  public boolean hasEditableCopy() {
+    return false;
   }
 }

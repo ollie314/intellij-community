@@ -22,6 +22,7 @@ import com.intellij.util.PairConsumer;
 import com.intellij.util.containers.BidirectionalMap;
 import com.intellij.util.containers.MultiMap;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 
@@ -75,14 +76,11 @@ public class JsonSchemaExportedDefinitions {
   private void ensureInitialized() {
     synchronized (myLock) {
       if (myInitialized && !myDirty) return;
-      mySchemasIterator.consume(new PairConsumer<VirtualFile, NullableLazyValue<JsonSchemaObject>>() {
-        @Override
-        public void consume(VirtualFile key, NullableLazyValue<JsonSchemaObject> value) {
-          if (!myInitialized || !myId2Key.containsValue(key)) {
-            final JsonSchemaObject object = value.getValue();
-            if (object != null) {
-              JsonSchemaReader.registerObjectsExportedDefinitions(key, JsonSchemaExportedDefinitions.this, object);
-            }
+      mySchemasIterator.consume((key, value) -> {
+        if (!myInitialized || !myId2Key.containsValue(key)) {
+          final JsonSchemaObject object = value.getValue();
+          if (object != null) {
+            JsonSchemaReader.registerObjectsExportedDefinitions(key, this, object);
           }
         }
       });
@@ -129,6 +127,14 @@ public class JsonSchemaExportedDefinitions {
     synchronized (myLock) {
       ensureInitialized();
       return file.equals(myId2Key.get(id));
+    }
+  }
+
+  @Nullable
+  public VirtualFile getSchemaFileById(@NotNull final String id) {
+    synchronized (myLock) {
+      ensureInitialized();
+      return myId2Key.get(id);
     }
   }
 }

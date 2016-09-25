@@ -64,7 +64,8 @@ public abstract class DumbService {
   }
 
   /**
-   * Executes the runnable immediately if not in dumb mode, or on AWT Event Dispatch thread after the dumb mode ends.
+   * Executes the runnable immediately if the project is initialized and there's no dumb mode in progress,
+   * or on AWT Event Dispatch thread after the dumb mode ends.
    * Note that it's not guaranteed that the dumb mode won't start again during this runnable execution, it should manage that situation explicitly
    * (e.g. by starting a read action; it's still necessary to check isDumb inside the read action).
    * @param runnable runnable to run
@@ -79,7 +80,8 @@ public abstract class DumbService {
   public abstract void waitForSmartMode();
 
   /**
-   * Pause the current thread until dumb mode ends, and then run the read action. Index is guaranteed to be available inside that read action.
+   * Pause the current thread until dumb mode ends, and then run the read action. Index is guaranteed to be available inside that read action,
+   * unless this method is already called with read access allowed.
    */
   public <T> T runReadActionInSmartMode(@NotNull final Computable<T> r) {
     final Ref<T> result = new Ref<T>();
@@ -111,9 +113,15 @@ public abstract class DumbService {
   }
 
   /**
-   * Pause the current thread until dumb mode ends, and then run the read action. Index is guaranteed to be available inside that read action.
+   * Pause the current thread until dumb mode ends, and then run the read action. Index is guaranteed to be available inside that read action,
+   * unless this method is already called with read access allowed.
    */
   public void runReadActionInSmartMode(@NotNull final Runnable r) {
+    if (ApplicationManager.getApplication().isReadAccessAllowed()) {
+      r.run();
+      return;
+    }
+
     while (true) {
       waitForSmartMode();
       boolean success = ApplicationManager.getApplication().runReadAction(new Computable<Boolean>() {

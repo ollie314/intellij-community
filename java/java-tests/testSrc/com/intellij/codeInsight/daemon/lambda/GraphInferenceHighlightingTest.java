@@ -18,6 +18,7 @@ package com.intellij.codeInsight.daemon.lambda;
 import com.intellij.codeInsight.daemon.LightDaemonAnalyzerTestCase;
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
 import com.intellij.codeInspection.uncheckedWarnings.UncheckedWarningLocalInspection;
+import com.intellij.idea.Bombed;
 import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.openapi.projectRoots.JavaSdkVersion;
 import com.intellij.openapi.projectRoots.Sdk;
@@ -26,6 +27,7 @@ import com.intellij.testFramework.IdeaTestUtil;
 import org.jetbrains.annotations.NonNls;
 
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collection;
 import java.util.List;
 
@@ -468,6 +470,19 @@ public class GraphInferenceHighlightingTest extends LightDaemonAnalyzerTestCase 
     }
   }
 
+  public void testCreateFreshVariablesOnlyForWildcardPlacesDuringReturnTypeProcessing() throws Exception {
+    doTest();
+  }
+
+  public void testCapturedConversionDuringDirectSuperCheck() throws Exception {
+    doTest();
+  }
+
+  @Bombed(month = Calendar.SEPTEMBER, day = 30, user = "ann")
+  public void testResolutionOrderForVariableCycles() throws Exception {
+    doTest();
+  }
+
   private void doTest() throws Exception {
     doTest(false);
   }
@@ -475,10 +490,5 @@ public class GraphInferenceHighlightingTest extends LightDaemonAnalyzerTestCase 
   private void doTest(final boolean checkWarnings) throws Exception {
     IdeaTestUtil.setTestVersion(JavaSdkVersion.JDK_1_8, getModule(), getTestRootDisposable());
     doTest(BASE_PATH + "/" + getTestName(false) + ".java", checkWarnings, false);
-  }
-
-  @Override
-  protected Sdk getProjectJDK() {
-    return IdeaTestUtil.getMockJdk18();
   }
 }

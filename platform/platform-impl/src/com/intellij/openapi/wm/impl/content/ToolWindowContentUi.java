@@ -39,6 +39,7 @@ import com.intellij.ui.switcher.SwitchProvider;
 import com.intellij.ui.switcher.SwitchTarget;
 import com.intellij.util.Alarm;
 import com.intellij.util.ContentUtilEx;
+import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.update.ComparableObject;
 import org.jetbrains.annotations.NonNls;
@@ -405,8 +406,9 @@ public class ToolWindowContentUi extends JPanel implements ContentUI, PropertyCh
       @Override
       public void actionPerformed(AnActionEvent e) {
         final Content selectedContent = manager.getSelectedContent();
-        final List<Pair<String, JComponent>> tabs = new ArrayList<Pair<String, JComponent>>();
+        final List<Pair<String, JComponent>> tabs = new ArrayList<>();
         int selectedTab = -1;
+        List<Content> mergedContent = ContainerUtil.newArrayList();
         for (Content content : manager.getContents()) {
           if (tabPrefix.equals(content.getUserData(Content.TAB_GROUP_NAME_KEY))) {
             final String label = content.getTabName().substring(tabPrefix.length() + 2);
@@ -417,7 +419,8 @@ public class ToolWindowContentUi extends JPanel implements ContentUI, PropertyCh
             tabs.add(Pair.create(label, component));
             manager.removeContent(content, false);
             content.setComponent(null);
-            Disposer.dispose(content);
+            content.setShouldDisposeContent(false);
+            mergedContent.add(content);
           }
         }
         PropertiesComponent.getInstance().unsetValue(TabbedContent.SPLIT_PROPERTY_PREFIX + tabPrefix);
@@ -425,6 +428,7 @@ public class ToolWindowContentUi extends JPanel implements ContentUI, PropertyCh
           final Pair<String, JComponent> tab = tabs.get(i);
           ContentUtilEx.addTabbedContent(manager, tab.second, tabPrefix, tab.first, i == selectedTab);
         }
+        mergedContent.forEach(Disposer::dispose);
       }
     };
   }
@@ -572,26 +576,17 @@ public class ToolWindowContentUi extends JPanel implements ContentUI, PropertyCh
     final ListPopup popup = JBPopupFactory.getInstance().createActionGroupPopup(null, new DefaultActionGroup(actions),
                                                                                 DataManager.getInstance()
                                                                                   .getDataContext(myManager.getComponent()), false, true,
-                                                                                true, null, -1, new Condition<AnAction>() {
-        @Override
-        public boolean value(AnAction action) {
-          return action == selected.get() || action == selectedTab.get();
-        }
-      });
+                                                                                true, null, -1, action -> action == selected.get() || action == selectedTab.get());
 
     getCurrentLayout().showContentPopup(popup);
 
     if (selectedContent instanceof TabbedContent) {
-      new Alarm(Alarm.ThreadToUse.SWING_THREAD, popup).addRequest(new Runnable() {
-        public void run() {
-          popup.handleSelect(true);
-        }
-      }, 30);
+      new Alarm(Alarm.ThreadToUse.SWING_THREAD, popup).addRequest(() -> popup.handleSelect(true), 30);
     }
   }
 
   public List<SwitchTarget> getTargets(boolean onlyVisible, boolean originalProvider) {
-    List<SwitchTarget> result = new ArrayList<SwitchTarget>();
+    List<SwitchTarget> result = new ArrayList<>();
 
     if (myType == ToolWindowContentUiType.TABBED) {
       for (int i = 0; i < myManager.getContentCount(); i++) {

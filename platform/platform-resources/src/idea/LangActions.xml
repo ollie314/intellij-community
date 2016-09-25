@@ -299,6 +299,10 @@
       <add-to-group group-id="MainMenu" anchor="after" relative-to-action="GoToMenu"/>
     </group>
 
+    <!-- Analyze -->
+    <action id="SliceBackward" class="com.intellij.slicer.SliceBackwardAction"/>
+    <action id="SliceForward" class="com.intellij.slicer.SliceForwardAction"/>
+
     <!-- Refactor -->
     <group id="RefactoringMenu" popup="true">
       <action id="Refactorings.QuickListPopupAction"
@@ -636,18 +640,24 @@
       <add-to-group group-id="EditorTabPopupMenu" anchor="last"/>
     </group>
 
+    <group id="TreeNodeExclusion">
+      <action id="UsageView.Include" class="com.intellij.ide.actions.exclusion.IncludeTreeNodeAction"/>
+      <action id="UsageView.Exclude" class="com.intellij.ide.actions.exclusion.ExcludeTreeNodeAction" use-shortcut-of="$Delete"/>
+    </group>>
+
     <group id="UsageView.Popup">
       <action id="UsageView.Rerun" class="com.intellij.usages.actions.RerunSearchAction" icon="AllIcons.Actions.Rerun" use-shortcut-of="Rerun"/>
       <separator/>
       <reference ref="EditSource"/>
-      <action id="UsageView.Include" class="com.intellij.usages.actions.IncludeUsageAction"/>
-      <action id="UsageView.Exclude" class="com.intellij.usages.actions.ExcludeUsageAction" use-shortcut-of="$Delete"/>
+      <reference ref="TreeNodeExclusion"/>
       <action id="UsageView.Remove" class="com.intellij.usages.actions.RemoveUsageAction" use-shortcut-of="SafeDelete"/>
       <separator/>
       <action id="UsageView.ShowRecentFindUsages" class="com.intellij.find.impl.ShowRecentFindUsagesAction" icon="AllIcons.Actions.Back"
               use-shortcut-of="RecentFiles"/>
       <separator/>
       <reference ref="AddToFavorites"/>
+      <separator/>
+      <reference ref="RunContextGroup"/>
     </group>
 
     <!-- <action id="UsageView.ImportToFavorites" class="com.intellij.ide.favoritesTreeView.ImportUsagesAction"/> -->
@@ -729,9 +739,13 @@
       <action id="XDebugger.NewWatch" class="com.intellij.xdebugger.impl.frame.actions.XNewWatchAction" icon="AllIcons.Debugger.NewWatch"/>
       <action id="XDebugger.EditWatch" class="com.intellij.xdebugger.impl.frame.actions.XEditWatchAction" use-shortcut-of="XDebugger.SetValue"/>
       <action id="XDebugger.CopyWatch" class="com.intellij.xdebugger.impl.frame.actions.XCopyWatchAction" icon="AllIcons.Actions.Copy"
-              text="Copy Watch" use-shortcut-of="EditorDuplicate"/>
-      <action id="XDebugger.RemoveWatch" class="com.intellij.xdebugger.impl.frame.actions.XRemoveWatchAction" icon="AllIcons.Actions.Delete"
+              text="Duplicate Watch" use-shortcut-of="EditorDuplicate"/>
+      <action id="XDebugger.RemoveWatch" class="com.intellij.xdebugger.impl.frame.actions.XRemoveWatchAction" icon="AllIcons.General.Remove"
               use-shortcut-of="$Delete"/>
+      <action id="XDebugger.MoveWatchUp" class="com.intellij.xdebugger.impl.frame.actions.XMoveWatchUp" use-shortcut-of="MethodUp"/>
+      <action id="XDebugger.MoveWatchDown" class="com.intellij.xdebugger.impl.frame.actions.XMoveWatchDown" use-shortcut-of="MethodDown"/>
+      <action id="XDebugger.SwitchWatchesInVariables" class="com.intellij.xdebugger.impl.frame.actions.XSwitchWatchesInVariables"
+              icon="AllIcons.Debugger.Watches"/>
       <action id="XDebugger.RemoveAllWatches" class="com.intellij.xdebugger.impl.frame.actions.XRemoveAllWatchesAction"/>
       <action id="XDebugger.MuteBreakpoints" class="com.intellij.xdebugger.impl.actions.MuteBreakpointAction"
               icon="AllIcons.Debugger.MuteBreakpoints"/>
@@ -811,6 +825,10 @@
     <group id="XDebugger.Watches.Tree.Toolbar">
       <reference ref="XDebugger.NewWatch"/>
       <reference ref="XDebugger.RemoveWatch"/>
+      <reference ref="XDebugger.MoveWatchUp"/>
+      <reference ref="XDebugger.MoveWatchDown"/>
+      <reference ref="XDebugger.CopyWatch"/>
+      <reference ref="XDebugger.SwitchWatchesInVariables"/>
     </group>
 
     <group id="XDebugger.Inspect.Tree.Popup">
@@ -883,21 +901,6 @@
               text="View assertEquals Difference" id="openAssertEqualsDiff" use-shortcut-of="Diff.ShowDiff"/>
       <separator/>
       <add-to-group anchor="first" group-id="TestTreePopupMenu"/>
-    </group>
-    <!-- SM Test Runner Actions -->
-    <group id="SMTestRunnerTestsTree">
-      <separator/>
-      <action id="com.intellij.execution.testframework.sm.runner.ui.statistics.ShowStatisticsAction"
-              class="com.intellij.execution.testframework.sm.runner.ui.statistics.ShowStatisticsAction"
-              text="Show Statistics"/>
-      <add-to-group group-id="TestTreePopupMenu" anchor="last"/>
-    </group>
-    <group id="SMTestRunnerStatistics">
-      <separator/>
-      <action id="com.intellij.execution.testframework.sm.runner.ui.statistics.ShowTestProxy"
-              class="com.intellij.execution.testframework.sm.runner.ui.statistics.ShowTestProxy"
-              text="Navigate to Test"/>
-      <add-to-group group-id="TestTreePopupMenu" anchor="last"/>
     </group>
     <group>
       <action class="com.intellij.execution.testframework.sm.runner.history.actions.ImportTestsGroup"
@@ -991,11 +994,6 @@
 
     <action id="SeverityEditorDialog" class="com.intellij.codeInspection.ex.SeverityEditorDialogAction"/>
 
-    <group id="TreeNodeExclusion">
-      <action id="TreeNodeExclusionInclude" class="com.intellij.ide.actions.exclusion.IncludeTreeNodeAction"/>
-      <action id="TreeNodeExclusionExclude" class="com.intellij.ide.actions.exclusion.ExcludeTreeNodeAction" use-shortcut-of="$Delete"/>
-    </group>>
-
     <group id="InspectionToolWindow.TreePopup" compact="true">
       <reference ref="EditSource"/>
       <reference ref="FindUsages"/>
@@ -1003,13 +1001,11 @@
       <separator/>
       <action id="QuickFixes" class="com.intellij.codeInspection.ui.actions.QuickFixesViewActionGroup"/>
       <separator/>
+      <action id="SuppressFixes" class="com.intellij.codeInspection.ui.actions.suppress.SuppressActionWrapper"/>
+      <separator/>
       <action id="EditInspectionSettings" class="com.intellij.codeInspection.ui.actions.EditSettingsAction"/>
-      <group id="InspectionsOptions">
-        <action id="DisableInspection" class="com.intellij.codeInspection.ui.actions.KeyAwareInspectionViewAction$DisableInspection"/>
-        <action id="RunInspectionOn" class="com.intellij.codeInspection.ui.actions.KeyAwareInspectionViewAction$RunInspectionOn"/>
-        <separator/>
-        <action id="SuppressFixes" class="com.intellij.codeInspection.ui.actions.SuppressActionWrapper"/>
-      </group>
+      <action id="DisableInspection" class="com.intellij.codeInspection.ui.actions.KeyAwareInspectionViewAction$DisableInspection"/>
+      <action id="RunInspectionOn" class="com.intellij.codeInspection.ui.actions.KeyAwareInspectionViewAction$RunInspectionOn"/>
     </group>
   </actions>
 </idea-plugin>

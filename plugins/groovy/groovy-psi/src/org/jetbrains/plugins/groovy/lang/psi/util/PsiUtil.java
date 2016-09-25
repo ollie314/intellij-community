@@ -18,7 +18,6 @@ package org.jetbrains.plugins.groovy.lang.psi.util;
 
 import com.intellij.lang.ASTNode;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.Trinity;
@@ -48,7 +47,6 @@ import org.jetbrains.plugins.groovy.lang.lexer.TokenSets;
 import org.jetbrains.plugins.groovy.lang.psi.*;
 import org.jetbrains.plugins.groovy.lang.psi.api.GroovyResolveResult;
 import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.GrListOrMap;
-import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.modifiers.GrModifier;
 import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.modifiers.GrModifierList;
 import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.modifiers.annotation.GrAnnotation;
 import org.jetbrains.plugins.groovy.lang.psi.api.signatures.GrClosureSignature;
@@ -98,21 +96,13 @@ import java.util.*;
  */
 public class PsiUtil {
   public static final Logger LOG = Logger.getInstance("org.jetbrains.plugins.groovy.lang.psi.util.PsiUtil");
-  public static final Key<JavaIdentifier> NAME_IDENTIFIER = new Key<JavaIdentifier>("Java Identifier");
+  public static final Key<JavaIdentifier> NAME_IDENTIFIER = new Key<>("Java Identifier");
   public static final Set<String> OPERATOR_METHOD_NAMES = ContainerUtil.newHashSet(
     "plus", "minus", "multiply", "power", "div", "mod", "or", "and", "xor", "next", "previous", "getAt", "putAt", "leftShift", "rightShift",
     "isCase", "bitwiseNegate", "negative", "positive", "call"
   );
 
   private PsiUtil() {
-  }
-
-  @Nullable
-  public static PsiElement findModifierInList(@NotNull GrModifierList list, @GrModifier.GrModifierConstant @NotNull String modifier) {
-    for (PsiElement element : list.getModifiers()) {
-      if (modifier.equals(element.getText())) return element;
-    }
-    return null;
   }
 
   @Nullable
@@ -181,10 +171,7 @@ public class PsiUtil {
                                                                                 PsiElement place,
                                                                                 final boolean eraseParameterTypes) {
     if (argumentTypes == null) return GrClosureSignatureUtil.ApplicabilityResult.canBeApplicable;
-
-    GrClosureSignature signature = eraseParameterTypes
-                                   ? GrClosureSignatureUtil.createSignatureWithErasedParameterTypes(method)
-                                   : GrClosureSignatureUtil.createSignature(method, substitutor);
+    GrClosureSignature signature = GrClosureSignatureUtil.createSignature(method, substitutor, eraseParameterTypes);
 
     //check for default constructor
     if (method.isConstructor()) {
@@ -289,10 +276,12 @@ public class PsiUtil {
         return getArgumentTypes(argList.getNamedArguments(), argList.getExpressionArguments(), GrClosableBlock.EMPTY_ARRAY, nullAsBottom, stopAt, byShape);
       }
     }
-    else if (parent instanceof GrBinaryExpression) {
-      GrExpression right = ((GrBinaryExpression)parent).getRightOperand();
+    else if (parent instanceof GrBinaryExpression || parent instanceof GrAssignmentExpression) {
+      GrExpression right = parent instanceof GrBinaryExpression
+                           ? ((GrBinaryExpression)parent).getRightOperand()
+                           : ((GrAssignmentExpression)parent).getRValue();
       PsiType type = right != null ? right.getType() : null;
-      return new PsiType[] {notNullizeType(type, nullAsBottom, parent)};
+      return new PsiType[]{notNullizeType(type, nullAsBottom, parent)};
     }
 
     return null;
@@ -315,11 +304,11 @@ public class PsiUtil {
                                            boolean nullAsBottom,
                                            @Nullable GrExpression stopAt,
                                            boolean byShape) {
-    List<PsiType> result = new ArrayList<PsiType>();
+    List<PsiType> result = new ArrayList<>();
 
     if (namedArgs.length > 0) {
       GrNamedArgument context = namedArgs[0];
-      result.add(GrMapType.createFromNamedArgs(context, byShape ? new GrNamedArgument[0] : namedArgs));
+      result.add(GrMapType.createFromNamedArgs(context, byShape ? GrNamedArgument.EMPTY_ARRAY : namedArgs));
     }
 
     for (GrExpression expression : expressions) {
@@ -419,10 +408,10 @@ public class PsiUtil {
       public Iterator<PsiClass> iterator() {
         return new Iterator<PsiClass>() {
           TIntStack indices = new TIntStack();
-          Stack<PsiClassType[]> superTypesStack = new Stack<PsiClassType[]>();
+          Stack<PsiClassType[]> superTypesStack = new Stack<>();
           PsiClass current;
           boolean nextObtained;
-          Set<PsiClass> visited = new HashSet<PsiClass>();
+          Set<PsiClass> visited = new HashSet<>();
 
           {
             if (includeSelf) {
@@ -779,7 +768,8 @@ public class PsiUtil {
     return skipSet(elem, forward, TokenSets.WHITE_SPACES_OR_COMMENTS, true);
   }
 
-  private static PsiElement skipSet(PsiElement elem, boolean forward, TokenSet set, boolean skipNLs) {
+  @Nullable
+  public static PsiElement skipSet(PsiElement elem, boolean forward, TokenSet set, boolean skipNLs) {
     while (elem != null &&
            elem.getNode() != null &&
            set.contains(elem.getNode().getElementType()) &&
@@ -792,6 +782,21 @@ public class PsiUtil {
       }
     }
     return elem;
+  }
+
+  @Nullable
+  public static PsiElement skipSet(@NotNull PsiElement element, boolean forward, @NotNull TokenSet set) {
+    do {
+      if (forward) {
+        element = element.getNextSibling();
+      }
+      else {
+        element = element.getPrevSibling();
+      }
+    }
+    while (element != null && element.getNode() != null && set.contains(element.getNode().getElementType()));
+
+    return element;
   }
 
   @Nullable
@@ -1273,7 +1278,7 @@ public class PsiUtil {
 
   @NotNull
   public static List<GrImportStatement> getValidImportStatements(final GroovyFile file) {
-    final List<GrImportStatement> oldImports = new ArrayList<GrImportStatement>();
+    final List<GrImportStatement> oldImports = new ArrayList<>();
     for (GrImportStatement statement : file.getImportStatements()) {
       if (!ErrorUtil.containsError(statement)) {
         oldImports.add(statement);
@@ -1328,12 +1333,8 @@ public class PsiUtil {
 
   public static boolean scopeClassImplementsTrait(@NotNull final PsiClass trait, @NotNull final PsiElement place) {
     GrTypeDefinition scopeClass = PsiTreeUtil.getParentOfType(place, GrTypeDefinition.class, true);
-    return scopeClass != null && ContainerUtil.find(scopeClass.getSuperTypes(), new Condition<PsiClassType>() {
-      @Override
-      public boolean value(PsiClassType type) {
-        return place.getManager().areElementsEquivalent(type.resolve(), trait);
-      }
-    }) != null;
+    return scopeClass != null && ContainerUtil.find(scopeClass.getSuperTypes(),
+                                                    type -> place.getManager().areElementsEquivalent(type.resolve(), trait)) != null;
   }
 
   public static boolean isThisOrSuperRef(@Nullable PsiElement qualifier) {
@@ -1415,18 +1416,12 @@ public class PsiUtil {
   }
 
   public static boolean isBlockReturnVoid(@NotNull final GrCodeBlock block) {
-    return CachedValuesManager.getCachedValue(block, new CachedValueProvider<Boolean>() {
-      @Nullable
+    return CachedValuesManager.getCachedValue(block, () -> CachedValueProvider.Result.create(ControlFlowUtils.visitAllExitPoints(block, new ControlFlowUtils.ExitPointVisitor() {
       @Override
-      public Result<Boolean> compute() {
-        return Result.create(ControlFlowUtils.visitAllExitPoints(block, new ControlFlowUtils.ExitPointVisitor() {
-          @Override
-          public boolean visitExitPoint(Instruction instruction, @Nullable GrExpression returnValue) {
-            return returnValue == null || !(returnValue instanceof GrLiteral);
-          }
-        }), PsiModificationTracker.MODIFICATION_COUNT);
+      public boolean visitExitPoint(Instruction instruction, @Nullable GrExpression returnValue) {
+        return returnValue == null || !(returnValue instanceof GrLiteral);
       }
-    });
+    }), PsiModificationTracker.MODIFICATION_COUNT));
   }
 
   public static boolean checkPsiElementsAreEqual(PsiElement l, PsiElement r) {

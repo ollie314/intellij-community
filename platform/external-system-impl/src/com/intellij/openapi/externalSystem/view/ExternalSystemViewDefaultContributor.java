@@ -77,7 +77,7 @@ public class ExternalSystemViewDefaultContributor extends ExternalSystemViewCont
   @NotNull
   public List<ExternalSystemNode<?>> createNodes(final ExternalProjectsView externalProjectsView,
                                                  final MultiMap<Key<?>, DataNode<?>> dataNodes) {
-    final List<ExternalSystemNode<?>> result = new SmartList<ExternalSystemNode<?>>();
+    final List<ExternalSystemNode<?>> result = new SmartList<>();
 
     addModuleNodes(externalProjectsView, dataNodes, result);
     // add tasks
@@ -169,7 +169,7 @@ public class ExternalSystemViewDefaultContributor extends ExternalSystemViewCont
     }
   }
 
-  @Order(2)
+  @Order(ExternalSystemNode.BUILTIN_DEPENDENCIES_DATA_NODE_ORDER)
   private static class MyDependenciesNode extends ExternalSystemNode {
     public MyDependenciesNode(ExternalProjectsView externalProjectsView) {
       //noinspection unchecked

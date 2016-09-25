@@ -32,8 +32,7 @@ import com.intellij.psi.*;
 import com.intellij.psi.impl.PsiVariableEx;
 import com.intellij.psi.javadoc.PsiDocComment;
 import com.intellij.psi.javadoc.PsiDocTag;
-import com.intellij.psi.util.PsiTreeUtil;
-import com.intellij.psi.util.PsiUtil;
+import com.intellij.psi.util.*;
 import com.intellij.util.IncorrectOperationException;
 import gnu.trove.THashSet;
 import org.jetbrains.annotations.NotNull;
@@ -53,7 +52,7 @@ public class JavaSuppressionUtil {
   }
 
   @Nullable
-  public static String getInspectionIdSuppressedInAnnotationAttribute(PsiElement element) {
+  private static String getInspectionIdSuppressedInAnnotationAttribute(PsiElement element) {
     if (element instanceof PsiLiteralExpression) {
       final Object value = ((PsiLiteralExpression)element).getValue();
       if (value instanceof String) {
@@ -63,7 +62,7 @@ public class JavaSuppressionUtil {
     else if (element instanceof PsiReferenceExpression) {
       final PsiElement psiElement = ((PsiReferenceExpression)element).resolve();
       if (psiElement instanceof PsiVariableEx) {
-        final Object val = ((PsiVariableEx)psiElement).computeConstantValue(new THashSet<PsiVariable>());
+        final Object val = ((PsiVariableEx)psiElement).computeConstantValue(new THashSet<>());
         if (val instanceof String) {
           return (String)val;
         }
@@ -73,7 +72,7 @@ public class JavaSuppressionUtil {
   }
 
   @NotNull
-  public static Collection<String> getInspectionIdsSuppressedInAnnotation(final PsiModifierList modifierList) {
+  public static Collection<String> getInspectionIdsSuppressedInAnnotation(@Nullable PsiModifierList modifierList) {
     if (modifierList == null) {
       return Collections.emptyList();
     }
@@ -86,12 +85,19 @@ public class JavaSuppressionUtil {
     if (annotation == null) {
       return Collections.emptyList();
     }
+    return CachedValuesManager.getCachedValue(annotation, () ->
+      CachedValueProvider.Result.create(getInspectionIdsSuppressedInAnnotation(annotation),
+                                        PsiModificationTracker.OUT_OF_CODE_BLOCK_MODIFICATION_COUNT));
+  }
+
+  @NotNull
+  private static Collection<String> getInspectionIdsSuppressedInAnnotation(PsiAnnotation annotation) {
     final PsiNameValuePair[] attributes = annotation.getParameterList().getAttributes();
     if (attributes.length == 0) {
       return Collections.emptyList();
     }
     final PsiAnnotationMemberValue attributeValue = attributes[0].getValue();
-    Collection<String> result = new ArrayList<String>();
+    Collection<String> result = new ArrayList<>();
     if (attributeValue instanceof PsiArrayInitializerMemberValue) {
       final PsiAnnotationMemberValue[] initializers = ((PsiArrayInitializerMemberValue)attributeValue).getInitializers();
       for (PsiAnnotationMemberValue annotationMemberValue : initializers) {
@@ -125,12 +131,22 @@ public class JavaSuppressionUtil {
 
       classContainer = PsiTreeUtil.getParentOfType(classContainer, PsiDocCommentOwner.class);
     }
+
+    final PsiJavaFile file = PsiTreeUtil.getParentOfType(owner, PsiJavaFile.class);
+    if (file != null) {
+      final PsiDirectory directory = file.getContainingDirectory();
+      if (directory != null) {
+        final PsiPackage aPackage = JavaDirectoryService.getInstance().getPackage(directory);
+        if (aPackage != null) {
+          return AnnotationUtil.findAnnotation(aPackage, Generated.class.getName());
+        }
+      }
+    }
+
     return null;
   }
 
   static PsiElement getAnnotationMemberSuppressedIn(@NotNull PsiModifierListOwner owner, @NotNull String inspectionToolID) {
-    final PsiAnnotation generatedAnnotation = AnnotationUtil.findAnnotation(owner, Generated.class.getName());
-    if (generatedAnnotation != null) return generatedAnnotation;
     PsiModifierList modifierList = owner.getModifierList();
     Collection<String> suppressedIds = getInspectionIdsSuppressedInAnnotation(modifierList);
     for (String ids : suppressedIds) {
@@ -138,7 +154,7 @@ public class JavaSuppressionUtil {
         return modifierList != null ? AnnotationUtil.findAnnotation(owner, SUPPRESS_INSPECTIONS_ANNOTATION_NAME) : null;
       }
     }
-    return null;
+    return AnnotationUtil.findAnnotation(owner, Generated.class.getName());
   }
 
   static PsiElement getDocCommentToolSuppressedIn(@NotNull PsiDocCommentOwner owner, @NotNull String inspectionToolID) {
@@ -215,9 +231,9 @@ public class JavaSuppressionUtil {
         }
         if (up instanceof PsiVariable) {
           PsiVariable local = (PsiVariable)up;
-          if (getAnnotationMemberSuppressedIn(local, toolId) != null) {
-            PsiModifierList modifierList = local.getModifierList();
-            return modifierList != null ? modifierList.findAnnotation(SUPPRESS_INSPECTIONS_ANNOTATION_NAME) : null;
+          final PsiElement annotation = getAnnotationMemberSuppressedIn(local, toolId);
+          if (annotation != null) {
+            return annotation;
           }
         }
 

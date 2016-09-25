@@ -72,14 +72,9 @@ public class JavaSafeDeleteDelegateImpl implements JavaSafeDeleteDelegate {
       if (((PsiDocMethodOrFieldRef)element).getSignature() != null) {
         @NonNls final StringBuffer newText = new StringBuffer();
         newText.append("/** @see #").append(method.getName()).append('(');
-        final List<PsiParameter> parameters = new ArrayList<PsiParameter>(Arrays.asList(method.getParameterList().getParameters()));
+        final List<PsiParameter> parameters = new ArrayList<>(Arrays.asList(method.getParameterList().getParameters()));
         parameters.remove(parameter);
-        newText.append(StringUtil.join(parameters, new Function<PsiParameter, String>() {
-          @Override
-          public String fun(PsiParameter psiParameter) {
-            return psiParameter.getType().getCanonicalText();
-          }
-        }, ","));
+        newText.append(StringUtil.join(parameters, psiParameter -> psiParameter.getType().getCanonicalText(), ","));
         newText.append(")*/");
         usages.add(new SafeDeleteReferenceJavaDeleteUsageInfo(element, parameter, true) {
           public void deleteElement() throws IncorrectOperationException {

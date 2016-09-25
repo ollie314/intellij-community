@@ -18,16 +18,13 @@ package org.jetbrains.builtInWebServer
 import com.intellij.openapi.extensions.ExtensionPointName
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VfsUtil
+import com.intellij.util.io.host
+import com.intellij.util.io.uriScheme
 import io.netty.channel.Channel
 import io.netty.channel.ChannelHandlerContext
-import io.netty.handler.codec.http.FullHttpRequest
-import io.netty.handler.codec.http.HttpHeaderNames
-import io.netty.handler.codec.http.HttpRequest
-import io.netty.handler.codec.http.HttpResponseStatus
-import org.jetbrains.io.host
+import io.netty.handler.codec.http.*
 import org.jetbrains.io.response
 import org.jetbrains.io.send
-import org.jetbrains.io.uriScheme
 
 /**
  * By default [WebServerPathToFileManager] will be used to map request to file.
@@ -49,9 +46,9 @@ abstract class WebServerPathHandler {
                        isCustomHost: Boolean): Boolean
 }
 
-fun redirectToDirectory(request: HttpRequest, channel: Channel, path: String) {
-  val response = HttpResponseStatus.MOVED_PERMANENTLY.response()
+internal fun redirectToDirectory(request: HttpRequest, channel: Channel, path: String, extraHeaders: HttpHeaders?) {
+  val response = HttpResponseStatus.MOVED_PERMANENTLY.response(request)
   val url = VfsUtil.toUri("${channel.uriScheme}://${request.host!!}/$path/")!!
   response.headers().add(HttpHeaderNames.LOCATION, url.toASCIIString())
-  response.send(channel, request)
+  response.send(channel, request, extraHeaders)
 }

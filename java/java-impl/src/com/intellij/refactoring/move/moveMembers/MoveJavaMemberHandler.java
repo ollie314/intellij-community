@@ -246,7 +246,7 @@ public class MoveJavaMemberHandler implements MoveMemberHandler {
   @Nullable
   public PsiElement getAnchor(@NotNull final PsiMember member, @NotNull final PsiClass targetClass, final Set<PsiMember> membersToMove) {
     if (member instanceof PsiField && member.hasModifierProperty(PsiModifier.STATIC)) {
-      final List<PsiField> afterFields = new ArrayList<PsiField>();
+      final List<PsiField> afterFields = new ArrayList<>();
       final PsiExpression psiExpression = ((PsiField)member).getInitializer();
       if (psiExpression != null) {
         psiExpression.accept(new JavaRecursiveElementWalkingVisitor() {
@@ -265,15 +265,11 @@ public class MoveJavaMemberHandler implements MoveMemberHandler {
       }
 
       if (!afterFields.isEmpty()) {
-        Collections.sort(afterFields, new Comparator<PsiField>() {
-          public int compare(final PsiField o1, final PsiField o2) {
-            return -PsiUtilCore.compareElementsByPosition(o1, o2);
-          }
-        });
+        Collections.sort(afterFields, (o1, o2) -> -PsiUtilCore.compareElementsByPosition(o1, o2));
         return afterFields.get(0);
       }
 
-      final List<PsiField> beforeFields = new ArrayList<PsiField>();
+      final List<PsiField> beforeFields = new ArrayList<>();
       for (PsiReference psiReference : ReferencesSearch.search(member, new LocalSearchScope(targetClass))) {
         final PsiField fieldWithReference = PsiTreeUtil.getParentOfType(psiReference.getElement(), PsiField.class);
         if (fieldWithReference != null && !afterFields.contains(fieldWithReference) && fieldWithReference.getContainingClass() == targetClass) {

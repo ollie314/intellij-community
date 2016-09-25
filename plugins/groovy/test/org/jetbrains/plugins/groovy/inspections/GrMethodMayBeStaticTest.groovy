@@ -25,9 +25,8 @@ import org.jetbrains.plugins.groovy.codeInspection.declaration.GrMethodMayBeStat
  * @author Max Medvedev
  */
 @CompileStatic
-public class GrMethodMayBeStaticTest extends LightGroovyTestCase {
+class GrMethodMayBeStaticTest extends LightGroovyTestCase {
 
-  final String basePath = null
   final LightProjectDescriptor projectDescriptor = GroovyLightProjectDescriptor.GROOVY_LATEST
   final GrMethodMayBeStaticInspection inspection = new GrMethodMayBeStaticInspection()
 

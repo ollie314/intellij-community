@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@ import com.intellij.profile.codeInspection.InspectionProjectProfileManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.PsiNameIdentifierOwner;
-import com.intellij.util.Consumer;
 import com.jetbrains.python.codeInsight.controlflow.ScopeOwner;
 import com.jetbrains.python.codeInsight.dataflow.scope.ScopeUtil;
 import com.jetbrains.python.inspections.quickfix.PyRenameElementQuickFix;
@@ -46,7 +45,7 @@ import java.util.Set;
  */
 public class PyShadowingBuiltinsInspection extends PyInspection {
   // Persistent settings
-  public List<String> ignoredNames = new ArrayList<String>();
+  public List<String> ignoredNames = new ArrayList<>();
 
   @NotNull
   @Override
@@ -139,16 +138,13 @@ public class PyShadowingBuiltinsInspection extends PyInspection {
       public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
         final PsiElement element = descriptor.getPsiElement();
         if (element != null) {
-          final InspectionProfile profile = InspectionProjectProfileManager.getInstance(project).getInspectionProfile();
-          profile.modifyProfile(new Consumer<ModifiableModel>() {
-            @Override
-            public void consume(ModifiableModel model) {
-              final String toolName = PyShadowingBuiltinsInspection.class.getSimpleName();
-              final PyShadowingBuiltinsInspection inspection = (PyShadowingBuiltinsInspection)model.getUnwrappedTool(toolName, element);
-              if (inspection != null) {
-                if (!inspection.ignoredNames.contains(myName)) {
-                  inspection.ignoredNames.add(myName);
-                }
+          final InspectionProfile profile = InspectionProjectProfileManager.getInstance(project).getCurrentProfile();
+          profile.modifyProfile(model -> {
+            final String toolName = PyShadowingBuiltinsInspection.class.getSimpleName();
+            final PyShadowingBuiltinsInspection inspection = (PyShadowingBuiltinsInspection)model.getUnwrappedTool(toolName, element);
+            if (inspection != null) {
+              if (!inspection.ignoredNames.contains(myName)) {
+                inspection.ignoredNames.add(myName);
               }
             }
           });

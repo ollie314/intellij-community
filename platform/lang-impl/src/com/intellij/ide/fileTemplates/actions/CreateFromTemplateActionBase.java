@@ -91,7 +91,7 @@ public abstract class CreateFromTemplateActionBase extends AnAction {
     int count = template.getSegmentsCount();
     if (count == 0) return;
 
-    Set<String> variables = new HashSet<String>();
+    Set<String> variables = new HashSet<>();
     for (int i = 0; i < count; i++) {
       variables.add(template.getSegmentName(i));
     }
@@ -99,12 +99,7 @@ public abstract class CreateFromTemplateActionBase extends AnAction {
     for (String variable : variables) {
       template.addVariable(variable, null, "\"" + variable + "\"", true);
     }
-    WriteCommandAction.runWriteCommandAction(project, new Runnable() {
-      @Override
-      public void run() {
-        editor.getDocument().setText(template.getTemplateText());
-      }
-    });
+    WriteCommandAction.runWriteCommandAction(project, () -> editor.getDocument().setText(template.getTemplateText()));
     TemplateManager.getInstance(project).startTemplate(editor, template);
   }
 

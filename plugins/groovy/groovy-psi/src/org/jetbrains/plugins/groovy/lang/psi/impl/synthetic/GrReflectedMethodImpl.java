@@ -21,6 +21,9 @@ import com.intellij.psi.*;
 import com.intellij.psi.impl.light.LightMethodBuilder;
 import com.intellij.psi.impl.light.LightReferenceListBuilder;
 import com.intellij.psi.impl.light.LightTypeParameterListBuilder;
+import com.intellij.psi.util.CachedValueProvider;
+import com.intellij.psi.util.CachedValuesManager;
+import com.intellij.psi.util.PsiModificationTracker;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -92,7 +95,7 @@ public class GrReflectedMethodImpl extends LightMethodBuilder implements GrRefle
     final GrLightModifierList myModifierList = ((GrLightModifierList)getModifierList());
 
     for (String modifier : GrModifier.GROOVY_MODIFIERS) {
-      if (baseMethod.hasModifierProperty(modifier)) {
+      if (baseMethod.getModifierList().hasExplicitModifier(modifier)) {
         myModifierList.addModifier(modifier);
       }
     }
@@ -119,7 +122,7 @@ public class GrReflectedMethodImpl extends LightMethodBuilder implements GrRefle
   private void initParameterList(GrParameter[] parameters, int optionalParams, PsiClassType categoryType) {
     final GrLightParameterListBuilder parameterList = (GrLightParameterListBuilder)getParameterList();
 
-    List<GrParameter> skipped = new ArrayList<GrParameter>();
+    List<GrParameter> skipped = new ArrayList<>();
 
     if (categoryType != null) {
       parameterList.addParameter(new GrLightParameter(CATEGORY_PARAMETER_NAME, categoryType, this));
@@ -267,14 +270,13 @@ public class GrReflectedMethodImpl extends LightMethodBuilder implements GrRefle
 
   @NotNull
   public static GrReflectedMethod[] createReflectedMethods(GrMethod method) {
-    final PsiClassType categoryType = method.hasModifierProperty(PsiModifier.STATIC) ? null : getCategoryType(method);
-
-    final GrParameter[] parameters = method.getParameters();
-    return doCreateReflectedMethods(method, categoryType, parameters);
+    return CachedValuesManager.getCachedValue(method, () -> CachedValueProvider.Result.create(
+      doCreateReflectedMethods(method, null, method.getParameters()), PsiModificationTracker.OUT_OF_CODE_BLOCK_MODIFICATION_COUNT
+    ));
   }
 
   @NotNull
-  private static GrReflectedMethod[] doCreateReflectedMethods(@NotNull GrMethod targetMethod,
+  public static GrReflectedMethod[] doCreateReflectedMethods(@NotNull GrMethod targetMethod,
                                                               @Nullable PsiClassType categoryType,
                                                               @NotNull GrParameter[] parameters) {
     int count = 0;

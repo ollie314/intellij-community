@@ -31,20 +31,7 @@ import org.jetbrains.annotations.Nullable;
 public interface ErrorsConfigurable extends Configurable {
   void selectProfile(final Profile profile);
   void selectInspectionTool(final String selectedToolShortName);
+  void selectInspectionGroup(final String[] groupPath);
   @Nullable
   Object getSelectedObject();
-
-  class SERVICE {
-    private SERVICE() {
-    }
-
-    @Nullable
-    public static ErrorsConfigurable createConfigurable(@NotNull Project project) {
-      Configurable configurable = ConfigurableExtensionPointUtil.createProjectConfigurableForProvider(project, ErrorsConfigurableProvider.class);
-      if (configurable == null) {
-        configurable = ConfigurableExtensionPointUtil.createApplicationConfigurableForProvider(ErrorsConfigurableProvider.class);
-      }
-      return (ErrorsConfigurable)configurable;
-    }
-  }
 }

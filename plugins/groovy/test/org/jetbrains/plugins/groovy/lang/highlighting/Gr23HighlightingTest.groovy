@@ -18,7 +18,9 @@ package org.jetbrains.plugins.groovy.lang.highlighting
 import com.intellij.codeInspection.InspectionProfileEntry
 import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.testFramework.LightProjectDescriptor
+import org.jetbrains.annotations.NotNull
 import org.jetbrains.plugins.groovy.GroovyLightProjectDescriptor
+import org.jetbrains.plugins.groovy.codeInspection.GroovyUnusedDeclarationInspection
 import org.jetbrains.plugins.groovy.codeInspection.assignment.GroovyAssignabilityCheckInspection
 import org.jetbrains.plugins.groovy.codeInspection.untypedUnresolvedAccess.GrUnresolvedAccessInspection
 
@@ -26,6 +28,7 @@ import org.jetbrains.plugins.groovy.codeInspection.untypedUnresolvedAccess.GrUnr
  * Created by Max Medvedev on 27/02/14
  */
 class Gr23HighlightingTest extends GrHighlightingTestBase {
+  @NotNull
   @Override
   protected LightProjectDescriptor getProjectDescriptor() {
     return GroovyLightProjectDescriptor.GROOVY_2_3
@@ -459,5 +462,17 @@ class C implements T {
 }
 '''
     myFixture.testHighlighting false, false, false
+  }
+
+  void 'test trait method usages'() {
+    testHighlighting '''\
+trait T {
+    def getFoo() {}
+}
+
+class A implements T {}
+
+new A().foo
+''', GroovyUnusedDeclarationInspection
   }
 }

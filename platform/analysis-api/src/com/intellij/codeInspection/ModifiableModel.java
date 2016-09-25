@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,15 +36,7 @@ public interface ModifiableModel extends Profile {
 
   InspectionProfile getParentProfile();
 
-  @Nullable
-  String getBaseProfileName();
-
-  @Deprecated // use corresponding constructor instead
-  void setBaseProfile(InspectionProfile profile);
-
   void enableTool(@NotNull String inspectionTool, NamedScope namedScope, Project project);
-
-  void disableTool(@NotNull String inspectionTool, NamedScope namedScope, @NotNull Project project);
 
   void setErrorLevel(HighlightDisplayKey key, @NotNull HighlightDisplayLevel level, Project project);
 
@@ -52,9 +44,9 @@ public interface ModifiableModel extends Profile {
 
   boolean isToolEnabled(HighlightDisplayKey key);
 
-  boolean isToolEnabled(HighlightDisplayKey key, PsiElement element);
+  boolean isToolEnabled(@Nullable HighlightDisplayKey key, @Nullable PsiElement element);
 
-  void commit() throws IOException;
+  void commit();
 
   boolean isChanged();
 
@@ -62,7 +54,7 @@ public interface ModifiableModel extends Profile {
 
   boolean isProperSetting(@NotNull String toolId);
 
-  void resetToBase(Project project);
+  void resetToBase(@Nullable Project project);
 
   void resetToEmpty(Project project);
 
@@ -76,9 +68,10 @@ public interface ModifiableModel extends Profile {
 
   InspectionToolWrapper[] getInspectionTools(PsiElement element);
 
-  void copyFrom(@NotNull InspectionProfile profile);
-
-  void setEditable(String toolDisplayName);
+  /**
+   * @see InspectionProfile#getSingleTool()
+   */
+  void setSingleTool(@NotNull String toolShortName);
 
   void save() throws IOException;
 
@@ -88,5 +81,5 @@ public interface ModifiableModel extends Profile {
 
   void disableTool(@NotNull String toolId, @NotNull PsiElement element);
 
-  void disableTool(@NotNull String inspectionTool, Project project);
+  void disableTool(@NotNull String inspectionTool, @Nullable Project project);
 }

@@ -15,6 +15,7 @@
  */
 package com.intellij.openapi.editor.actionSystem;
 
+import com.intellij.codeInsight.hint.HintManager;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.application.ApplicationManager;
@@ -22,7 +23,8 @@ import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.command.UndoConfirmationPolicy;
 import com.intellij.openapi.editor.*;
 import com.intellij.openapi.extensions.Extensions;
-import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.openapi.project.Project;
+import com.intellij.reporting.FreezeLogger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -130,7 +132,8 @@ public class TypedAction {
 
   public final void actionPerformed(@Nullable final Editor editor, final char charTyped, final DataContext dataContext) {
     if (editor == null) return;
-    myRawHandler.execute(editor, charTyped, dataContext);
+    Project project = CommonDataKeys.PROJECT.getData(dataContext);
+    FreezeLogger.getInstance().runUnderPerformanceMonitor(project, () -> myRawHandler.execute(editor, charTyped, dataContext));
   }
   
   private class DefaultRawHandler implements TypedActionHandler {
@@ -138,7 +141,8 @@ public class TypedAction {
     public void execute(@NotNull final Editor editor, final char charTyped, @NotNull final DataContext dataContext) {
       CommandProcessor.getInstance().executeCommand(
         CommonDataKeys.PROJECT.getData(dataContext), () -> {
-          if (!FileDocumentManager.getInstance().requestWriting(editor.getDocument(), editor.getProject())) {
+          if (!EditorModificationUtil.requestWriting(editor)) {
+            HintManager.getInstance().showInformationHint(editor, "File is not writable");
             return;
           }
           ApplicationManager.getApplication().runWriteAction(new DocumentRunnable(editor.getDocument(), editor.getProject()) {

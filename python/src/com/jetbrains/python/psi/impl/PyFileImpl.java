@@ -19,7 +19,6 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.intellij.extapi.psi.PsiFileBase;
 import com.intellij.icons.AllIcons;
-import com.intellij.lang.ASTNode;
 import com.intellij.lang.Language;
 import com.intellij.navigation.ItemPresentation;
 import com.intellij.openapi.fileTypes.FileType;
@@ -33,8 +32,8 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.*;
 import com.intellij.psi.scope.PsiScopeProcessor;
 import com.intellij.psi.stubs.StubElement;
-import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.util.PsiModificationTracker;
+import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.QualifiedName;
 import com.intellij.reference.SoftReference;
 import com.intellij.util.IncorrectOperationException;
@@ -69,11 +68,11 @@ public class PyFileImpl extends PsiFileBase implements PyFile, PyExpression {
   private final Map<FutureFeature, Boolean> myFutureFeatures;
   private List<String> myDunderAll;
   private boolean myDunderAllCalculated;
-  private volatile SoftReference<ExportedNameCache> myExportedNameCache = new SoftReference<ExportedNameCache>(null);
+  private volatile SoftReference<ExportedNameCache> myExportedNameCache = new SoftReference<>(null);
   private final PsiModificationTracker myModificationTracker;
 
   private class ExportedNameCache {
-    private final List<String> myNameDefinerNegativeCache = new ArrayList<String>();
+    private final List<String> myNameDefinerNegativeCache = new ArrayList<>();
     private long myNameDefinerOOCBModCount = -1;
     private final long myModificationStamp;
     private final Map<String, List<PsiNamedElement>> myNamedElements = Maps.newHashMap();
@@ -82,37 +81,34 @@ public class PyFileImpl extends PsiFileBase implements PyFile, PyExpression {
     private ExportedNameCache(long modificationStamp) {
       myModificationStamp = modificationStamp;
 
-      processDeclarations(PyPsiUtils.collectAllStubChildren(PyFileImpl.this, getStub()), new Processor<PsiElement>() {
-        @Override
-        public boolean process(PsiElement element) {
-          if (element instanceof PsiNamedElement && !(element instanceof PyKeywordArgument)) {
-            final PsiNamedElement namedElement = (PsiNamedElement)element;
-            final String name = namedElement.getName();
-            if (!myNamedElements.containsKey(name)) {
-              myNamedElements.put(name, Lists.<PsiNamedElement>newArrayList());
-            }
-            final List<PsiNamedElement> elements = myNamedElements.get(name);
-            elements.add(namedElement);
+      processDeclarations(PyPsiUtils.collectAllStubChildren(PyFileImpl.this, getStub()), element -> {
+        if (element instanceof PsiNamedElement && !(element instanceof PyKeywordArgument)) {
+          final PsiNamedElement namedElement = (PsiNamedElement)element;
+          final String name = namedElement.getName();
+          if (!myNamedElements.containsKey(name)) {
+            myNamedElements.put(name, Lists.<PsiNamedElement>newArrayList());
           }
-          if (element instanceof PyImportedNameDefiner) {
-            myImportedNameDefiners.add((PyImportedNameDefiner)element);
-          }
-          if (element instanceof PyFromImportStatement) {
-            final PyFromImportStatement fromImportStatement = (PyFromImportStatement)element;
-            final PyStarImportElement starImportElement = fromImportStatement.getStarImportElement();
-            if (starImportElement != null) {
-              myImportedNameDefiners.add(starImportElement);
-            }
-            else {
-              Collections.addAll(myImportedNameDefiners, fromImportStatement.getImportElements());
-            }
-          }
-          else if (element instanceof PyImportStatement) {
-            final PyImportStatement importStatement = (PyImportStatement)element;
-            Collections.addAll(myImportedNameDefiners, importStatement.getImportElements());
-          }
-          return true;
+          final List<PsiNamedElement> elements = myNamedElements.get(name);
+          elements.add(namedElement);
         }
+        if (element instanceof PyImportedNameDefiner) {
+          myImportedNameDefiners.add((PyImportedNameDefiner)element);
+        }
+        if (element instanceof PyFromImportStatement) {
+          final PyFromImportStatement fromImportStatement = (PyFromImportStatement)element;
+          final PyStarImportElement starImportElement = fromImportStatement.getStarImportElement();
+          if (starImportElement != null) {
+            myImportedNameDefiners.add(starImportElement);
+          }
+          else {
+            Collections.addAll(myImportedNameDefiners, fromImportStatement.getImportElements());
+          }
+        }
+        else if (element instanceof PyImportStatement) {
+          final PyImportStatement importStatement = (PyImportStatement)element;
+          Collections.addAll(myImportedNameDefiners, importStatement.getImportElements());
+        }
+        return true;
       });
       for (List<PsiNamedElement> elements : myNamedElements.values()) {
         Collections.reverse(elements);
@@ -204,7 +200,7 @@ public class PyFileImpl extends PsiFileBase implements PyFile, PyExpression {
 
   public PyFileImpl(FileViewProvider viewProvider, Language language) {
     super(viewProvider, language);
-    myFutureFeatures = new HashMap<FutureFeature, Boolean>();
+    myFutureFeatures = new HashMap<>();
     myModificationTracker = PsiModificationTracker.SERVICE.getInstance(getProject());
   }
 
@@ -296,7 +292,7 @@ public class PyFileImpl extends PsiFileBase implements PyFile, PyExpression {
                                      PsiElement lastParent,
                                      @NotNull PsiElement place) {
     final List<String> dunderAll = getDunderAll();
-    final List<String> remainingDunderAll = dunderAll == null ? null : new ArrayList<String>(dunderAll);
+    final List<String> remainingDunderAll = dunderAll == null ? null : new ArrayList<>(dunderAll);
     PsiScopeProcessor wrapper = new PsiScopeProcessor() {
       @Override
       public boolean execute(@NotNull PsiElement element, @NotNull ResolveState state) {
@@ -320,7 +316,7 @@ public class PyFileImpl extends PsiFileBase implements PyFile, PyExpression {
 
     Set<PyFile> pyFiles = resolveState.get(PROCESSED_FILES);
     if (pyFiles == null) {
-      pyFiles = new HashSet<PyFile>();
+      pyFiles = new HashSet<>();
       resolveState = resolveState.put(PROCESSED_FILES, pyFiles);
     }
     if (pyFiles.contains(this)) return true;
@@ -361,7 +357,7 @@ public class PyFileImpl extends PsiFileBase implements PyFile, PyExpression {
 
   @Override
   public List<PyStatement> getStatements() {
-    List<PyStatement> stmts = new ArrayList<PyStatement>();
+    List<PyStatement> stmts = new ArrayList<>();
     for (PsiElement child : getChildren()) {
       if (child instanceof PyStatement) {
         PyStatement statement = (PyStatement)child;
@@ -415,18 +411,17 @@ public class PyFileImpl extends PsiFileBase implements PyFile, PyExpression {
   @NotNull
   @Override
   public List<RatedResolveResult> multiResolveName(@NotNull final String name) {
-    final List<RatedResolveResult> results = RecursionManager.doPreventingRecursion(this, false, new Computable<List<RatedResolveResult>>() {
-      @Override
-      public List<RatedResolveResult> compute() {
-        return getExportedNameCache().multiResolve(name);
-      }
-    });
+    final List<RatedResolveResult> results = RecursionManager.doPreventingRecursion(this, false,
+                                                                                    () -> getExportedNameCache().multiResolve(name));
     if (results != null && !results.isEmpty()) {
       return results;
     }
     final List<String> allNames = getDunderAll();
     if (allNames != null && allNames.contains(name)) {
-      return ResolveResultList.to(findExportedName(PyNames.ALL));
+      final PsiElement allElement = findExportedName(PyNames.ALL);
+      final ResolveResultList allFallbackResults = new ResolveResultList();
+      allFallbackResults.poke(allElement, RatedResolveResult.RATE_LOW);
+      return allFallbackResults;
     }
     return Collections.emptyList();
   }
@@ -441,7 +436,7 @@ public class PyFileImpl extends PsiFileBase implements PyFile, PyExpression {
     }
     if (cache == null) {
       cache = new ExportedNameCache(modificationStamp);
-      myExportedNameCache = new SoftReference<ExportedNameCache>(cache);
+      myExportedNameCache = new SoftReference<>(cache);
     }
     return cache;
   }
@@ -462,7 +457,7 @@ public class PyFileImpl extends PsiFileBase implements PyFile, PyExpression {
 
   @NotNull
   public Iterable<PyElement> iterateNames() {
-    final List<PyElement> result = new ArrayList<PyElement>();
+    final List<PyElement> result = new ArrayList<>();
     VariantsProcessor processor = new VariantsProcessor(this) {
       @Override
       protected void addElement(String name, PsiElement element) {
@@ -480,7 +475,7 @@ public class PyFileImpl extends PsiFileBase implements PyFile, PyExpression {
   @Override
   @NotNull
   public List<PyImportElement> getImportTargets() {
-    List<PyImportElement> ret = new ArrayList<PyImportElement>();
+    List<PyImportElement> ret = new ArrayList<>();
     List<PyImportStatement> imports =
       PyPsiUtils.collectStubChildren(this, this.getStub(), PyElementTypes.IMPORT_STATEMENT, PyImportStatement.class);
     for (PyImportStatement one : imports) {
@@ -522,7 +517,7 @@ public class PyFileImpl extends PsiFileBase implements PyFile, PyExpression {
     private boolean myFoundDunderAll = false;
 
     // hashlib builds __all__ by concatenating multiple lists of strings, and we want to understand this
-    private final Map<String, List<String>> myDunderLike = new HashMap<String, List<String>>();
+    private final Map<String, List<String>> myDunderLike = new HashMap<>();
 
     @Override
     public void visitPyFile(PyFile node) {
@@ -542,7 +537,7 @@ public class PyFileImpl extends PsiFileBase implements PyFile, PyExpression {
             List<String> lhs = getStringListFromValue(binaryExpression.getLeftExpression());
             List<String> rhs = getStringListFromValue(binaryExpression.getRightExpression());
             if (lhs != null && rhs != null) {
-              myResult = new ArrayList<String>(lhs);
+              myResult = new ArrayList<>(lhs);
               myResult.addAll(rhs);
             }
           }
@@ -628,19 +623,21 @@ public class PyFileImpl extends PsiFileBase implements PyFile, PyExpression {
 
   @Override
   public List<PyImportStatementBase> getImportBlock() {
-    List<PyImportStatementBase> result = new ArrayList<PyImportStatementBase>();
-    ASTNode firstImport = getNode().getFirstChildNode();
-    while (firstImport != null && !isImport(firstImport, false)) {
-      firstImport = firstImport.getTreeNext();
+    final List<PyImportStatementBase> result = new ArrayList<>();
+    final PsiElement firstChild = getFirstChild();
+    final PyImportStatementBase firstImport;
+    if (firstChild instanceof PyImportStatementBase) {
+      firstImport = (PyImportStatementBase)firstChild;
+    }
+    else {
+      firstImport = PsiTreeUtil.getNextSiblingOfType(firstChild, PyImportStatementBase.class);
     }
     if (firstImport != null) {
-      result.add(firstImport.getPsi(PyImportStatementBase.class));
-      ASTNode lastImport = firstImport.getTreeNext();
-      while (lastImport != null && isImport(lastImport.getTreeNext(), true)) {
-        if (isImport(lastImport, false)) {
-          result.add(lastImport.getPsi(PyImportStatementBase.class));
-        }
-        lastImport = lastImport.getTreeNext();
+      result.add(firstImport);
+      PsiElement nextImport = PyPsiUtils.getNextNonCommentSibling(firstImport, true);
+      while (nextImport instanceof PyImportStatementBase) {
+        result.add((PyImportStatementBase)nextImport);
+        nextImport = PyPsiUtils.getNextNonCommentSibling(nextImport, true);
       }
     }
     return result;
@@ -729,17 +726,8 @@ public class PyFileImpl extends PsiFileBase implements PyFile, PyExpression {
   private static class ArrayListThreadLocal extends ThreadLocal<List<String>> {
     @Override
     protected List<String> initialValue() {
-      return new ArrayList<String>();
+      return new ArrayList<>();
     }
-  }
-
-  public static boolean isImport(ASTNode node, boolean orWhitespace) {
-    if (node == null) return false;
-    IElementType elementType = node.getElementType();
-    if (orWhitespace && elementType == TokenType.WHITE_SPACE) {
-      return true;
-    }
-    return elementType == PyElementTypes.IMPORT_STATEMENT || elementType == PyElementTypes.FROM_IMPORT_STATEMENT;
   }
 
   @Override

@@ -17,6 +17,7 @@ package com.intellij.openapi.actionSystem.ex;
 
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.application.ApplicationNamesInfo;
+import com.intellij.openapi.application.TransactionGuard;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.IndexNotReadyException;
 import com.intellij.openapi.project.Project;
@@ -45,14 +46,14 @@ public class ActionUtil {
 
   public static void showDumbModeWarning(@NotNull AnActionEvent... events) {
     Project project = null;
-    List<String> actionNames = new ArrayList<String>();
+    List<String> actionNames = new ArrayList<>();
     for (final AnActionEvent event : events) {
       final String s = event.getPresentation().getText();
       if (StringUtil.isNotEmpty(s)) {
         actionNames.add(s);
       }
 
-      final Project _project = CommonDataKeys.PROJECT.getData(event.getDataContext());
+      final Project _project = event.getProject();
       if (_project != null && project == null) {
         project = _project;
       }
@@ -87,7 +88,6 @@ public class ActionUtil {
            + " not available while " + ApplicationNamesInfo.getInstance().getProductName() + " is updating indices";
   }
 
-  public static final PausesStat ACTION_UPDATE_PAUSES = new PausesStat("AnAction.update()");
   private static int insidePerformDumbAwareUpdate;
   /**
    * @param action action
@@ -101,7 +101,7 @@ public class ActionUtil {
   public static boolean performDumbAwareUpdate(@NotNull AnAction action, @NotNull AnActionEvent e, boolean beforeActionPerformed) {
     final Presentation presentation = e.getPresentation();
     final Boolean wasEnabledBefore = (Boolean)presentation.getClientProperty(WAS_ENABLED_BEFORE_DUMB);
-    final boolean dumbMode = isDumbMode(CommonDataKeys.PROJECT.getData(e.getDataContext()));
+    final boolean dumbMode = isDumbMode(e.getProject());
     if (wasEnabledBefore != null && !dumbMode) {
       presentation.putClientProperty(WAS_ENABLED_BEFORE_DUMB, null);
       presentation.setEnabled(wasEnabledBefore.booleanValue());
@@ -112,7 +112,7 @@ public class ActionUtil {
     final boolean notAllowed = dumbMode && !action.isDumbAware();
 
     if (insidePerformDumbAwareUpdate++ == 0) {
-      ACTION_UPDATE_PAUSES.started();
+      ActionPauses.STAT.started();
     }
     try {
       if (beforeActionPerformed) {
@@ -132,7 +132,7 @@ public class ActionUtil {
     }
     finally {
       if (--insidePerformDumbAwareUpdate == 0) {
-        ACTION_UPDATE_PAUSES.finished(presentation.getText()+" action update ("+action.getClass()+")");
+        ActionPauses.STAT.finished(presentation.getText() + " action update (" + action.getClass() + ")");
       }
       if (notAllowed) {
         if (wasEnabledBefore == null) {
@@ -143,6 +143,9 @@ public class ActionUtil {
     }
     
     return false;
+  }
+  public static class ActionPauses {
+    public static final PausesStat STAT = new PausesStat("AnAction.update()");
   }
 
   /**
@@ -165,7 +168,7 @@ public class ActionUtil {
   public static boolean lastUpdateAndCheckDumb(AnAction action, AnActionEvent e, boolean visibilityMatters) {
     performDumbAwareUpdate(action, e, true);
 
-    final Project project = CommonDataKeys.PROJECT.getData(e.getDataContext());
+    final Project project = e.getProject();
     if (project != null && DumbService.getInstance(project).isDumb() && !action.isDumbAware()) {
       if (Boolean.FALSE.equals(e.getPresentation().getClientProperty(WOULD_BE_ENABLED_IF_NOT_DUMB_MODE))) {
         return false;
@@ -189,11 +192,27 @@ public class ActionUtil {
   }
 
   public static void performActionDumbAware(AnAction action, AnActionEvent e) {
-    try {
-      action.actionPerformed(e);
-    }
-    catch (IndexNotReadyException e1) {
-      showDumbModeWarning(e);
+    Runnable runnable = new Runnable() {
+      @Override
+      public void run() {
+        try {
+          action.actionPerformed(e);
+        }
+        catch (IndexNotReadyException e1) {
+          showDumbModeWarning(e);
+        }
+      }
+
+      @Override
+      public String toString() {
+        return action + " of " + action.getClass();
+      }
+    };
+
+    if (action.startInTransaction()) {
+      TransactionGuard.getInstance().submitTransactionAndWait(runnable);
+    } else {
+      runnable.run();
     }
   }
 

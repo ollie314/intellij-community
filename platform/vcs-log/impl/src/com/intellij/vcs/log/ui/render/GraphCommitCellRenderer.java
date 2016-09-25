@@ -1,15 +1,22 @@
 package com.intellij.vcs.log.ui.render;
 
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.util.Condition;
+import com.intellij.openapi.ui.GraphicsConfig;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.vcs.changes.issueLinks.IssueLinkRenderer;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.ColoredTableCellRenderer;
+import com.intellij.ui.SimpleTextAttributes;
+import com.intellij.ui.TableCell;
+import com.intellij.util.ObjectUtils;
 import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.ui.GraphicsUtil;
+import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.vcs.log.VcsRef;
-import com.intellij.vcs.log.data.VcsLogDataManager;
+import com.intellij.vcs.log.data.VcsLogData;
 import com.intellij.vcs.log.graph.PrintElement;
+import com.intellij.vcs.log.graph.VisibleGraph;
 import com.intellij.vcs.log.paint.GraphCellPainter;
 import com.intellij.vcs.log.paint.PaintParameters;
 import com.intellij.vcs.log.ui.frame.VcsLogGraphTable;
@@ -20,34 +27,34 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
 
 public class GraphCommitCellRenderer extends ColoredTableCellRenderer {
-
   private static final Logger LOG = Logger.getInstance(GraphCommitCellRenderer.class);
+  private static final int MAX_GRAPH_WIDTH = 10;
 
-  @NotNull private final VcsLogDataManager myDataManager;
+  private static final int VERTICAL_PADDING = JBUI.scale(7);
+
+  @NotNull private final VcsLogData myLogData;
   @NotNull private final GraphCellPainter myPainter;
   @NotNull private final VcsLogGraphTable myGraphTable;
-  @NotNull private final TextLabelPainter myTextLabelPainter;
   @NotNull private final IssueLinkRenderer myIssueLinkRenderer;
+  @NotNull private final ReferencePainter myReferencePainter =
+    isRedesignedLabels() ? new LabelPainter() : new RectangleReferencePainter();
+  @Nullable private final FadeOutPainter myFadeOutPainter = isRedesignedLabels() ? new FadeOutPainter() : null;
 
   @Nullable private PaintInfo myGraphImage;
-  @Nullable private Collection<VcsRef> myRefs;
   @NotNull private Font myFont;
   private int myHeight;
+  private boolean myExpanded;
 
-  public GraphCommitCellRenderer(@NotNull VcsLogDataManager dataManager,
+  public GraphCommitCellRenderer(@NotNull VcsLogData logData,
                                  @NotNull GraphCellPainter painter,
                                  @NotNull VcsLogGraphTable table) {
-    myDataManager = dataManager;
+    myLogData = logData;
     myPainter = painter;
     myGraphTable = table;
-    myTextLabelPainter = TextLabelPainter.createPainter(false);
-    myIssueLinkRenderer = new IssueLinkRenderer(dataManager.getProject(), this);
-    myFont = TextLabelPainter.getFont();
+    myIssueLinkRenderer = new IssueLinkRenderer(myLogData.getProject(), this);
+    myFont = RectanglePainter.getFont();
     myHeight = calculateHeight();
   }
 
@@ -55,11 +62,13 @@ public class GraphCommitCellRenderer extends ColoredTableCellRenderer {
   @Override
   public Dimension getPreferredSize() {
     Dimension preferredSize = super.getPreferredSize();
-    return new Dimension(preferredSize.width, getPreferredHeight());
+    return new Dimension(preferredSize.width + (myReferencePainter.isLeftAligned() ? 0 :
+                                                myReferencePainter.getSize().width - LabelPainter.GRADIENT_WIDTH),
+                         getPreferredHeight());
   }
 
   public int getPreferredHeight() {
-    Font font = TextLabelPainter.getFont();
+    Font font = RectanglePainter.getFont();
     if (myFont != font) {
       myFont = font;
       myHeight = calculateHeight();
@@ -68,21 +77,26 @@ public class GraphCommitCellRenderer extends ColoredTableCellRenderer {
   }
 
   private int calculateHeight() {
-    return myTextLabelPainter.calculateSize("", getFontMetrics(myFont)).height + 4;
+    return Math.max(myReferencePainter.getSize().height, getFontMetrics(myFont).getHeight() + VERTICAL_PADDING);
   }
 
   @Override
   public void paintComponent(Graphics g) {
     super.paintComponent(g);
+    int graphImageWidth = (myGraphImage != null) ? myGraphImage.getWidth() : 0;
 
-    if (myRefs != null) {
-      int paddingX = (myGraphImage != null ? myGraphImage.getWidth() : 0) + PaintParameters.LABEL_PADDING;
-      Map<String, Color> labelsForReferences = collectLabelsForRefs(myRefs);
-      for (Map.Entry<String, Color> entry : labelsForReferences.entrySet()) {
-        Dimension size = myTextLabelPainter.calculateSize(entry.getKey(), g.getFontMetrics(TextLabelPainter.getFont()));
-        int paddingY = (myGraphTable.getRowHeight() - size.height) / 2;
-        myTextLabelPainter.paint((Graphics2D)g, entry.getKey(), paddingX, paddingY, entry.getValue());
-        paddingX += size.width + PaintParameters.LABEL_PADDING;
+    if (!myReferencePainter.isLeftAligned()) {
+      int start = Math.max(graphImageWidth, getWidth() - myReferencePainter.getSize().width);
+      myReferencePainter.paint((Graphics2D)g, start, 0, getHeight());
+    }
+    else {
+      myReferencePainter.paint((Graphics2D)g, graphImageWidth, 0, getHeight());
+    }
+
+    if (myFadeOutPainter != null) {
+      if (!myExpanded) {
+        int start = Math.max(graphImageWidth, getWidth() - myFadeOutPainter.getWidth());
+        myFadeOutPainter.paint((Graphics2D)g, start, 0, getHeight());
       }
     }
 
@@ -102,7 +116,6 @@ public class GraphCommitCellRenderer extends ColoredTableCellRenderer {
 
     GraphCommitCell cell = getAssertCommitCell(value);
     myGraphImage = getGraphImage(row);
-    myRefs = cell.getRefsToThisCommit();
 
     int graphPadding;
     if (myGraphImage != null) {
@@ -114,29 +127,50 @@ public class GraphCommitCellRenderer extends ColoredTableCellRenderer {
     else {
       graphPadding = 0;
     }
-    int textPadding = graphPadding + calculateReferencePadding(myRefs);
+
+    SimpleTextAttributes style = myGraphTable.applyHighlighters(this, row, column, "", hasFocus, isSelected);
+
+    Collection<VcsRef> refs = cell.getRefsToThisCommit();
+    Color foreground = ObjectUtils.assertNotNull(myGraphTable.getBaseStyle(row, column, "", hasFocus, isSelected).getForeground());
+    myExpanded = myGraphTable.getExpandableItemsHandler().getExpandedItems().contains(new TableCell(row, column));
+    if (myFadeOutPainter != null) {
+      myFadeOutPainter.customize(refs, row, column, table, foreground);
+    }
+    customizeRefsPainter(myReferencePainter, refs, foreground);
 
     setBorder(null);
     append("");
-    appendTextPadding(textPadding);
-    myIssueLinkRenderer.appendTextWithLinks(cell.getText(), myGraphTable.applyHighlighters(this, row, column, "", hasFocus, isSelected));
+    appendTextPadding(graphPadding + (myReferencePainter.isLeftAligned() ? myReferencePainter.getSize().width : 0));
+    myIssueLinkRenderer.appendTextWithLinks(cell.getText(), style);
+  }
+
+  private void customizeRefsPainter(@NotNull ReferencePainter painter, @NotNull Collection<VcsRef> refs, @NotNull Color foreground) {
+    if (!refs.isEmpty()) {
+      VirtualFile root = ObjectUtils.assertNotNull(ContainerUtil.getFirstItem(refs)).getRoot();
+      painter.customizePainter(this, refs, myLogData.getLogProvider(root).getReferenceManager(), getBackground(), foreground);
+    }
+    else {
+      painter.customizePainter(this, refs, null, getBackground(), foreground);
+    }
   }
 
   @Nullable
   private PaintInfo getGraphImage(int row) {
-    Collection<? extends PrintElement> printElements = myGraphTable.getVisibleGraph().getRowInfo(row).getPrintElements();
+    VisibleGraph<Integer> graph = myGraphTable.getVisibleGraph();
+    Collection<? extends PrintElement> printElements = graph.getRowInfo(row).getPrintElements();
     int maxIndex = 0;
     for (PrintElement printElement : printElements) {
       maxIndex = Math.max(maxIndex, printElement.getPositionInCurrentRow());
     }
     maxIndex++;
+    maxIndex = Math.max(maxIndex, Math.min(MAX_GRAPH_WIDTH, graph.getRecommendedWidth()));
     final BufferedImage image = UIUtil
       .createImage(PaintParameters.getNodeWidth(myGraphTable.getRowHeight()) * (maxIndex + 4), myGraphTable.getRowHeight(),
                    BufferedImage.TYPE_INT_ARGB);
     Graphics2D g2 = image.createGraphics();
     myPainter.draw(g2, printElements);
 
-    final int width = maxIndex * PaintParameters.getNodeWidth(myGraphTable.getRowHeight());
+    int width = maxIndex * PaintParameters.getNodeWidth(myGraphTable.getRowHeight());
     return new PaintInfo(image, width);
   }
 
@@ -145,55 +179,8 @@ public class GraphCommitCellRenderer extends ColoredTableCellRenderer {
     return (GraphCommitCell)value;
   }
 
-  @NotNull
-  private Map<String, Color> collectLabelsForRefs(@NotNull Collection<VcsRef> refs) {
-    if (refs.isEmpty()) {
-      return Collections.emptyMap();
-    }
-    VirtualFile root = refs.iterator().next().getRoot(); // all refs are from the same commit => they have the same root
-    refs = ContainerUtil.sorted(refs, myDataManager.getLogProvider(root).getReferenceManager().getLabelsOrderComparator());
-    List<VcsRef> branches = getBranches(refs);
-    Collection<VcsRef> tags = ContainerUtil.subtract(refs, branches);
-    return getLabelsForRefs(branches, tags);
-  }
-
-  private int calculateReferencePadding(@NotNull Collection<VcsRef> references) {
-    if (references.isEmpty()) return 0;
-
-    int paddingX = 2 * PaintParameters.LABEL_PADDING;
-    for (String label : collectLabelsForRefs(references).keySet()) {
-      Dimension size = myTextLabelPainter.calculateSize(label, this.getFontMetrics(TextLabelPainter.getFont()));
-      paddingX += size.width + PaintParameters.LABEL_PADDING;
-    }
-    return paddingX;
-  }
-
-  @NotNull
-  private static Map<String, Color> getLabelsForRefs(@NotNull List<VcsRef> branches, @NotNull Collection<VcsRef> tags) {
-    Map<String, Color> labels = ContainerUtil.newLinkedHashMap();
-    for (VcsRef branch : branches) {
-      labels.put(branch.getName(), branch.getType().getBackgroundColor());
-    }
-    if (!tags.isEmpty()) {
-      VcsRef firstTag = tags.iterator().next();
-      Color color = firstTag.getType().getBackgroundColor();
-      if (tags.size() > 1) {
-        labels.put(firstTag.getName() + " +", color);
-      }
-      else {
-        labels.put(firstTag.getName(), color);
-      }
-    }
-    return labels;
-  }
-
-  private static List<VcsRef> getBranches(Collection<VcsRef> refs) {
-    return ContainerUtil.filter(refs, new Condition<VcsRef>() {
-      @Override
-      public boolean value(VcsRef ref) {
-        return ref.getType().isBranch();
-      }
-    });
+  public static boolean isRedesignedLabels() {
+    return Registry.is("vcs.log.labels.redesign");
   }
 
   private static class PaintInfo {
@@ -216,6 +203,45 @@ public class GraphCommitCellRenderer extends ColoredTableCellRenderer {
      * (some diagonal edges, etc.)
      */
     int getWidth() {
+      return myWidth;
+    }
+  }
+
+  private class FadeOutPainter {
+    @NotNull private final LabelPainter myEmptyPainter = new LabelPainter();
+    private int myWidth = LabelPainter.GRADIENT_WIDTH;
+
+    public void customize(@NotNull Collection<VcsRef> currentRefs, int row, int column, @NotNull JTable table, @NotNull Color foreground) {
+      myWidth = 0;
+
+      if (currentRefs.isEmpty()) {
+        int prevWidth = 0;
+        if (row > 0) {
+          GraphCommitCell commitCell = getAssertCommitCell(table.getValueAt(row - 1, column));
+          customizeRefsPainter(myEmptyPainter, commitCell.getRefsToThisCommit(), foreground);
+          prevWidth = myEmptyPainter.getSize().width;
+        }
+
+        int nextWidth = 0;
+        if (row < table.getRowCount() - 1) {
+          GraphCommitCell commitCell = getAssertCommitCell(table.getValueAt(row + 1, column));
+          customizeRefsPainter(myEmptyPainter, commitCell.getRefsToThisCommit(), foreground);
+          nextWidth = myEmptyPainter.getSize().width;
+        }
+
+        myWidth = Math.max(Math.max(prevWidth, nextWidth), LabelPainter.GRADIENT_WIDTH);
+      }
+    }
+
+    public void paint(@NotNull Graphics2D g2, int x, int y, int height) {
+      GraphicsConfig config = GraphicsUtil.setupAAPainting(g2);
+
+      myEmptyPainter.paintFadeOut(g2, x, y, myWidth, height);
+
+      config.restore();
+    }
+
+    public int getWidth() {
       return myWidth;
     }
   }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,6 +60,7 @@ import com.intellij.util.ui.AbstractLayoutManager;
 import com.intellij.util.ui.GraphicsUtil;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
+import one.util.streamex.StreamEx;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -75,6 +76,7 @@ import java.beans.PropertyChangeListener;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.stream.Collectors;
 
 public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Facade, ViewContextEx, PropertyChangeListener, SwitchProvider,
                                         QuickActionProvider, DockContainer.Dialog {
@@ -97,16 +99,13 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
   final MyDragOutDelegate myDragOutDelegate = new MyDragOutDelegate();
 
   JBRunnerTabs myTabs;
-  private final Comparator<TabInfo> myTabsComparator = new Comparator<TabInfo>() {
-    @Override
-    public int compare(@NotNull final TabInfo o1, @NotNull final TabInfo o2) {
-      //noinspection ConstantConditions
-      TabImpl tab1 = getTabFor(o1);
-      TabImpl tab2 = getTabFor(o2);
-      int index1 = tab1 != null ? tab1.getIndex() : -1;
-      int index2 = tab2 != null ? tab2.getIndex() : -1;
-      return index1 - index2;
-    }
+  private final Comparator<TabInfo> myTabsComparator = (o1, o2) -> {
+    //noinspection ConstantConditions
+    TabImpl tab1 = getTabFor(o1);
+    TabImpl tab2 = getTabFor(o2);
+    int index1 = tab1 != null ? tab1.getIndex() : -1;
+    int index2 = tab2 != null ? tab2.getIndex() : -1;
+    return index1 - index2;
   };
   private final Project myProject;
 
@@ -114,13 +113,13 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
 
   private final DefaultActionGroup myMinimizedViewActions = new DefaultActionGroup();
 
-  private final Map<GridImpl, Wrapper> myMinimizedButtonsPlaceholder = new HashMap<GridImpl, Wrapper>();
-  private final Map<GridImpl, Wrapper> myCommonActionsPlaceholder = new HashMap<GridImpl, Wrapper>();
-  private final Map<GridImpl, AnAction[]> myContextActions = new HashMap<GridImpl, AnAction[]>();
+  private final Map<GridImpl, Wrapper> myMinimizedButtonsPlaceholder = new HashMap<>();
+  private final Map<GridImpl, Wrapper> myCommonActionsPlaceholder = new HashMap<>();
+  private final Map<GridImpl, AnAction[]> myContextActions = new HashMap<>();
 
   private boolean myUiLastStateWasRestored;
 
-  private final Set<Object> myRestoreStateRequestors = new HashSet<Object>();
+  private final Set<Object> myRestoreStateRequestors = new HashSet<>();
   private String myActionsPlace = ActionPlaces.UNKNOWN;
   private final IdeFocusManager myFocusManager;
 
@@ -128,8 +127,8 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
   private boolean myMoveToGridActionEnabled = true;
   private final RunnerLayoutUi myRunnerUi;
 
-  private final Map<String, LayoutAttractionPolicy> myAttractions = new HashMap<String, LayoutAttractionPolicy>();
-  private final Map<String, LayoutAttractionPolicy> myConditionAttractions = new HashMap<String, LayoutAttractionPolicy>();
+  private final Map<String, LayoutAttractionPolicy> myAttractions = new HashMap<>();
+  private final Map<String, LayoutAttractionPolicy> myConditionAttractions = new HashMap<>();
 
   private ActionGroup myTabPopupActions;
   private ActionGroup myAdditionalFocusActions;
@@ -146,13 +145,8 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
   private MyDropAreaPainter myCurrentPainter;
 
   private RunnerContentUi myOriginal;
-  private final CopyOnWriteArraySet<Listener> myDockingListeners = new CopyOnWriteArraySet<Listener>();
-  private final Set<RunnerContentUi> myChildren = new TreeSet<RunnerContentUi>(new Comparator<RunnerContentUi>() {
-    @Override
-    public int compare(@NotNull RunnerContentUi o1, @NotNull RunnerContentUi o2) {
-      return o1.myWindow - o2.myWindow;
-    }
-  });
+  private final CopyOnWriteArraySet<Listener> myDockingListeners = new CopyOnWriteArraySet<>();
+  private final Set<RunnerContentUi> myChildren = new TreeSet<>((o1, o2) -> o1.myWindow - o2.myWindow);
   private int myWindow;
   private boolean myDisposing;
 
@@ -221,7 +215,7 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
         }
         return null;
       }
-    }).setTabLabelActionsAutoHide(false).setProvideSwitchTargets(false).setInnerInsets(new Insets(0, 0, 0, 0))
+    }).setTabLabelActionsAutoHide(false).setProvideSwitchTargets(false).setInnerInsets(JBUI.emptyInsets())
       .setToDrawBorderIfTabsHidden(false).setTabDraggingEnabled(isMoveToGridActionEnabled()).setUiDecorator(null).getJBTabs();
     rebuildTabPopup();
 
@@ -800,12 +794,7 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
   }
 
   private static boolean hasContent(ContentManager manager, Content content) {
-    for (Content c : manager.getContents()) {
-      if (c == content) {
-        return true;
-      }
-    }
-    return false;
+    return StreamEx.of(manager.getContents()).has(content);
   }
 
   private static void moveFollowingTabs(int index, final JBRunnerTabs tabs) {
@@ -848,7 +837,7 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
       Wrapper eachPlaceholder = entry.getValue();
       List<Content> contentList = entry.getKey().getContents();
 
-      Set<Content> contents = new HashSet<Content>();
+      Set<Content> contents = new HashSet<>();
       contents.addAll(contentList);
 
       DefaultActionGroup groupToBuild;
@@ -907,15 +896,12 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
   private void updateTabsUI(final boolean validateNow) {
     boolean hasToolbarContent = rebuildToolbar();
 
-    Set<String> usedNames = new HashSet<String>();
+    Set<String> usedNames = new HashSet<>();
     List<TabInfo> tabs = myTabs.getTabs();
     for (TabInfo each : tabs) {
       hasToolbarContent |= updateTabUI(each, usedNames);
     }
-    int tabsCount = tabs.size();
-    for (RunnerContentUi child : myChildren) {
-      tabsCount += child.myTabs.getTabCount();
-    }
+    int tabsCount = tabs.size() + myChildren.stream().mapToInt(child -> child.myTabs.getTabCount()).sum();
     myTabs.getPresentation().setHideTabs(!hasToolbarContent && tabsCount <= 1 && myOriginal == null);
     myTabs.updateTabActions(validateNow);
 
@@ -942,13 +928,7 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
       if (name != null && contents.size() > 1 && !usedNames.contains(name)) {
         title = name;
       } else {
-        title = StringUtil.join(contents, new NotNullFunction<Content, String>() {
-          @NotNull
-          @Override
-          public String fun(Content dom) {
-            return dom.getTabName();
-          }
-        },  " | ");
+        title = StringUtil.join(contents, (NotNullFunction<Content, String>)dom -> dom.getTabName(), " | ");
       }
     }
     usedNames.add(title);
@@ -979,7 +959,7 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
     try {
       setStateIsBeingRestored(true, this);
 
-      List<TabInfo> tabs = new ArrayList<TabInfo>();
+      List<TabInfo> tabs = new ArrayList<>();
       tabs.addAll(myTabs.getTabs());
 
       final ActionCallback result = new ActionCallback(tabs.size());
@@ -1076,11 +1056,7 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
   }
 
   private ArrayList<GridImpl> getGrids() {
-    ArrayList<GridImpl> result = new ArrayList<GridImpl>();
-    for (TabInfo each : myTabs.getTabs()) {
-      result.add(getGridFor(each));
-    }
-    return result;
+    return myTabs.getTabs().stream().map(RunnerContentUi::getGridFor).collect(Collectors.toCollection(ArrayList::new));
   }
 
 
@@ -1172,7 +1148,7 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
   @Override
   public void restoreLayout() {
     final RunnerContentUi[] children = myChildren.toArray(new RunnerContentUi[myChildren.size()]);
-    final List<Content> contents = new ArrayList<Content>();
+    final List<Content> contents = new ArrayList<>();
     Collections.addAll(contents, myManager.getContents());
     for (RunnerContentUi child : children) {
       Collections.addAll(contents, child.myManager.getContents());
@@ -1182,13 +1158,10 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
       contents.add(content);
     }
     Content[] all = contents.toArray(new Content[contents.size()]);
-    Arrays.sort(all, new Comparator<Content>() {
-      @Override
-      public int compare(@NotNull Content content, @NotNull Content content1) {
-        final int i = getStateFor(content).getTab().getDefaultIndex();
-        final int i1 = getStateFor(content1).getTab().getDefaultIndex();
-        return i - i1;
-      }
+    Arrays.sort(all, (content, content1) -> {
+      final int i = getStateFor(content).getTab().getDefaultIndex();
+      final int i1 = getStateFor(content1).getTab().getDefaultIndex();
+      return i - i1;
     });
 
     setStateIsBeingRestored(true, this);
@@ -1454,21 +1427,13 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
         // [kirillk] this is done later since restoreUiState doesn't work properly in the addNotify call chain
         //todo to investigate and to fix (may cause extra flickering)
         //noinspection SSBasedInspection
-        SwingUtilities.invokeLater(new Runnable() {
-          @Override
-          public void run() {
-            restoreLastUiState().doWhenDone(new Runnable() {
-              @Override
-              public void run() {
-                if (!myWasEverAdded) {
-                  myWasEverAdded = true;
-                  attractOnStartup();
-                  myInitialized.setDone();
-                }
-              }
-            });
+        SwingUtilities.invokeLater(() -> restoreLastUiState().doWhenDone(() -> {
+          if (!myWasEverAdded) {
+            myWasEverAdded = true;
+            attractOnStartup();
+            myInitialized.setDone();
           }
-        });
+        }));
       }
     }
 
@@ -1488,12 +1453,9 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
   // [kirillk] this is done later since "startup" attractions should be done gently, only if no explicit calls are done
   private void attractOnStartup() {
     final int currentCount = myAttractionCount;
-    SwingUtilities.invokeLater(new Runnable() {
-      @Override
-      public void run() {
-        if (currentCount < myAttractionCount) return;
-        attractByCondition(LayoutViewOptions.STARTUP, false);
-      }
+    SwingUtilities.invokeLater(() -> {
+      if (currentCount < myAttractionCount) return;
+      attractByCondition(LayoutViewOptions.STARTUP, false);
     });
   }
 
@@ -1516,30 +1478,22 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
                                  final LayoutAttractionPolicy defaultPolicy,
                                  final boolean afterInitialized,
                                  final boolean activate) {
-    IdeFocusManager.getInstance(getProject()).doWhenFocusSettlesDown(new Runnable() {
-      @Override
-      public void run() {
-        myInitialized.processOnDone(new Runnable() {
-          @Override
-          public void run() {
-            Content content = findContent(contentId);
-            if (content == null) return;
+    IdeFocusManager.getInstance(getProject()).doWhenFocusSettlesDown(() -> myInitialized.processOnDone(() -> {
+      Content content = findContent(contentId);
+      if (content == null) return;
 
-            final LayoutAttractionPolicy policy = getOrCreatePolicyFor(contentId, policyMap, defaultPolicy);
-            if (activate) {
-              // See IDEA-93683, bounce attraction should not disable further focus attraction
-              if (!(policy instanceof LayoutAttractionPolicy.Bounce)) {
-                myAttractionCount++;
-              }
-              policy.attract(content, myRunnerUi);
-            }
-            else {
-              policy.clearAttraction(content, myRunnerUi);
-            }
-          }
-        }, afterInitialized);
+      final LayoutAttractionPolicy policy = getOrCreatePolicyFor(contentId, policyMap, defaultPolicy);
+      if (activate) {
+        // See IDEA-93683, bounce attraction should not disable further focus attraction
+        if (!(policy instanceof LayoutAttractionPolicy.Bounce)) {
+          myAttractionCount++;
+        }
+        policy.attract(content, myRunnerUi);
       }
-    });
+      else {
+        policy.clearAttraction(content, myRunnerUi);
+      }
+    }, afterInitialized));
   }
 
 
@@ -1566,7 +1520,7 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
 
   @Override
   public void minimize(final Content content, final CellTransform.Restore restore) {
-    final Ref<AnAction> restoreAction = new Ref<AnAction>();
+    final Ref<AnAction> restoreAction = new Ref<>();
     myManager.removeContent(content, false);
     restoreAction.set(new RestoreViewAction(content, new CellTransform.Restore() {
       @Override
@@ -1630,7 +1584,7 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
   }
 
   @Override
-  public ActionCallback select(final Content content, final boolean requestFocus) {
+  public ActionCallback select(@NotNull final Content content, final boolean requestFocus) {
     final GridImpl grid = (GridImpl)findGridFor(content);
     if (grid == null) return ActionCallback.DONE;
 
@@ -1640,12 +1594,7 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
 
 
     final ActionCallback result = new ActionCallback();
-    myTabs.select(info, false).doWhenDone(new Runnable() {
-      @Override
-      public void run() {
-        grid.select(content, requestFocus).notifyWhenDone(result);
-      }
-    });
+    myTabs.select(info, false).doWhenDone(() -> grid.select(content, requestFocus).notifyWhenDone(result));
 
 
     return result;
@@ -1656,19 +1605,13 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
     final TabInfo current = myTabs.getSelectedInfo();
     myTabs.getPresentation().setPaintBlocked(true, true);
 
-    select(content, false).doWhenDone(new Runnable() {
-      @Override
-      public void run() {
-        myTabs.getComponent().validate();
-        toRestore.run().doWhenDone(new Runnable() {
-          @Override
-          public void run() {
-            assert current != null;
-            myTabs.select(current, true);
-            myTabs.getPresentation().setPaintBlocked(false, true);
-          }
-        });
-      }
+    select(content, false).doWhenDone(() -> {
+      myTabs.getComponent().validate();
+      toRestore.run().doWhenDone(() -> {
+        assert current != null;
+        myTabs.select(current, true);
+        myTabs.getPresentation().setPaintBlocked(false, true);
+      });
     });
   }
 
@@ -1768,7 +1711,7 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
 
   @Override
   public List<AnAction> getActions(boolean originalProvider) {
-    ArrayList<AnAction> result = new ArrayList<AnAction>();
+    ArrayList<AnAction> result = new ArrayList<>();
     if (myLeftToolbarActions != null) {
       AnAction[] kids = myLeftToolbarActions.getChildren(null);
       ContainerUtil.addAll(result, kids);
@@ -1795,7 +1738,7 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
 
   @Override
   public List<SwitchTarget> getTargets(boolean onlyVisible, boolean originalProvider) {
-    List<SwitchTarget> result = new ArrayList<SwitchTarget>();
+    List<SwitchTarget> result = new ArrayList<>();
 
     result.addAll(myTabs.getTargets(true, false));
     GridImpl grid = getSelectedGrid();
@@ -1827,12 +1770,7 @@ public class RunnerContentUi implements ContentUI, Disposable, CellTransform.Fac
   }
 
   private boolean isUsed(int i) {
-    for (RunnerContentUi child : myChildren) {
-      if (child.getWindow() == i) {
-        return true;
-      }
-    }
-    return false;
+    return myChildren.stream().anyMatch(child -> child.getWindow() == i);
   }
 
   private DockManagerImpl getDockManager() {

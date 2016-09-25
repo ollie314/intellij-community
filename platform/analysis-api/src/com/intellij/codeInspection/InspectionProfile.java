@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2011 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -82,13 +82,19 @@ public interface InspectionProfile extends Profile {
   @NotNull
   ModifiableModel getModifiableModel();
 
-  boolean isToolEnabled(HighlightDisplayKey key, PsiElement element);
+  boolean isToolEnabled(@Nullable HighlightDisplayKey key, PsiElement element);
 
-  boolean isToolEnabled(HighlightDisplayKey key);
+  boolean isToolEnabled(@Nullable HighlightDisplayKey key);
 
   boolean isExecutable(Project project);
 
-  boolean isEditable();
+  /**
+   * @see {@link ModifiableModel#setSingleTool(String)}
+   *
+   * @return tool short name when inspection profile corresponds to synthetic profile for single inspection run
+   */
+  @Nullable
+  String getSingleTool();
 
   @NotNull
   String getDisplayName();

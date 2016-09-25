@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2009 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,16 +27,11 @@ import java.util.Map;
 
 public class ActionGroupUtil {
   private static Presentation getPresentation(AnAction action, Map<AnAction, Presentation> action2presentation) {
-    Presentation presentation = action2presentation.get(action);
-    if (presentation == null) {
-      presentation = action.getTemplatePresentation().clone();
-      action2presentation.put(action, presentation);
-    }
-    return presentation;
+    return action2presentation.computeIfAbsent(action, k -> action.getTemplatePresentation().clone());
   }
 
   public static boolean isGroupEmpty(@NotNull ActionGroup actionGroup, @NotNull AnActionEvent e) {
-    return isGroupEmpty(actionGroup, e, new HashMap<AnAction, Presentation>());
+    return isGroupEmpty(actionGroup, e, new HashMap<>());
   }
 
   private static boolean isGroupEmpty(@NotNull ActionGroup actionGroup,
@@ -62,7 +57,7 @@ public class ActionGroupUtil {
 
   @Nullable
   public static AnAction getSingleActiveAction(@NotNull ActionGroup actionGroup, @NotNull AnActionEvent e) {
-    List<AnAction> children = getEnabledChildren(actionGroup, e, new HashMap<AnAction, Presentation>());
+    List<AnAction> children = getEnabledChildren(actionGroup, e, new HashMap<>());
     if (children.size() == 1) {
       return children.get(0);
     }
@@ -72,7 +67,7 @@ public class ActionGroupUtil {
   private static List<AnAction> getEnabledChildren(@NotNull ActionGroup actionGroup,
                                                    @NotNull AnActionEvent e,
                                                    @NotNull Map<AnAction, Presentation> action2presentation) {
-    List<AnAction> result = new ArrayList<AnAction>();
+    List<AnAction> result = new ArrayList<>();
     AnAction[] actions = actionGroup.getChildren(e);
     for (AnAction action : actions) {
       if (action instanceof ActionGroup) {

@@ -139,18 +139,23 @@ public class RefClassImpl extends RefJavaElementImpl implements RefClass {
       }
     }
 
+    RefMethod varargConstructor = null;
     for (PsiMethod psiMethod : psiMethods) {
       RefMethod refMethod = (RefMethod)getRefManager().getReference(psiMethod);
 
       if (refMethod != null) {
         if (psiMethod.isConstructor()) {
-          if (psiMethod.getParameterList().getParametersCount() > 0 || !psiMethod.hasModifierProperty(PsiModifier.PRIVATE)) {
+          final PsiParameter[] parameters = psiMethod.getParameterList().getParameters();
+          if (parameters.length > 0 || !psiMethod.hasModifierProperty(PsiModifier.PRIVATE)) {
             setUtilityClass(false);
           }
 
           addConstructor(refMethod);
-          if (psiMethod.getParameterList().getParametersCount() == 0) {
+          if (parameters.length == 0) {
             setDefaultConstructor((RefMethodImpl)refMethod);
+          }
+          else if (parameters.length == 1 && parameters[0].isVarArgs()) {
+            varargConstructor = refMethod;
           }
         }
         else {
@@ -159,6 +164,10 @@ public class RefClassImpl extends RefJavaElementImpl implements RefClass {
           }
         }
       }
+    }
+
+    if (varargConstructor != null && getDefaultConstructor() == null) {
+      setDefaultConstructor((RefMethodImpl)varargConstructor);
     }
 
     if (getConstructors().isEmpty() && !isInterface() && !isAnonymous()) {
@@ -208,7 +217,7 @@ public class RefClassImpl extends RefJavaElementImpl implements RefClass {
 
   @Override
   public boolean isSelfInheritor(PsiClass psiClass) {
-    return isSelfInheritor(psiClass, new ArrayList<PsiClass>());
+    return isSelfInheritor(psiClass, new ArrayList<>());
   }
 
   @Nullable
@@ -289,12 +298,7 @@ public class RefClassImpl extends RefJavaElementImpl implements RefClass {
   @Override
   public void accept(@NotNull final RefVisitor visitor) {
     if (visitor instanceof RefJavaVisitor) {
-      ApplicationManager.getApplication().runReadAction(new Runnable() {
-        @Override
-        public void run() {
-          ((RefJavaVisitor)visitor).visitClass(RefClassImpl.this);
-        }
-      });
+      ApplicationManager.getApplication().runReadAction(() -> ((RefJavaVisitor)visitor).visitClass(this));
     } else {
       super.accept(visitor);
     }
@@ -314,7 +318,7 @@ public class RefClassImpl extends RefJavaElementImpl implements RefClass {
     }
     if (myBases.size() == 1) {
       // convert from singleton
-      myBases = new THashSet<RefClass>(myBases);
+      myBases = new THashSet<>(myBases);
     }
     myBases.add(refClass);
   }
@@ -333,7 +337,7 @@ public class RefClassImpl extends RefJavaElementImpl implements RefClass {
     }
     if (mySubClasses.size() == 1) {
       // convert from singleton
-      mySubClasses = new THashSet<RefClass>(mySubClasses);
+      mySubClasses = new THashSet<>(mySubClasses);
     }
     mySubClasses.add(refClass);
   }
@@ -364,7 +368,7 @@ public class RefClassImpl extends RefJavaElementImpl implements RefClass {
   public void addTypeReference(RefJavaElement from) {
     if (from != null) {
       if (myInTypeReferences == null){
-        myInTypeReferences = new THashSet<RefElement>(1);
+        myInTypeReferences = new THashSet<>(1);
       }
       myInTypeReferences.add(from);
       ((RefJavaElementImpl)from).addOutTypeRefernce(this);
@@ -381,7 +385,7 @@ public class RefClassImpl extends RefJavaElementImpl implements RefClass {
 
   public void addInstanceReference(RefElement from) {
     if (myInstanceReferences == null){
-      myInstanceReferences = new THashSet<RefElement>(1);
+      myInstanceReferences = new THashSet<>(1);
     }
     myInstanceReferences.add(from);
   }
@@ -393,14 +397,14 @@ public class RefClassImpl extends RefJavaElementImpl implements RefClass {
 
   private void addConstructor(RefMethod refConstructor) {
     if (myConstructors == null){
-      myConstructors = new ArrayList<RefMethod>(1);
+      myConstructors = new ArrayList<>(1);
     }
     myConstructors.add(refConstructor);
   }
 
   public void addLibraryOverrideMethod(RefMethod refMethod) {
     if (myOverridingMethods == null){
-      myOverridingMethods = new ArrayList<RefMethod>(2);
+      myOverridingMethods = new ArrayList<>(2);
     }
     myOverridingMethods.add(refMethod);
   }
@@ -435,13 +439,10 @@ public class RefClassImpl extends RefJavaElementImpl implements RefClass {
   @Override
   public String getExternalName() {
     final String[] result = new String[1];
-    ApplicationManager.getApplication().runReadAction(new Runnable() {
-      @Override
-      public void run() {//todo synthetic JSP
-        final PsiClass psiClass = getElement();
-        LOG.assertTrue(psiClass != null);
-        result[0] = PsiFormatUtil.getExternalName(psiClass);
-      }
+    ApplicationManager.getApplication().runReadAction(() -> {//todo synthetic JSP
+      final PsiClass psiClass = getElement();
+      LOG.assertTrue(psiClass != null);
+      result[0] = PsiFormatUtil.getExternalName(psiClass);
     });
     return result[0];
   }
@@ -534,7 +535,7 @@ public class RefClassImpl extends RefJavaElementImpl implements RefClass {
   }
 
   public void addClassExporter(RefJavaElement exporter) {
-    if (myClassExporters == null) myClassExporters = new ArrayList<RefJavaElement>(1);
+    if (myClassExporters == null) myClassExporters = new ArrayList<>(1);
     if (myClassExporters.contains(exporter)) return;
     myClassExporters.add(exporter);
   }

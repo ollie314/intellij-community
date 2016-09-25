@@ -196,7 +196,7 @@ public class IfCanBeSwitchInspection extends BaseInspection {
     if (switchExpression == null) {
       return;
     }
-    final List<IfStatementBranch> branches = new ArrayList<IfStatementBranch>(20);
+    final List<IfStatementBranch> branches = new ArrayList<>(20);
     while (true) {
       final PsiExpression condition = ifStatement.getCondition();
       final PsiStatement thenBranch = ifStatement.getThenBranch();
@@ -330,7 +330,7 @@ public class IfCanBeSwitchInspection extends BaseInspection {
       final PsiReferenceExpression methodExpression = methodCallExpression.getMethodExpression();
       final PsiExpression qualifierExpression = methodExpression.getQualifierExpression();
       final boolean stringType = ExpressionUtils.hasStringType(qualifierExpression);
-      if (EquivalenceChecker.expressionsAreEquivalent(switchExpression, argument)) {
+      if (EquivalenceChecker.getCanonicalPsiEquivalence().expressionsAreEquivalent(switchExpression, argument)) {
         branch.addCaseExpression(stringType? qualifierExpression : secondArgument);
       }
       else {
@@ -349,7 +349,7 @@ public class IfCanBeSwitchInspection extends BaseInspection {
       else if (operands.length == 2) {
         final PsiExpression lhs = operands[0];
         final PsiExpression rhs = operands[1];
-        if (EquivalenceChecker.expressionsAreEquivalent(switchExpression, rhs)) {
+        if (EquivalenceChecker.getCanonicalPsiEquivalence().expressionsAreEquivalent(switchExpression, rhs)) {
           branch.addCaseExpression(lhs);
         }
         else {

@@ -34,6 +34,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.*;
+import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.refactoring.util.classMembers.MemberInfo;
 import com.intellij.util.SmartList;
@@ -120,7 +121,7 @@ public class TestIntegrationUtils {
   }
 
   public static List<MemberInfo> extractClassMethods(PsiClass clazz, boolean includeInherited) {
-    List<MemberInfo> result = new ArrayList<MemberInfo>();
+    List<MemberInfo> result = new ArrayList<>();
 
     do {
       MemberInfo.extractClassMembers(clazz, result, new MemberInfo.Filter<PsiMember>() {
@@ -180,20 +181,18 @@ public class TestIntegrationUtils {
       adapter = new TemplateEditingAdapter() {
         @Override
         public void templateFinished(Template template, boolean brokenOff) {
-          ApplicationManager.getApplication().runWriteAction(new Runnable() {
-            public void run() {
-              PsiDocumentManager.getInstance(project).commitDocument(editor.getDocument());
-              PsiFile psi = PsiDocumentManager.getInstance(project).getPsiFile(editor.getDocument());
-              PsiElement el = PsiTreeUtil.findElementOfClassAtOffset(psi, editor.getCaretModel().getOffset() - 1, PsiMethod.class, false);
+          ApplicationManager.getApplication().runWriteAction(() -> {
+            PsiDocumentManager.getInstance(project).commitDocument(editor.getDocument());
+            PsiFile psi = PsiDocumentManager.getInstance(project).getPsiFile(editor.getDocument());
+            PsiElement el = PsiTreeUtil.findElementOfClassAtOffset(psi, editor.getCaretModel().getOffset() - 1, PsiMethod.class, false);
 
-              if (el != null) {
-                PsiMethod method = PsiTreeUtil.getParentOfType(el, PsiMethod.class, false);
-                if (method != null) {
-                  if (method.findDeepestSuperMethods().length > 0) {
-                    GenerateMembersUtil.setupGeneratedMethod(method);
-                  }
-                  CreateFromUsageUtils.setupEditor(method, editor);
+            if (el != null) {
+              PsiMethod method1 = PsiTreeUtil.getParentOfType(el, PsiMethod.class, false);
+              if (method1 != null) {
+                if (method1.findDeepestSuperMethods().length > 0) {
+                  GenerateMembersUtil.setupGeneratedMethod(method1);
                 }
+                CreateFromUsageUtils.setupEditor(method1, editor);
               }
             }
           });
@@ -294,19 +293,32 @@ public class TestIntegrationUtils {
 
   public static List<TestFramework> findSuitableFrameworks(PsiClass targetClass) {
     TestFramework[] frameworks = Extensions.getExtensions(TestFramework.EXTENSION_NAME);
-    for (TestFramework each : frameworks) {
-      if (each.isTestClass(targetClass)) {
-        return Collections.singletonList(each);
-      }
-    }
+    Project project = targetClass.getProject();
 
-    List<TestFramework> result = new SmartList<TestFramework>();
-    for (TestFramework each : frameworks) {
-      if (each.isPotentialTestClass(targetClass)) {
-        result.add(each);
+    List<TestFramework> result = new SmartList<>();
+
+    for (TestFramework framework : frameworks) {
+      if (isAvailableFor(project, framework)) {
+        if (framework.isTestClass(targetClass)) {
+          return Collections.singletonList(framework);
+        }
+        if (framework.isPotentialTestClass(targetClass)) {
+          result.add(framework);
+        }
       }
     }
     return result;
+  }
+
+  private static boolean isAvailableFor(@NotNull Project project, @NotNull TestFramework framework) {
+    if (framework instanceof JavaTestFramework) {
+      GlobalSearchScope scope = GlobalSearchScope.allScope(project);
+      String markerClassFQName = ((JavaTestFramework)framework).getMarkerClassFQName();
+      PsiClass c = JavaPsiFacade.getInstance(project).findClass(markerClassFQName, scope);
+      return c != null;
+    } else {
+      return true;
+    }
   }
 
   private TestIntegrationUtils() {

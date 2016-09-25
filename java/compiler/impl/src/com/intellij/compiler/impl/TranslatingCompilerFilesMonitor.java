@@ -20,7 +20,6 @@ import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.components.ApplicationComponent;
-import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileTypes.FileTypeManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
@@ -53,7 +52,6 @@ import java.util.Set;
  * 2. corresponding source file has been deleted
  */
 public class TranslatingCompilerFilesMonitor implements ApplicationComponent {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.compiler.impl.TranslatingCompilerFilesMonitor");
   public static boolean ourDebugMode = false;
 
   public TranslatingCompilerFilesMonitor(VirtualFileManager vfsManager, Application application) {
@@ -135,7 +133,7 @@ public class TranslatingCompilerFilesMonitor implements ApplicationComponent {
           if (parent != null) {
             final String oldName = (String)event.getOldValue();
             final String root = parent.getPath() + "/" + oldName;
-            final Set<File> toMark = new THashSet<File>(FileUtil.FILE_HASHING_STRATEGY);
+            final Set<File> toMark = new THashSet<>(FileUtil.FILE_HASHING_STRATEGY);
             if (eventFile.isDirectory()) {
               VfsUtilCore.visitChildrenRecursively(eventFile, new VirtualFileVisitor() {
                 private StringBuilder filePath = new StringBuilder(root);
@@ -201,22 +199,18 @@ public class TranslatingCompilerFilesMonitor implements ApplicationComponent {
   }
 
   
-  private static final Function<Collection<File>, Void> NOTIFY_CHANGED = new Function<Collection<File>, Void>() {
-    public Void fun(Collection<File> files) {
-      notifyFilesChanged(files);
-      return null;
-    }
+  private static final Function<Collection<File>, Void> NOTIFY_CHANGED = files -> {
+    notifyFilesChanged(files);
+    return null;
   };
 
-  private static final Function<Collection<File>, Void> NOTIFY_DELETED = new Function<Collection<File>, Void>() {
-    public Void fun(Collection<File> files) {
-      notifyFilesDeleted(files);
-      return null;
-    }
+  private static final Function<Collection<File>, Void> NOTIFY_DELETED = files -> {
+    notifyFilesDeleted(files);
+    return null;
   };
   
   private static void collectPathsAndNotify(final VirtualFile file, final Function<Collection<File>, Void> notification) {
-    final Set<File> pathsToMark = new THashSet<File>(FileUtil.FILE_HASHING_STRATEGY);
+    final Set<File> pathsToMark = new THashSet<>(FileUtil.FILE_HASHING_STRATEGY);
     if (!isIgnoredOrUnderIgnoredDirectory(file)) {
       final boolean inContent = isInContentOfOpenedProject(file);
       processRecursively(file, !inContent, new FileProcessor() {

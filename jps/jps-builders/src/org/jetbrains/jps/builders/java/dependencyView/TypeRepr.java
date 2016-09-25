@@ -157,6 +157,7 @@ class TypeRepr {
   }
 
   public static class ClassType implements AbstractType {
+    public static final ClassType[] EMPTY_ARRAY = new ClassType[0];
     public final int className;
 
     @Override
@@ -228,7 +229,15 @@ class TypeRepr {
   }
 
   public static AbstractType getType(final DependencyContext context, final int descr) {
-    final Type t = Type.getType(context.getValue(descr));
+    return getType(InternedString.create(context, descr));
+  }
+  public static AbstractType getType(final DependencyContext context, final String descr) {
+    return getType(InternedString.create(context, descr));
+  }
+
+  public static AbstractType getType(InternedString descr) {
+    final DependencyContext context = descr.getContext();
+    final Type t = Type.getType(descr.asString());
 
     switch (t.getSort()) {
       case Type.OBJECT:
@@ -238,12 +247,12 @@ class TypeRepr {
         return context.getType(new ArrayType(getType(context, t.getElementType())));
 
       default:
-        return context.getType(new PrimitiveType(descr));
+        return context.getType(new PrimitiveType(descr.asInt()));
     }
   }
 
   public static AbstractType getType(final DependencyContext context, final Type t) {
-    return getType(context, context.get(t.getDescriptor()));
+    return getType(context, t.getDescriptor());
   }
 
   public static AbstractType[] getType(final DependencyContext context, final Type[] t) {
@@ -255,6 +264,25 @@ class TypeRepr {
     }
 
     return r;
+  }
+
+  public static DataExternalizer<ClassType> classTypeExternalizer(final DependencyContext context) {
+    final DataExternalizer<AbstractType> delegate = externalizer(context);
+    return new DataExternalizer<ClassType>() {
+      @Override
+      public void save(@NotNull DataOutput out, ClassType value) throws IOException {
+        delegate.save(out, value);
+      }
+
+      @Override
+      public ClassType read(@NotNull DataInput in) throws IOException {
+        final AbstractType read = delegate.read(in);
+        if (read instanceof ClassType) {
+          return (ClassType)read;
+        }
+        throw new IOException("Expected: "+ ClassType.class.getName() + "; Actual: " + (read == null? "null" : read.getClass().getName()));
+      }
+    };
   }
 
   public static DataExternalizer<AbstractType> externalizer(final DependencyContext context) {

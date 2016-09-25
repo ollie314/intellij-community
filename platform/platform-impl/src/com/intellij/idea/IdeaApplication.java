@@ -133,7 +133,7 @@ public class IdeaApplication {
    */
   @NotNull
   private static String[] processProgramArguments(String[] args) {
-    ArrayList<String> arguments = new ArrayList<String>();
+    ArrayList<String> arguments = new ArrayList<>();
     List<String> safeKeys = Arrays.asList(SAFE_JAVA_ENV_PARAMETERS);
     for (String arg : args) {
       if (arg.startsWith("-D")) {
@@ -193,7 +193,7 @@ public class IdeaApplication {
       ApplicationManagerEx.getApplicationEx().load();
       myLoaded = true;
 
-      myStarter.main(myArgs);
+      ((TransactionGuardImpl) TransactionGuard.getInstance()).performUserActivity(() -> myStarter.main(myArgs));
       myStarter = null; //GC it
     }
     catch (Exception e) {
@@ -252,10 +252,10 @@ public class IdeaApplication {
       return null;
     }
 
-    private void updateSplashScreen(ApplicationInfoEx appInfo, SplashScreen splashScreen) {
+    private void updateSplashScreen(@NotNull ApplicationInfoEx appInfo, SplashScreen splashScreen) {
       final Graphics2D graphics = splashScreen.createGraphics();
       final Dimension size = splashScreen.getSize();
-      if (Splash.showLicenseeInfo(graphics, 0, 0, size.height, appInfo.getSplashTextColor())) {
+      if (Splash.showLicenseeInfo(graphics, 0, 0, size.height, appInfo.getSplashTextColor(), appInfo)) {
         splashScreen.update();
       }
     }
@@ -316,7 +316,7 @@ public class IdeaApplication {
       WindowManagerImpl windowManager = (WindowManagerImpl)WindowManager.getInstance();
       IdeEventQueue.getInstance().setWindowManager(windowManager);
 
-      Ref<Boolean> willOpenProject = new Ref<Boolean>(Boolean.FALSE);
+      Ref<Boolean> willOpenProject = new Ref<>(Boolean.FALSE);
       AppLifecycleListener lifecyclePublisher = app.getMessageBus().syncPublisher(AppLifecycleListener.TOPIC);
       lifecyclePublisher.appFrameCreated(args, willOpenProject);
 
@@ -331,13 +331,10 @@ public class IdeaApplication {
         windowManager.showFrame();
       }
 
-      app.invokeLater(new Runnable() {
-        @Override
-        public void run() {
-          if (mySplash != null) {
-            mySplash.dispose();
-            mySplash = null; // Allow GC collect the splash window
-          }
+      app.invokeLater(() -> {
+        if (mySplash != null) {
+          mySplash.dispose();
+          mySplash = null; // Allow GC collect the splash window
         }
       }, ModalityState.any());
 

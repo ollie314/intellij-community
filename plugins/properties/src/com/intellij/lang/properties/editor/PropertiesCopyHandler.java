@@ -28,7 +28,10 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileEditor.FileEditor;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.ui.*;
+import com.intellij.openapi.ui.ComboBox;
+import com.intellij.openapi.ui.DialogWrapper;
+import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.ui.ValidationInfo;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
@@ -39,15 +42,12 @@ import com.intellij.psi.PsiFileSystemItem;
 import com.intellij.psi.PsiManager;
 import com.intellij.psi.impl.SyntheticFileSystemItem;
 import com.intellij.psi.search.GlobalSearchScope;
-import com.intellij.psi.search.GlobalSearchScopesCore;
+import com.intellij.psi.search.ProjectScope;
 import com.intellij.psi.search.PsiElementProcessor;
 import com.intellij.refactoring.copy.CopyHandlerDelegateBase;
 import com.intellij.ui.ComboboxSpeedSearch;
 import com.intellij.ui.DocumentAdapter;
-import com.intellij.ui.ListSpeedSearch;
-import com.intellij.ui.components.JBList;
 import com.intellij.ui.components.JBTextField;
-import com.intellij.ui.speedSearch.SpeedSearch;
 import com.intellij.util.Consumer;
 import com.intellij.util.Function;
 import com.intellij.util.NullableFunction;
@@ -102,13 +102,7 @@ public class PropertiesCopyHandler extends CopyHandlerDelegateBase {
     }
     final ResourceBundle resourceBundle = representative.getPropertiesFile().getResourceBundle();
     final List<IProperty> properties = ContainerUtil.mapNotNull(resourceBundle.getPropertiesFiles(),
-                                                                new NullableFunction<PropertiesFile, IProperty>() {
-                                                                  @Nullable
-                                                                  @Override
-                                                                  public IProperty fun(PropertiesFile propertiesFile) {
-                                                                    return propertiesFile.findPropertyByKey(key);
-                                                                  }
-                                                                });
+                                                                (NullableFunction<PropertiesFile, IProperty>)propertiesFile -> propertiesFile.findPropertyByKey(key));
     final PropertiesCopyDialog dlg = new PropertiesCopyDialog(properties, resourceBundle);
     if (!properties.isEmpty() && dlg.showAndGet()) {
       final String propertyNewName = dlg.getCurrentPropertyName();
@@ -124,7 +118,7 @@ public class PropertiesCopyHandler extends CopyHandlerDelegateBase {
   private static void copyPropertyToAnotherBundle(@NotNull Collection<IProperty> properties,
                                                   @NotNull final String newName,
                                                   @NotNull ResourceBundle targetResourceBundle) {
-    final Map<IProperty, PropertiesFile> propertiesFileMapping = new HashMap<IProperty, PropertiesFile>();
+    final Map<IProperty, PropertiesFile> propertiesFileMapping = new HashMap<>();
     for (IProperty property : properties) {
       final PropertiesFile containingFile = property.getPropertiesFile();
       final PropertiesFile matched = findWithMatchedSuffix(containingFile, targetResourceBundle);
@@ -142,21 +136,13 @@ public class PropertiesCopyHandler extends CopyHandlerDelegateBase {
     }
 
     if (!propertiesFileMapping.isEmpty()) {
-      WriteCommandAction.runWriteCommandAction(project, new Runnable() {
-        @Override
-        public void run() {
-          if (!FileModificationService.getInstance().preparePsiElementsForWrite(ContainerUtil.map(propertiesFileMapping.values(),
-                                                                                                  new Function<PropertiesFile, PsiElement>() {
-                                                                                                    @Override
-                                                                                                    public PsiElement fun(PropertiesFile file) {
-                                                                                                      return file.getContainingFile();
-                                                                                                    }
-                                                                                                  }))) return;
-          for (Map.Entry<IProperty, PropertiesFile> entry : propertiesFileMapping.entrySet()) {
-            final String value = entry.getKey().getValue();
-            final PropertiesFile target = entry.getValue();
-            target.addProperty(newName, value);
-          }
+      WriteCommandAction.runWriteCommandAction(project, () -> {
+        if (!FileModificationService.getInstance().preparePsiElementsForWrite(ContainerUtil.map(propertiesFileMapping.values(),
+                                                                                                (Function<PropertiesFile, PsiElement>)PropertiesFile::getContainingFile))) return;
+        for (Map.Entry<IProperty, PropertiesFile> entry : propertiesFileMapping.entrySet()) {
+          final String value = entry.getKey().getValue();
+          final PropertiesFile target = entry.getValue();
+          target.addProperty(newName, value);
         }
       });
 
@@ -230,7 +216,7 @@ public class PropertiesCopyHandler extends CopyHandlerDelegateBase {
         return new ValidationInfo("Property name must be not empty");
       }
       return PropertiesUtil.containsProperty(myCurrentResourceBundle, myCurrentPropertyName)
-             ? new ValidationInfo(String.format("Property with name \'%s\' is already exist", myCurrentPropertyName))
+             ? new ValidationInfo(String.format("Property with name \'%s\' already exists", myCurrentPropertyName))
              : null;
     }
 
@@ -252,7 +238,7 @@ public class PropertiesCopyHandler extends CopyHandlerDelegateBase {
 
       final Collection<PropertiesFile> propertiesFiles = new ArrayList<>();
 
-      GlobalSearchScope searchScope = GlobalSearchScopesCore.projectProductionScope(myProject).union(GlobalSearchScopesCore.projectTestScope(myProject));
+      GlobalSearchScope searchScope = ProjectScope.getContentScope(myProject);
       PropertiesReferenceManager
         .getInstance(myProject)
         .processPropertiesFiles(searchScope,
@@ -262,7 +248,7 @@ public class PropertiesCopyHandler extends CopyHandlerDelegateBase {
                                     propertiesFiles.add(propertiesFile);
                                     return true;
                                   }
-                                }, BundleNameEvaluator.DEFAULT);
+                                }, BundleNameEvaluator.BASE_NAME);
 
       final List<PsiFileSystemItem> resourceBundlesAsFileSystemItems = propertiesFiles
         .stream()

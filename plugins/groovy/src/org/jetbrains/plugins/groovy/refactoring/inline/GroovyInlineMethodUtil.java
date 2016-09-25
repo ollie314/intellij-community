@@ -270,7 +270,7 @@ public class GroovyInlineMethodUtil {
   }
 
   public static Collection<ReferenceExpressionInfo> collectReferenceInfo(GrMethod method) {
-    ArrayList<ReferenceExpressionInfo> list = new ArrayList<ReferenceExpressionInfo>();
+    ArrayList<ReferenceExpressionInfo> list = new ArrayList<>();
     collectReferenceInfoImpl(list, method, method);
     return list;
   }
@@ -326,7 +326,7 @@ public class GroovyInlineMethodUtil {
 
   static void addQualifiersToInnerReferences(GrMethod method, Collection<ReferenceExpressionInfo> infos, @NotNull GrExpression qualifier)
       throws IncorrectOperationException {
-    Set<GrReferenceExpression> exprs = new HashSet<GrReferenceExpression>();
+    Set<GrReferenceExpression> exprs = new HashSet<>();
     for (ReferenceExpressionInfo info : infos) {
       PsiReference ref = method.findReferenceAt(info.offsetInMethod);
       if (ref != null && ref.getElement() instanceof GrReferenceExpression) {
@@ -517,7 +517,7 @@ public class GroovyInlineMethodUtil {
     */
   private static void setDefaultValuesToParameters(GrMethod method, @Nullable Collection<String> nameFilter, GrCallExpression call) throws IncorrectOperationException {
     if (nameFilter == null) {
-      nameFilter = new ArrayList<String>();
+      nameFilter = new ArrayList<>();
       for (GrParameter parameter : method.getParameters()) {
         nameFilter.add(parameter.getName());
       }
@@ -604,12 +604,8 @@ public class GroovyInlineMethodUtil {
           final boolean isFinal = ((GrVariable)resolved).hasModifierProperty(PsiModifier.FINAL);
           if (!isFinal) {
             final PsiReference lastRef =
-              Collections.max(ReferencesSearch.search(resolved).findAll(), new Comparator<PsiReference>() {
-                @Override
-                public int compare(PsiReference o1, PsiReference o2) {
-                  return o1.getElement().getTextRange().getStartOffset() - o2.getElement().getTextRange().getStartOffset();
-                }
-              });
+              Collections.max(ReferencesSearch.search(resolved).findAll(),
+                              (o1, o2) -> o1.getElement().getTextRange().getStartOffset() - o2.getElement().getTextRange().getStartOffset());
             return lastRef.getElement() == expression;
           }
         }

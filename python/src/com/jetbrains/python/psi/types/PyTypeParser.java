@@ -33,6 +33,7 @@ import com.jetbrains.python.PyNames;
 import com.jetbrains.python.codeInsight.PyTypingTypeProvider;
 import com.jetbrains.python.psi.*;
 import com.jetbrains.python.psi.impl.PyBuiltinCache;
+import com.jetbrains.python.psi.impl.PyPsiUtils;
 import com.jetbrains.python.psi.resolve.PyResolveContext;
 import com.jetbrains.python.psi.resolve.QualifiedNameResolverImpl;
 import com.jetbrains.python.psi.resolve.RatedResolveResult;
@@ -106,9 +107,9 @@ public class PyTypeParser {
     }
 
     private ParseResult merge(@NotNull ParseResult result) {
-      final Map<TextRange, PyType> types = new HashMap<TextRange, PyType>();
-      final Map<PyType, TextRange> fullRanges = new HashMap<PyType, TextRange>();
-      final Map<PyType, PyImportElement> imports = new HashMap<PyType, PyImportElement>();
+      final Map<TextRange, PyType> types = new HashMap<>();
+      final Map<PyType, TextRange> fullRanges = new HashMap<>();
+      final Map<PyType, PyImportElement> imports = new HashMap<>();
       types.putAll(myTypes);
       types.putAll(result.getTypes());
       fullRanges.putAll(myFullRanges);
@@ -137,7 +138,8 @@ public class PyTypeParser {
    */
   @NotNull
   public static ParseResult parse(@Nullable final PsiElement anchor, @NotNull String type) {
-    if (anchor == null || !anchor.isValid()) {
+    PyPsiUtils.assertValid(anchor);
+    if (anchor == null) {
       return EMPTY_RESULT;
     }
 
@@ -157,7 +159,7 @@ public class PyTypeParser {
           if (rest.isEmpty()) {
             return result;
           }
-          final List<PyType> types = new ArrayList<PyType>();
+          final List<PyType> types = new ArrayList<>();
           types.add(result.getType());
           for (ParseResult r : rest) {
             result = result.merge(r);
@@ -197,7 +199,7 @@ public class PyTypeParser {
           final ParseResult second = firstPair.getSecond();
           final List<ParseResult> third = value.getSecond();
           final PyType firstType = first.getType();
-          final List<PyType> typesInBrackets = new ArrayList<PyType>();
+          final List<PyType> typesInBrackets = new ArrayList<>();
           typesInBrackets.add(second.getType());
           ParseResult result = first;
           result = result.merge(second);
@@ -256,7 +258,7 @@ public class PyTypeParser {
       op("(").skipThen(maybe(typeExpr.then(many(op(",").skipThen(typeExpr))))).thenSkip(op(")")).thenSkip(op("->")).then(typeExpr)
         .map(
           value -> {
-            final List<PyCallableParameter> parameters = new ArrayList<PyCallableParameter>();
+            final List<PyCallableParameter> parameters = new ArrayList<>();
             final ParseResult returnResult = value.getSecond();
             ParseResult result;
             final Pair<ParseResult, List<ParseResult>> firstPair = value.getFirst();
@@ -292,7 +294,7 @@ public class PyTypeParser {
           if (rest.isEmpty()) {
             return first;
           }
-          final List<PyType> types = new ArrayList<PyType>();
+          final List<PyType> types = new ArrayList<>();
           types.add(first.getType());
           ParseResult result = first;
           for (ParseResult r : rest) {
@@ -496,16 +498,16 @@ public class PyTypeParser {
       }
 
       final PsiFile file = myAnchor.getContainingFile();
-      final List<Token<PyElementType>> tokens = new ArrayList<Token<PyElementType>>();
+      final List<Token<PyElementType>> tokens = new ArrayList<>();
       tokens.add(first);
       tokens.addAll(rest);
 
       if (file instanceof PyFile) {
         final PyFile pyFile = (PyFile)file;
         final TypeEvalContext context = TypeEvalContext.codeInsightFallback(file.getProject());
-        final Map<TextRange, PyType> types = new HashMap<TextRange, PyType>();
-        final Map<PyType, TextRange> fullRanges = new HashMap<PyType, TextRange>();
-        final Map<PyType, PyImportElement> imports = new HashMap<PyType, PyImportElement>();
+        final Map<TextRange, PyType> types = new HashMap<>();
+        final Map<PyType, TextRange> fullRanges = new HashMap<>();
+        final Map<PyType, PyImportElement> imports = new HashMap<>();
 
         PyType type = resolveQualifierType(tokens, pyFile, context, types, fullRanges, imports);
         PsiElement resolved = type != null ? getElement(type) : null;
@@ -712,8 +714,8 @@ public class PyTypeParser {
   }
 
   private static List<Token<PyElementType>> tokenize(@NotNull String s) {
-    final List<Token<PyElementType>> tokens = new ArrayList<Token<PyElementType>>();
-    final PyTypeLexer lexer = new PyTypeLexer(new StringReader(s));
+    final List<Token<PyElementType>> tokens = new ArrayList<>();
+    final _PyTypeLexer lexer = new _PyTypeLexer(new StringReader(s));
     lexer.reset(s, 0, s.length(), lexer.yystate());
     try {
       PyElementType type;
@@ -722,7 +724,7 @@ public class PyTypeParser {
           continue;
         }
         final TextRange range = TextRange.create(lexer.getTokenStart(), lexer.getTokenEnd());
-        final Token<PyElementType> token = new Token<PyElementType>(type, lexer.yytext(), range);
+        final Token<PyElementType> token = new Token<>(type, lexer.yytext(), range);
         tokens.add(token);
       }
     }

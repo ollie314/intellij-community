@@ -26,10 +26,10 @@ class CharToVKeyMap {
   private CharToVKeyMap() {}
 
   private static HashMap<Character, Integer> charToVKeyMap =
-    new HashMap<Character, Integer>();
+    new HashMap<>();
 
   public static Integer get (Character ch) {
-    return charToVKeyMap.get(ch);
+    return charToVKeyMap.containsKey(ch) ? charToVKeyMap.get(ch) : KeyEvent.VK_UNDEFINED;
   }
 
   static {
@@ -52,7 +52,7 @@ class CharToVKeyMap {
     charToVKeyMap.put('{',KeyEvent.VK_BRACELEFT);
     charToVKeyMap.put('}',KeyEvent.VK_BRACERIGHT);
     charToVKeyMap.put('@',KeyEvent.VK_AT);
-    charToVKeyMap.put(';',KeyEvent.VK_COLON);
+    charToVKeyMap.put(':',KeyEvent.VK_COLON);
     charToVKeyMap.put('$',KeyEvent.VK_DOLLAR);
     charToVKeyMap.put('€',KeyEvent.VK_EURO_SIGN);
     charToVKeyMap.put('!',KeyEvent.VK_EXCLAMATION_MARK);

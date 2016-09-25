@@ -158,31 +158,23 @@ public class SafeDeleteProcessor extends BaseRefactoringProcessor {
   }
 
   public static Condition<PsiElement> getDefaultInsideDeletedCondition(final PsiElement[] elements) {
-    return new Condition<PsiElement>() {
-      @Override
-      public boolean value(final PsiElement usage) {
-        return !(usage instanceof PsiFile) && isInside(usage, elements);
-      }
-    };
+    return usage -> !(usage instanceof PsiFile) && isInside(usage, elements);
   }
 
   public static void findGenericElementUsages(final PsiElement element, final List<UsageInfo> usages, final PsiElement[] allElementsToDelete) {
-    ReferencesSearch.search(element).forEach(new Processor<PsiReference>() {
-      @Override
-      public boolean process(final PsiReference reference) {
-        final PsiElement refElement = reference.getElement();
-        if (!isInside(refElement, allElementsToDelete)) {
-          usages.add(new SafeDeleteReferenceSimpleDeleteUsageInfo(refElement, element, false));
-        }
-        return true;
+    ReferencesSearch.search(element).forEach(reference -> {
+      final PsiElement refElement = reference.getElement();
+      if (!isInside(refElement, allElementsToDelete)) {
+        usages.add(new SafeDeleteReferenceSimpleDeleteUsageInfo(refElement, element, false));
       }
+      return true;
     });
   }
 
   @Override
   protected boolean preprocessUsages(@NotNull Ref<UsageInfo[]> refUsages) {
     UsageInfo[] usages = refUsages.get();
-    ArrayList<String> conflicts = new ArrayList<String>();
+    ArrayList<String> conflicts = new ArrayList<>();
 
     for (PsiElement element : myElements) {
       for(SafeDeleteProcessorDelegate delegate: Extensions.getExtensions(SafeDeleteProcessorDelegate.EP_NAME)) {
@@ -219,7 +211,10 @@ public class SafeDeleteProcessor extends BaseRefactoringProcessor {
           final int exitCode = dialog.getExitCode();
           prepareSuccessful(); // dialog is always dismissed;
           if (exitCode == UnsafeUsagesDialog.VIEW_USAGES_EXIT_CODE) {
-            showUsages(usages);
+            showUsages(Arrays.stream(usages)
+                         .filter(usage -> usage instanceof SafeDeleteReferenceUsageInfo &&
+                                          !((SafeDeleteReferenceUsageInfo)usage).isSafeDelete()).toArray(UsageInfo[]::new),
+                       usages);
           }
           return false;
         }
@@ -243,9 +238,9 @@ public class SafeDeleteProcessor extends BaseRefactoringProcessor {
     return true;
   }
 
-  private void showUsages(final UsageInfo[] usages) {
+  private void showUsages(final UsageInfo[] conflictUsages, final UsageInfo[] usages) {
     UsageViewPresentation presentation = new UsageViewPresentation();
-    presentation.setTabText(RefactoringBundle.message("safe.delete.title"));
+    presentation.setTabText("Safe Delete Conflicts");
     presentation.setTargetsNodeText(RefactoringBundle.message("attempting.to.delete.targets.node.text"));
     presentation.setShowReadOnlyStatusAsRed(true);
     presentation.setShowCancelButton(true);
@@ -255,20 +250,17 @@ public class SafeDeleteProcessor extends BaseRefactoringProcessor {
     presentation.setUsagesString(RefactoringBundle.message("usageView.usagesText"));
 
     UsageViewManager manager = UsageViewManager.getInstance(myProject);
-    final UsageView usageView = showUsages(usages, presentation, manager);
+    final UsageView usageView = showUsages(conflictUsages, presentation, manager);
     usageView.addPerformOperationAction(new RerunSafeDelete(myProject, myElements, usageView),
                                         RefactoringBundle.message("retry.command"), null, RefactoringBundle.message("rerun.safe.delete"));
-    usageView.addPerformOperationAction(new Runnable() {
-      @Override
-      public void run() {
-        UsageInfo[] preprocessedUsages = usages;
-        for (SafeDeleteProcessorDelegate delegate : Extensions.getExtensions(SafeDeleteProcessorDelegate.EP_NAME)) {
-          preprocessedUsages = delegate.preprocessUsages(myProject, preprocessedUsages);
-          if (preprocessedUsages == null) return;
-        }
-        final UsageInfo[] filteredUsages = UsageViewUtil.removeDuplicatedUsages(preprocessedUsages);
-        execute(filteredUsages);
+    usageView.addPerformOperationAction(() -> {
+      UsageInfo[] preprocessedUsages = usages;
+      for (SafeDeleteProcessorDelegate delegate : Extensions.getExtensions(SafeDeleteProcessorDelegate.EP_NAME)) {
+        preprocessedUsages = delegate.preprocessUsages(myProject, preprocessedUsages);
+        if (preprocessedUsages == null) return;
       }
+      final UsageInfo[] filteredUsages = UsageViewUtil.removeDuplicatedUsages(preprocessedUsages);
+      execute(filteredUsages);
     }, "Delete Anyway", RefactoringBundle.message("usageView.need.reRun"), RefactoringBundle.message("usageView.doAction"));
   }
 
@@ -311,23 +303,18 @@ public class SafeDeleteProcessor extends BaseRefactoringProcessor {
 
     @Override
     public void run() {
-      ApplicationManager.getApplication().invokeLater(new Runnable() {
-          @Override
-          public void run() {
-            PsiDocumentManager.getInstance(myProject).commitAllDocuments();
-            myUsageView.close();
-            ArrayList<PsiElement> elements = new ArrayList<PsiElement>();
-            for (SmartPsiElementPointer pointer : myPointers) {
-              final PsiElement element = pointer.getElement();
-              if (element != null) {
-                elements.add(element);
-              }
-            }
-            if(!elements.isEmpty()) {
-              SafeDeleteHandler.invoke(myProject, PsiUtilCore.toPsiElementArray(elements), true);
-            }
-          }
-        });
+      PsiDocumentManager.getInstance(myProject).commitAllDocuments();
+      myUsageView.close();
+      ArrayList<PsiElement> elements = new ArrayList<>();
+      for (SmartPsiElementPointer pointer : myPointers) {
+        final PsiElement element = pointer.getElement();
+        if (element != null) {
+          elements.add(element);
+        }
+      }
+      if(!elements.isEmpty()) {
+        SafeDeleteHandler.invoke(myProject, PsiUtilCore.toPsiElementArray(elements), true);
+      }
     }
   }
 
@@ -336,7 +323,7 @@ public class SafeDeleteProcessor extends BaseRefactoringProcessor {
    * @return Map from elements to UsageHolders
    */
   private static HashMap<PsiElement,UsageHolder> sortUsages(@NotNull UsageInfo[] usages) {
-    HashMap<PsiElement,UsageHolder> result = new HashMap<PsiElement, UsageHolder>();
+    HashMap<PsiElement,UsageHolder> result = new HashMap<>();
 
     for (final UsageInfo usage : usages) {
       if (usage instanceof SafeDeleteUsageInfo) {
@@ -366,7 +353,7 @@ public class SafeDeleteProcessor extends BaseRefactoringProcessor {
   }
 
   private static UsageInfo[] filterToBeDeleted(UsageInfo[] infos) {
-    ArrayList<UsageInfo> list = new ArrayList<UsageInfo>();
+    ArrayList<UsageInfo> list = new ArrayList<>();
     for (UsageInfo info : infos) {
       if (!(info instanceof SafeDeleteReferenceUsageInfo) || ((SafeDeleteReferenceUsageInfo) info).isSafeDelete()) {
         list.add(info);
@@ -398,18 +385,15 @@ public class SafeDeleteProcessor extends BaseRefactoringProcessor {
         }
       }
 
-      DumbService.allowStartingDumbModeInside(DumbModePermission.MAY_START_MODAL, new Runnable() {
-        @Override
-        public void run() {
-          for (PsiElement element : myElements) {
-            for (SafeDeleteProcessorDelegate delegate : Extensions.getExtensions(SafeDeleteProcessorDelegate.EP_NAME)) {
-              if (delegate.handlesElement(element)) {
-                delegate.prepareForDeletion(element);
-              }
+      DumbService.allowStartingDumbModeInside(DumbModePermission.MAY_START_MODAL, () -> {
+        for (PsiElement element : myElements) {
+          for (SafeDeleteProcessorDelegate delegate : Extensions.getExtensions(SafeDeleteProcessorDelegate.EP_NAME)) {
+            if (delegate.handlesElement(element)) {
+              delegate.prepareForDeletion(element);
             }
-
-            element.delete();
           }
+
+          element.delete();
         }
       });
     } catch (IncorrectOperationException e) {
@@ -478,8 +462,8 @@ public class SafeDeleteProcessor extends BaseRefactoringProcessor {
   public static SafeDeleteProcessor createInstance(Project project, @Nullable Runnable prepareSuccessfulCallBack,
                                                    PsiElement[] elementsToDelete, boolean isSearchInComments, boolean isSearchNonJava,
                                                    boolean askForAccessors) {
-    ArrayList<PsiElement> elements = new ArrayList<PsiElement>(Arrays.asList(elementsToDelete));
-    HashSet<PsiElement> elementsToDeleteSet = new HashSet<PsiElement>(Arrays.asList(elementsToDelete));
+    ArrayList<PsiElement> elements = new ArrayList<>(Arrays.asList(elementsToDelete));
+    HashSet<PsiElement> elementsToDeleteSet = new HashSet<>(Arrays.asList(elementsToDelete));
 
     for (PsiElement psiElement : elementsToDelete) {
       for(SafeDeleteProcessorDelegate delegate: Extensions.getExtensions(SafeDeleteProcessorDelegate.EP_NAME)) {

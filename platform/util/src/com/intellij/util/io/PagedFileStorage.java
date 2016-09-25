@@ -104,7 +104,7 @@ public class PagedFileStorage implements Forceable {
   private final Object myLastAccessedBufferCacheLock = new Object();
 
   private final byte[] myTypedIOBuffer;
-  private volatile boolean isDirty = false;
+  private volatile boolean isDirty;
   private final File myFile;
   protected volatile long mySize = -1;
   protected final int myPageSize;
@@ -333,7 +333,6 @@ public class PagedFileStorage implements Forceable {
 
     final long started = IOStatistics.DEBUG ? System.currentTimeMillis():0;
     myStorageLockContext.myStorageLock.invalidateBuffer(myStorageIndex | (int)(oldSize / myPageSize)); // TODO long page
-    //unmapAll(); // we do not need it since all page aligned buffers can be reused
     final long unmapAllFinished = IOStatistics.DEBUG ? System.currentTimeMillis():0;
 
     resizeFile(newSize);
@@ -364,6 +363,7 @@ public class PagedFileStorage implements Forceable {
   }
 
   private static final int MAX_FILLER_SIZE = 8192;
+
   private void fillWithZeros(long from, long length) {
     byte[] buff = new byte[MAX_FILLER_SIZE];
     Arrays.fill(buff, (byte)0);

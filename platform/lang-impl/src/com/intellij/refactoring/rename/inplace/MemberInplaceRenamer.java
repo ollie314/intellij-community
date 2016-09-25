@@ -18,6 +18,8 @@ package com.intellij.refactoring.rename.inplace;
 import com.intellij.codeInsight.TargetElementUtil;
 import com.intellij.lang.findUsages.DescriptiveNameUtil;
 import com.intellij.lang.injection.InjectedLanguageManager;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.TransactionGuard;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.command.impl.FinishMarkAction;
 import com.intellij.openapi.command.impl.StartMarkAction;
@@ -128,7 +130,7 @@ public class MemberInplaceRenamer extends VariableInplaceRenamer {
 
   @Override
   protected Collection<PsiReference> collectRefs(SearchScope referencesSearchScope) {
-    final ArrayList<PsiReference> references = new ArrayList<PsiReference>(super.collectRefs(referencesSearchScope));
+    final ArrayList<PsiReference> references = new ArrayList<>(super.collectRefs(referencesSearchScope));
     final PsiNamedElement variable = getVariable();
     if (variable != null) {
       final PsiElement substituted = getSubstituted();
@@ -163,7 +165,7 @@ public class MemberInplaceRenamer extends VariableInplaceRenamer {
       if (substituted != null) {
         appendAdditionalElement(stringUsages, variable, substituted);
         RenamePsiElementProcessor processor = RenamePsiElementProcessor.forElement(substituted);
-        final HashMap<PsiElement, String> allRenames = new HashMap<PsiElement, String>();
+        final HashMap<PsiElement, String> allRenames = new HashMap<>();
         PsiFile currentFile = PsiDocumentManager.getInstance(myProject).getPsiFile(myEditor.getDocument());
         processor.prepareRenaming(substituted, "", allRenames, new LocalSearchScope(currentFile));
         for (PsiElement element : allRenames.keySet()) {
@@ -208,15 +210,22 @@ public class MemberInplaceRenamer extends VariableInplaceRenamer {
             return;
           }
 
-          final String commandName = RefactoringBundle
-            .message("renaming.0.1.to.2", UsageViewUtil.getType(variable), DescriptiveNameUtil.getDescriptiveName(variable), newName);
-          CommandProcessor.getInstance().executeCommand(myProject, new Runnable() {
-            @Override
-            public void run() {
+          Runnable performRunnable = () -> {
+            final String commandName = RefactoringBundle.message("renaming.0.1.to.2",
+                                                                 UsageViewUtil.getType(variable),
+                                                                 DescriptiveNameUtil.getDescriptiveName(variable), newName);
+            CommandProcessor.getInstance().executeCommand(myProject, () -> {
               performRenameInner(substituted, newName);
               PsiDocumentManager.getInstance(myProject).commitAllDocuments();
-            }
-          }, commandName, null);
+            }, commandName, null);
+          };
+
+          if (ApplicationManager.getApplication().isUnitTestMode()) {
+            performRunnable.run();
+          }
+          else {
+            TransactionGuard.getInstance().submitTransactionLater(myProject, performRunnable);
+          }
         }
       }
     }

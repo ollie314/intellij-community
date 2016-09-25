@@ -125,6 +125,50 @@ public class ExtractMethodTest extends LightCodeInsightTestCase {
     doTest();
   }
 
+  public void testUseParamInCatch() throws Exception {
+    doExitPointsTest(false);
+  }
+
+  public void testUseParamInFinally() throws Exception {
+    doExitPointsTest(false);
+  }
+
+  public void testUseVarAfterCatch() throws Exception {
+    doExitPointsTest(false);
+  }
+
+  public void testUseVarInCatch1() throws Exception {
+    doTest();
+  }
+
+  public void testUseVarInCatch2() throws Exception {
+    doExitPointsTest(false);
+  }
+
+  public void testUseVarInCatchInvisible() throws Exception {
+    doTest();
+  }
+
+  public void testUseVarInCatchNested1() throws Exception {
+    doTest();
+  }
+
+  public void testUseVarInCatchNested2() throws Exception {
+    doExitPointsTest(false);
+  }
+
+  public void testUseVarInOtherCatch() throws Exception {
+    doTest();
+  }
+
+  public void testUseVarInFinally1() throws Exception {
+    doTest();
+  }
+
+  public void testUseVarInFinally2() throws Exception {
+    doExitPointsTest(false);
+  }
+
   public void testOneBranchAssignment() throws Exception {
     doTest();
   }
@@ -185,7 +229,7 @@ public class ExtractMethodTest extends LightCodeInsightTestCase {
     doTest();
   }
 
-  public void _testExtractFromTryFinally2() throws Exception {  // IDEADEV-11844
+  public void testExtractFromTryFinally2() throws Exception {
     doTest();
   }
 
@@ -245,6 +289,14 @@ public class ExtractMethodTest extends LightCodeInsightTestCase {
     doDuplicatesTest();
   }
 
+  public void testClassReference() throws Exception {
+    doDuplicatesTest();
+  }
+
+  public void testClassReference2() throws Exception {
+    doDuplicatesTest();
+  }
+
   public void testCodeDuplicates() throws Exception {
     doDuplicatesTest();
   }
@@ -270,6 +322,10 @@ public class ExtractMethodTest extends LightCodeInsightTestCase {
   }
 
   public void testCodeDuplicatesWithOutputValue1() throws Exception {
+    doDuplicatesTest();
+  }
+
+  public void testCodeDuplicatesWithEmptyStatementsBlocksParentheses() throws Exception {
     doDuplicatesTest();
   }
 
@@ -310,7 +366,7 @@ public class ExtractMethodTest extends LightCodeInsightTestCase {
   }
 
   public void testIDEADEV33368() throws Exception {
-    doTest();
+    doExitPointsTest(false);
   }
 
   public void testInlineCreated2ReturnLocalVariablesOnly() throws Exception {
@@ -350,7 +406,19 @@ public class ExtractMethodTest extends LightCodeInsightTestCase {
     doTest();
   }
 
+  public void testStopFoldingForArrayWriteAccessInConsequentUsages() throws Exception {
+    doTest();
+  }
+
   public void testStopFoldingPostfixInside() throws Exception {
+    doTest();
+  }
+
+  public void testFoldedWithNestedExpressions() throws Exception {
+    doTest();
+  }
+
+  public void testFoldedWithConflictedNames() throws Exception {
     doTest();
   }
 
@@ -497,6 +565,10 @@ public class ExtractMethodTest extends LightCodeInsightTestCase {
   }
 
   public void testArrayAccessWithLocalIndex() throws Exception {
+    doTest();
+  }
+
+  public void testArrayAccessWithTopExpression() throws Exception {
     doTest();
   }
 
@@ -690,6 +762,13 @@ public class ExtractMethodTest extends LightCodeInsightTestCase {
   public void testTargetAnonymous() throws Exception {
     doTest();
   }
+  
+  public void testSimpleMethodsInOneLine() throws Exception {
+    CodeStyleSettings settings = CodeStyleSettingsManager.getSettings(getProject());
+    CommonCodeStyleSettings javaSettings = settings.getCommonSettings(JavaLanguage.INSTANCE);
+    javaSettings.KEEP_SIMPLE_METHODS_IN_ONE_LINE = true;
+    doTest();
+  }
 
   public void testExtractUnresolvedLambdaParameter() throws Exception {
     doTest();
@@ -740,6 +819,10 @@ public class ExtractMethodTest extends LightCodeInsightTestCase {
     doTestReturnTypeChanged(PsiType.INT);
   }
 
+  public void testShortenClassRefsInNewReturnType() throws Exception {
+    doTestReturnTypeChanged(PsiType.getTypeByName(CommonClassNames.JAVA_UTIL_COLLECTION, getProject(), GlobalSearchScope.allScope(getProject())));
+  }
+
   public void testPassFieldAsParameterAndMakeStatic() throws Exception {
     doTestPassFieldsAsParams();
   }
@@ -774,6 +857,26 @@ public class ExtractMethodTest extends LightCodeInsightTestCase {
   }
 
   public void testSingleExitPOintWithTryFinally() throws Exception {
+    doTest();
+  }
+
+  public void testLocalVariableModifierList() throws Exception {
+    doTest();
+  }
+
+  public void testLocalVariableAnnotationsOrder()  throws Exception {
+    doTest();
+  }
+
+  public void testNormalExitIf() throws Exception {
+    doTest();
+  }
+
+  public void testNormalExitTry() throws Exception {
+    doTest();
+  }
+
+  public void testMethodAnnotations() throws Exception {
     doTest();
   }
 
@@ -954,11 +1057,8 @@ public class ExtractMethodTest extends LightCodeInsightTestCase {
         for (final Match match : duplicates) {
           if (!match.getMatchStart().isValid() || !match.getMatchEnd().isValid()) continue;
           PsiDocumentManager.getInstance(project).commitAllDocuments();
-          ApplicationManager.getApplication().runWriteAction(new Runnable() {
-            @Override
-            public void run() {
-              processor.processMatch(match);
-            }
+          ApplicationManager.getApplication().runWriteAction(() -> {
+            processor.processMatch(match);
           });
         }
       }

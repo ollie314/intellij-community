@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2010 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@ import com.intellij.ui.DocumentAdapter;
 import com.intellij.ui.IdeBorderFactory;
 import com.intellij.ui.SeparatorWithText;
 import com.intellij.ui.components.panels.VerticalBox;
-import com.intellij.util.ui.AwtVisitor;
+import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 
@@ -43,7 +43,7 @@ import java.util.*;
 * @author nik
 */
 public class QuickAccessConfigurable extends JPanel implements SearchableConfigurable {
-  private Set<String> myModifiers = new HashSet<String>();
+  private Set<String> myModifiers = new HashSet<>();
   private boolean myQaEnabled;
   private int myDelay;
   private JCheckBox myEnabled;
@@ -133,7 +133,7 @@ public class QuickAccessConfigurable extends JPanel implements SearchableConfigu
   }
 
   private Set<String> getModifierTexts() {
-    HashSet<String> result = new HashSet<String>();
+    HashSet<String> result = new HashSet<>();
 
     for (Integer each : myQuickAccessSettings.getModiferCodes()) {
       if (each == KeyEvent.VK_SHIFT) {
@@ -255,10 +255,6 @@ public class QuickAccessConfigurable extends JPanel implements SearchableConfigu
     return "QuickAccess";
   }
 
-  public Runnable enableSearch(String option) {
-    return null;
-  }
-
   public boolean isModified() {
     return !myModifiers.equals(getModifierTexts())
            || myQuickAccessSettings.isEnabled() != myEnabled.isSelected()
@@ -299,15 +295,11 @@ public class QuickAccessConfigurable extends JPanel implements SearchableConfigu
   }
 
   private void processEnabled() {
-    new AwtVisitor(this) {
-      @Override
-      public boolean visit(Component component) {
-        if (component != myEnabled) {
-          component.setEnabled(myQaEnabled);
-        }
-        return false;
+    for (Component component : UIUtil.uiTraverser(this)) {
+      if (component != myEnabled) {
+        component.setEnabled(myQaEnabled);
       }
-    };
+    }
   }
 
   private class ModifierBox extends JCheckBox {

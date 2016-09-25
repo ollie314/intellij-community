@@ -19,7 +19,6 @@ import com.intellij.Patches;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.ex.util.EditorUIUtil;
 import com.intellij.openapi.editor.impl.view.FontLayoutService;
-import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.UIUtil;
@@ -97,12 +96,7 @@ public class FontInfo {
     return font.deriveFont(Collections.singletonMap(TextAttribute.LIGATURES, TextAttribute.LIGATURES_ON));
   }
 
-  private static final Comparator<File> BY_NAME = new Comparator<File>() {
-    @Override
-    public int compare(File file1, File file2) {
-      return file1.getName().compareTo(file2.getName());
-    }
-  };
+  private static final Comparator<File> BY_NAME = (file1, file2) -> file1.getName().compareTo(file2.getName());
 
   @Nullable
   private static File findFileForFont(@NotNull String familyName, int style) {
@@ -115,16 +109,13 @@ public class FontInfo {
   @Nullable
   private static File doFindFileForFont(@NotNull String familyName, final int style) {
     final String normalizedFamilyName = familyName.toLowerCase(Locale.getDefault()).replace(" ", "");
-    FilenameFilter filter = new FilenameFilter() {
-      @Override
-      public boolean accept(File file, String name) {
-        String normalizedName = name.toLowerCase(Locale.getDefault());
-        return normalizedName.startsWith(normalizedFamilyName) &&
-               (normalizedName.endsWith(".otf") || normalizedName.endsWith(".ttf")) &&
-               (style == -1 || style == getFontStyle(normalizedName));
-      }
+    FilenameFilter filter = (file, name) -> {
+      String normalizedName = name.toLowerCase(Locale.getDefault());
+      return normalizedName.startsWith(normalizedFamilyName) &&
+             (normalizedName.endsWith(".otf") || normalizedName.endsWith(".ttf")) &&
+             (style == -1 || style == getFontStyle(normalizedName));
     };
-    List<File> files = new ArrayList<File>();
+    List<File> files = new ArrayList<>();
     
     File[] userFiles = new File(System.getProperty("user.home"), "Library/Fonts").listFiles(filter);
     if (userFiles != null) files.addAll(Arrays.asList(userFiles));
@@ -136,12 +127,7 @@ public class FontInfo {
     
     if (style == Font.PLAIN) {
       // prefer font containing 'regular' in its name
-      List<File> regulars = ContainerUtil.filter(files, new Condition<File>() {
-        @Override
-        public boolean value(File file) {
-          return file.getName().toLowerCase(Locale.getDefault()).contains("regular");
-        }
-      });
+      List<File> regulars = ContainerUtil.filter(files, file -> file.getName().toLowerCase(Locale.getDefault()).contains("regular"));
       if (!regulars.isEmpty()) return Collections.min(regulars, BY_NAME);
     }
     
@@ -245,7 +231,7 @@ public class FontInfo {
     return FontLayoutService.getInstance().charWidth(metrics, c);
   }
 
-  private FontMetrics fontMetrics() {
+  public FontMetrics fontMetrics() {
     if (myFontMetrics == null) {
       // We need to use antialising-aware font metrics because we've alrady encountered a situation when non-antialiased symbol
       // width is not equal to the antialiased one (IDEA-81539).

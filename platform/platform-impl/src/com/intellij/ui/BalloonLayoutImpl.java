@@ -17,6 +17,7 @@ package com.intellij.ui;
 
 import com.intellij.ide.ui.LafManager;
 import com.intellij.ide.ui.LafManagerListener;
+import com.intellij.notification.EventLog;
 import com.intellij.notification.Notification;
 import com.intellij.notification.impl.NotificationsManagerImpl;
 import com.intellij.openapi.Disposable;
@@ -37,44 +38,40 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
-import java.beans.PropertyChangeEvent;
-import java.beans.PropertyChangeListener;
-import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.*;
 import java.util.List;
-import java.util.Map;
 
 public class BalloonLayoutImpl implements BalloonLayout {
-  protected final JLayeredPane myLayeredPane;
+  private final ComponentAdapter myResizeListener = new ComponentAdapter() {
+    @Override
+    public void componentResized(@NotNull ComponentEvent e) {
+      queueRelayout();
+    }
+  };
+
+  protected JLayeredPane myLayeredPane;
   private final Insets myInsets;
 
-  private final List<Balloon> myBalloons = new ArrayList<Balloon>();
-  private final Map<Balloon, BalloonLayoutData> myLayoutData = new HashMap<Balloon, BalloonLayoutData>();
+  protected final List<Balloon> myBalloons = new ArrayList<>();
+  private final Map<Balloon, BalloonLayoutData> myLayoutData = new HashMap<>();
   private Integer myWidth;
 
   private final Alarm myRelayoutAlarm = new Alarm();
-  private final Runnable myRelayoutRunnable = new Runnable() {
-    public void run() {
-      relayout();
-      fireRelayout();
-    }
+  private final Runnable myRelayoutRunnable = () -> {
+    relayout();
+    fireRelayout();
   };
-  private final JRootPane myParent;
+  private JRootPane myParent;
 
-  private final Runnable myCloseAll = new Runnable() {
-    @Override
-    public void run() {
-      for (Balloon balloon : new ArrayList<Balloon>(myBalloons)) {
-        remove(balloon, true);
-      }
+  private final Runnable myCloseAll = () -> {
+    for (Balloon balloon : new ArrayList<>(myBalloons)) {
+      remove(balloon, true);
     }
   };
-  private final Runnable myLayoutRunnable = new Runnable() {
-    public void run() {
-      calculateSize();
-      relayout();
-      fireRelayout();
-    }
+  private final Runnable myLayoutRunnable = () -> {
+    calculateSize();
+    relayout();
+    fireRelayout();
   };
 
   private LafManagerListener myLafListener;
@@ -85,21 +82,24 @@ public class BalloonLayoutImpl implements BalloonLayout {
     myParent = parent;
     myLayeredPane = parent.getLayeredPane();
     myInsets = insets;
-    myLayeredPane.addComponentListener(new ComponentAdapter() {
-      @Override
-      public void componentResized(@NotNull ComponentEvent e) {
-        queueRelayout();
-      }
-    });
-    UIUtil.addParentChangeListener(parent, new PropertyChangeListener() {
-      @Override
-      public void propertyChange(PropertyChangeEvent event) {
-        if (event.getOldValue() != null && event.getNewValue() == null && myLafListener != null) {
-          LafManager.getInstance().removeLafManagerListener(myLafListener);
-          myLafListener = null;
-        }
-      }
-    });
+    myLayeredPane.addComponentListener(myResizeListener);
+  }
+
+  public void dispose() {
+    myLayeredPane.removeComponentListener(myResizeListener);
+    if (myLafListener != null) {
+      LafManager.getInstance().removeLafManagerListener(myLafListener);
+      myLafListener = null;
+    }
+    for (Balloon balloon : new ArrayList<>(myBalloons)) {
+      Disposer.dispose(balloon);
+    }
+    myRelayoutAlarm.cancelAllRequests();
+    myBalloons.clear();
+    myLayoutData.clear();
+    myListeners.clear();
+    myLayeredPane = null;
+    myParent = null;
   }
 
   public void addListener(Runnable listener) {
@@ -167,6 +167,7 @@ public class BalloonLayoutImpl implements BalloonLayout {
     }
     Disposer.register(balloon, new Disposable() {
       public void dispose() {
+        clearNMore(balloon);
         remove(balloon, false);
         queueRelayout();
       }
@@ -188,6 +189,7 @@ public class BalloonLayoutImpl implements BalloonLayout {
 
     calculateSize();
     relayout();
+    ((BalloonImpl)balloon).traceDispose(false);
     balloon.show(myLayeredPane);
     fireRelayout();
   }
@@ -236,12 +238,17 @@ public class BalloonLayoutImpl implements BalloonLayout {
     fireRelayout();
   }
 
+  private void clearNMore(@NotNull Balloon balloon) {
+    BalloonLayoutData layoutData = myLayoutData.get(balloon);
+    if (layoutData != null && layoutData.mergeData != null) {
+      EventLog.clearNMore(layoutData.project, Collections.singleton(layoutData.groupId));
+    }
+  }
+
   private void remove(@NotNull Balloon balloon, boolean hide) {
     myBalloons.remove(balloon);
     BalloonLayoutData layoutData = myLayoutData.remove(balloon);
     if (layoutData != null) {
-      layoutData.groupId = null;
-      layoutData.id = null;
       layoutData.mergeData = null;
     }
     if (hide) {
@@ -419,7 +426,7 @@ public class BalloonLayoutImpl implements BalloonLayout {
   }
 
   private List<Integer> computeWidths(List<ArrayList<Balloon>> columns) {
-    List<Integer> columnWidths = new ArrayList<Integer>();
+    List<Integer> columnWidths = new ArrayList<>();
     for (ArrayList<Balloon> eachColumn : columns) {
       int maxWidth = 0;
       for (Balloon each : eachColumn) {
@@ -431,16 +438,16 @@ public class BalloonLayoutImpl implements BalloonLayout {
   }
 
   private List<ArrayList<Balloon>> createColumns(Rectangle layoutRec) {
-    List<ArrayList<Balloon>> columns = new ArrayList<ArrayList<Balloon>>();
+    List<ArrayList<Balloon>> columns = new ArrayList<>();
 
-    ArrayList<Balloon> eachColumn = new ArrayList<Balloon>();
+    ArrayList<Balloon> eachColumn = new ArrayList<>();
     columns.add(eachColumn);
 
     int eachColumnHeight = 0;
     for (Balloon each : myBalloons) {
       final Dimension eachSize = getSize(each);
       if (eachColumnHeight + eachSize.height > layoutRec.getHeight()) {
-        eachColumn = new ArrayList<Balloon>();
+        eachColumn = new ArrayList<>();
         columns.add(eachColumn);
         eachColumnHeight = 0;
       }

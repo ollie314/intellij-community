@@ -68,7 +68,7 @@ public class RedundantTypeArgsInspection extends GenericsInspectionToolBase {
 
   @Override
   public ProblemDescriptor[] getDescriptions(@NotNull PsiElement place, @NotNull final InspectionManager inspectionManager, boolean isOnTheFly) {
-    final List<ProblemDescriptor> problems = new ArrayList<ProblemDescriptor>();
+    final List<ProblemDescriptor> problems = new ArrayList<>();
     place.accept(new JavaRecursiveElementWalkingVisitor() {
       @Override
       public void visitMethodCallExpression(PsiMethodCallExpression expression) {
@@ -173,7 +173,9 @@ public class RedundantTypeArgsInspection extends GenericsInspectionToolBase {
 
     @Override
     public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-      final PsiReferenceParameterList typeArgumentList = (PsiReferenceParameterList)descriptor.getPsiElement();
+      final PsiElement element = descriptor.getPsiElement();
+      if (!(element instanceof PsiReferenceParameterList)) return;
+      final PsiReferenceParameterList typeArgumentList = (PsiReferenceParameterList)element;
       if (!FileModificationService.getInstance().preparePsiElementForWrite(typeArgumentList)) return;
       try {
         final PsiMethodCallExpression expr =

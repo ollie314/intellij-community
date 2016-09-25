@@ -42,7 +42,7 @@ public class AdjustWhiteSpacesState extends State {
   private boolean myReformatContext;
   private Set<Alignment> myAlignmentsInsideRangesToModify = null;
 
-  private final HashSet<WhiteSpace> myAlignAgain = new HashSet<WhiteSpace>();
+  private final HashSet<WhiteSpace> myAlignAgain = new HashSet<>();
   private LeafBlockWrapper myFirstBlock;
 
   public AdjustWhiteSpacesState(WrapBlocksState state, 
@@ -135,12 +135,8 @@ public class AdjustWhiteSpacesState extends State {
     if (whiteSpace.isReadOnly() || whiteSpace.isLineFeedsAreReadOnly()) return ContainerUtil.emptyList();
 
     DependantSpacingImpl spacing = (DependantSpacingImpl)spaceProperty;
-    return ContainerUtil.filter(spacing.getDependentRegionRanges(), new Condition<TextRange>() {
-      @Override
-      public boolean value(TextRange dependencyRange) {
-        return whiteSpace.getStartOffset() < dependencyRange.getEndOffset();
-      }
-    });
+    return ContainerUtil.filter(spacing.getDependentRegionRanges(),
+                                dependencyRange -> whiteSpace.getStartOffset() < dependencyRange.getEndOffset());
   }
 
 

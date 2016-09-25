@@ -22,6 +22,7 @@ import com.intellij.icons.AllIcons;
 import com.intellij.ide.CommonActionsManager;
 import com.intellij.ide.TreeExpander;
 import com.intellij.ide.actions.ContextHelpAction;
+import com.intellij.ide.dnd.DnDEvent;
 import com.intellij.lifecycle.PeriodicalTasksCloser;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.*;
@@ -29,6 +30,7 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.components.*;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.SimpleToolWindowPanel;
@@ -39,13 +41,12 @@ import com.intellij.openapi.vcs.VcsBundle;
 import com.intellij.openapi.vcs.VcsConfiguration;
 import com.intellij.openapi.vcs.VcsException;
 import com.intellij.openapi.vcs.changes.actions.IgnoredSettingsAction;
-import com.intellij.openapi.vcs.changes.ui.ChangesListView;
-import com.intellij.openapi.vcs.changes.ui.ChangesViewContentManager;
+import com.intellij.openapi.vcs.changes.shelf.ShelveChangesManager;
+import com.intellij.openapi.vcs.changes.ui.*;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.impl.DebugUtil;
 import com.intellij.ui.*;
 import com.intellij.ui.content.Content;
-import com.intellij.ui.content.ContentFactory;
 import com.intellij.util.Alarm;
 import com.intellij.util.FunctionUtil;
 import com.intellij.util.ui.JBUI;
@@ -65,10 +66,10 @@ import javax.swing.tree.TreePath;
 import java.awt.*;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
-import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
+
+import static java.util.stream.Collectors.toList;
 
 @State(
   name = "ChangesViewManager",
@@ -77,8 +78,6 @@ import java.util.List;
 public class ChangesViewManager implements ChangesViewI, ProjectComponent, PersistentStateComponent<ChangesViewManager.State> {
 
   private static final Logger LOG = Logger.getInstance("#com.intellij.openapi.vcs.changes.ChangesViewManager");
-
-  private static final int UNVERSIONED_MAX_SIZE = 50;
 
   @NotNull private final ChangesListView myView;
   private JPanel myProgressLabel;
@@ -96,7 +95,13 @@ public class ChangesViewManager implements ChangesViewI, ProjectComponent, Persi
   private JBSplitter mySplitter;
 
   private boolean myDetailsOn;
-  @NotNull private final MyChangeProcessor myDiffDetails;
+  @NotNull private final NotNullLazyValue<MyChangeProcessor> myDiffDetails = new NotNullLazyValue<MyChangeProcessor>() {
+    @NotNull
+    @Override
+    protected MyChangeProcessor compute() {
+      return new MyChangeProcessor(myProject);
+    }
+  };
 
   @NotNull private final TreeSelectionListener myTsl;
   private Content myContent;
@@ -110,9 +115,7 @@ public class ChangesViewManager implements ChangesViewI, ProjectComponent, Persi
     myProject = project;
     myContentManager = contentManager;
     myView = new ChangesListView(project);
-    Disposer.register(project, myView);
     myRepaintAlarm = new Alarm(Alarm.ThreadToUse.SWING_THREAD, project);
-    myDiffDetails = new MyChangeProcessor(myProject);
     myTsl = new TreeSelectionListener() {
       @Override
       public void valueChanged(TreeSelectionEvent e) {
@@ -147,7 +150,7 @@ public class ChangesViewManager implements ChangesViewI, ProjectComponent, Persi
       }
     });
     if (ApplicationManager.getApplication().isHeadlessEnvironment()) return;
-    myContent = ContentFactory.SERVICE.getInstance().createContent(createChangeViewComponent(), ChangesViewContentManager.LOCAL_CHANGES, false);
+    myContent = new MyChangeViewContent(createChangeViewComponent(), ChangesViewContentManager.LOCAL_CHANGES, false);
     myContent.setCloseable(false);
     myContentManager.addContent(myContent);
 
@@ -167,7 +170,6 @@ public class ChangesViewManager implements ChangesViewI, ProjectComponent, Persi
   }
 
   public void projectClosed() {
-    Disposer.dispose(myDiffDetails);
     myView.removeTreeSelectionListener(myTsl);
     myDisposed = true;
     myRepaintAlarm.cancelAllRequests();
@@ -232,24 +234,26 @@ public class ChangesViewManager implements ChangesViewI, ProjectComponent, Persi
     content.add(myProgressLabel, BorderLayout.SOUTH);
     panel.setContent(content);
 
-    myView.installDndSupport(ChangeListManagerImpl.getInstanceImpl(myProject));
+    ChangesDnDSupport.install(myProject, myView);
     myView.addTreeSelectionListener(myTsl);
     return panel;
   }
 
   private void changeDetails() {
     if (!myDetailsOn) {
-      myDiffDetails.clear();
+      if (myDiffDetails.isComputed()) {
+        myDiffDetails.getValue().clear();
 
-      if (mySplitter.getSecondComponent() != null) {
-        setChangeDetailsPanel(null);
+        if (mySplitter.getSecondComponent() != null) {
+          setChangeDetailsPanel(null);
+        }
       }
     }
     else {
-      myDiffDetails.refresh();
+      myDiffDetails.getValue().refresh();
 
       if (mySplitter.getSecondComponent() == null) {
-        setChangeDetailsPanel(myDiffDetails.getComponent());
+        setChangeDetailsPanel(myDiffDetails.getValue().getComponent());
       }
     }
   }
@@ -327,30 +331,18 @@ public class ChangesViewManager implements ChangesViewI, ProjectComponent, Persi
     if (!ProjectLevelVcsManager.getInstance(myProject).hasActiveVcss()) return;
 
     ChangeListManagerImpl changeListManager = ChangeListManagerImpl.getInstanceImpl(myProject);
-    Trinity<List<VirtualFile>, Integer, Integer> unversionedPair = getUnversionedFilesInfo(changeListManager);
 
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("refresh view, unversioned collections size: " + unversionedPair.getFirst().size() + " unv size passed: " +
-                unversionedPair.getSecond() + " dirs: " + unversionedPair.getThird());
-    }
-    myView.updateModel(changeListManager.getChangeListsCopy(), unversionedPair,
-                       changeListManager.getDeletedFiles(),
-                       changeListManager.getModifiedWithoutEditing(),
-                       changeListManager.getSwitchedFilesMap(),
-                       changeListManager.getSwitchedRoots(),
-                       myState.myShowIgnored ? changeListManager.getIgnoredFiles() : null, changeListManager.getLockedFolders(),
-                       changeListManager.getLogicallyLockedFolders());
+    myView.updateModel(
+      new TreeModelBuilder(myProject, myView.isShowFlatten())
+        .set(changeListManager.getChangeListsCopy(), changeListManager.getDeletedFiles(), changeListManager.getModifiedWithoutEditing(),
+             changeListManager.getSwitchedFilesMap(), changeListManager.getSwitchedRoots(),
+             myState.myShowIgnored ? changeListManager.getIgnoredFiles() : null, changeListManager.getLockedFolders(),
+             changeListManager.getLogicallyLockedFolders())
+        .setUnversioned(changeListManager.getUnversionedFiles(), changeListManager.getUnversionedFilesSize())
+        .build()
+    );
 
     changeDetails();
-  }
-
-  @NotNull
-  public static Trinity<List<VirtualFile>, Integer, Integer> getUnversionedFilesInfo(@NotNull ChangeListManagerImpl manager) {
-    Couple<Integer> size = manager.getUnversionedFilesSize();
-    boolean manyUnversioned = size.getFirst() > UNVERSIONED_MAX_SIZE;
-
-    return Trinity
-      .create(manyUnversioned ? Collections.<VirtualFile>emptyList() : manager.getUnversionedFiles(), size.getFirst(), size.getSecond());
   }
 
   @NotNull
@@ -540,6 +532,7 @@ public class ChangesViewManager implements ChangesViewI, ProjectComponent, Persi
   private class MyChangeProcessor extends CacheChangeProcessor {
     public MyChangeProcessor(@NotNull Project project) {
       super(project, DiffPlaces.CHANGES_VIEW);
+      Disposer.register(project, this);
     }
 
     @Override
@@ -550,15 +543,15 @@ public class ChangesViewManager implements ChangesViewI, ProjectComponent, Persi
     @NotNull
     @Override
     protected List<Change> getSelectedChanges() {
-      Change[] changes = myView.getSelectedChanges();
-      if (changes.length == 0) changes = myView.getChanges();
-      return Arrays.asList(changes);
+      List<Change> result = myView.getSelectedChanges().collect(toList());
+      if (result.isEmpty()) result = myView.getChanges().collect(toList());
+      return result;
     }
 
     @NotNull
     @Override
     protected List<Change> getAllChanges() {
-      return Arrays.asList(myView.getChanges());
+      return myView.getChanges().collect(toList());
     }
 
     @Override
@@ -569,6 +562,35 @@ public class ChangesViewManager implements ChangesViewI, ProjectComponent, Persi
         TreePath path = TreeUtil.getPathFromRoot(node);
         TreeUtil.selectPath(myView, path, false);
       }
+    }
+  }
+
+  private class MyChangeViewContent extends DnDTargetContentAdapter {
+    private MyChangeViewContent(JComponent component, String displayName, boolean isLockable) {
+      super(component, displayName, isLockable);
+    }
+
+    @Override
+    public void drop(DnDEvent event) {
+      Object attachedObject = event.getAttachedObject();
+      if (attachedObject instanceof ShelvedChangeListDragBean) {
+        FileDocumentManager.getInstance().saveAllDocuments();
+        ShelvedChangeListDragBean shelvedBean = (ShelvedChangeListDragBean)attachedObject;
+        ShelveChangesManager.getInstance(myProject)
+          .unshelveSilentlyAsynchronously(myProject, shelvedBean.getShelvedChangelists(), shelvedBean.getChanges(),
+                                          shelvedBean.getBinaryFiles(), null);
+      }
+    }
+
+    @Override
+    public boolean update(DnDEvent event) {
+      Object attachedObject = event.getAttachedObject();
+      if (attachedObject instanceof ShelvedChangeListDragBean) {
+        ShelvedChangeListDragBean shelveBean = (ShelvedChangeListDragBean)attachedObject;
+        event.setDropPossible(!shelveBean.getShelvedChangelists().isEmpty());
+        return false;
+      }
+      return true;
     }
   }
 }

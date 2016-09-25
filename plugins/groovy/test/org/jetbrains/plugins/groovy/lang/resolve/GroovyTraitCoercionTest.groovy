@@ -26,7 +26,6 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMe
 
 class GroovyTraitCoercionTest extends GroovyResolveTestCase {
 
-  String basePath = null
   LightProjectDescriptor projectDescriptor = GroovyLightProjectDescriptor.GROOVY_LATEST
 
   @Override
@@ -35,7 +34,7 @@ class GroovyTraitCoercionTest extends GroovyResolveTestCase {
     'add necessary classes'()
   }
 
-  public void 'add necessary classes'() {
+  void 'add necessary classes'() {
     fixture.addFileToProject 'classes.groovy', '''\
 trait T1 {
     String foo() {}

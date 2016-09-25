@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -90,7 +90,7 @@ public class RenameWrongRefFix implements IntentionAction {
   }
 
   private LookupElement[] collectItems() {
-    Set<LookupElement> items = new LinkedHashSet<LookupElement>();
+    Set<LookupElement> items = new LinkedHashSet<>();
     boolean qualified = myRefExpr.getQualifierExpression() != null;
 
     if (!qualified && !(myRefExpr.getParent() instanceof PsiMethodCallExpression)) {
@@ -100,9 +100,9 @@ public class RenameWrongRefFix implements IntentionAction {
       }
     } else {
       class MyScopeProcessor extends BaseScopeProcessor {
-        ArrayList<PsiElement> myResult = new ArrayList<PsiElement>();
+        ArrayList<PsiElement> myResult = new ArrayList<>();
         boolean myFilterMethods;
-        boolean myFilterStatics = false;
+        boolean myFilterStatics;
 
         MyScopeProcessor(PsiReferenceExpression refExpression) {
           myFilterMethods = refExpression.getParent() instanceof PsiMethodCallExpression;

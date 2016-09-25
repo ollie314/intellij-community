@@ -84,9 +84,9 @@ final class SettingsTreeView extends JComponent implements Accessible, Disposabl
   private final SettingsFilter myFilter;
   private final MyRoot myRoot;
   private final JScrollPane myScroller;
-  private final IdentityHashMap<Configurable, MyNode> myConfigurableToNodeMap = new IdentityHashMap<Configurable, MyNode>();
+  private final IdentityHashMap<Configurable, MyNode> myConfigurableToNodeMap = new IdentityHashMap<>();
   private final IdentityHashMap<UnnamedConfigurable, ConfigurableWrapper> myConfigurableToWrapperMap
-    = new IdentityHashMap<UnnamedConfigurable, ConfigurableWrapper>();
+    = new IdentityHashMap<>();
   private final MergingUpdateQueue myQueue = new MergingUpdateQueue("SettingsTreeView", 150, false, this, this, this)
     .setRestartTimerOnAdd(true);
 
@@ -159,9 +159,6 @@ final class SettingsTreeView extends JComponent implements Accessible, Disposabl
         return myHeader;
       }
     });
-    if (!Registry.is("ide.scroll.new.layout")) {
-      myScroller.getVerticalScrollBar().setUI(ButtonlessScrollBarUI.createTransparent());
-    }
     if (!Registry.is("ide.scroll.background.auto")) {
       myScroller.setBackground(UIUtil.SIDE_PANEL_BACKGROUND);
       myScroller.getViewport().setBackground(UIUtil.SIDE_PANEL_BACKGROUND);
@@ -215,7 +212,7 @@ final class SettingsTreeView extends JComponent implements Accessible, Disposabl
   }
 
   private static String[] getPathNames(MyNode node) {
-    ArrayDeque<String> path = new ArrayDeque<String>();
+    ArrayDeque<String> path = new ArrayDeque<>();
     while (node != null) {
       path.push(node.myDisplayName);
       SimpleNode parent = node.getParent();
@@ -365,29 +362,18 @@ final class SettingsTreeView extends JComponent implements Accessible, Disposabl
             fireSelected(null, callback);
           }
           else {
-            myBuilder.getReady(this).doWhenDone(new Runnable() {
-              @Override
-              public void run() {
-                if (configurable != myQueuedConfigurable) return;
+            myBuilder.getReady(this).doWhenDone(() -> {
+              if (configurable != myQueuedConfigurable) return;
 
-                MyNode editorNode = findNode(configurable);
-                FilteringTreeStructure.FilteringNode editorUiNode = myBuilder.getVisibleNodeFor(editorNode);
-                if (editorUiNode == null) return;
+              MyNode editorNode = findNode(configurable);
+              FilteringTreeStructure.FilteringNode editorUiNode = myBuilder.getVisibleNodeFor(editorNode);
+              if (editorUiNode == null) return;
 
-                if (!myBuilder.getSelectedElements().contains(editorUiNode)) {
-                  myBuilder.select(editorUiNode, new Runnable() {
-                    public void run() {
-                      fireSelected(configurable, callback);
-                    }
-                  });
-                }
-                else {
-                  myBuilder.scrollSelectionToVisible(new Runnable() {
-                    public void run() {
-                      fireSelected(configurable, callback);
-                    }
-                  }, false);
-                }
+              if (!myBuilder.getSelectedElements().contains(editorUiNode)) {
+                myBuilder.select(editorUiNode, () -> fireSelected(configurable, callback));
+              }
+              else {
+                myBuilder.scrollSelectionToVisible(() -> fireSelected(configurable, callback), false);
               }
             });
           }
@@ -448,7 +434,7 @@ final class SettingsTreeView extends JComponent implements Accessible, Disposabl
       if (myGroups == null || myGroups.length == 0) {
         return NO_CHILDREN;
       }
-      ArrayList<MyNode> list = new ArrayList<MyNode>();
+      ArrayList<MyNode> list = new ArrayList<>();
       for (ConfigurableGroup group : myGroups) {
         for (Configurable configurable : group.getConfigurables()) {
           list.add(new MyNode(this, configurable, 0));
@@ -847,7 +833,7 @@ final class SettingsTreeView extends JComponent implements Accessible, Disposabl
 
     @Override
     protected ActionCallback refilterNow(Object preferredSelection, boolean adjustSelection) {
-      final List<Object> toRestore = new ArrayList<Object>();
+      final List<Object> toRestore = new ArrayList<>();
       if (myFilter.myContext.isHoldingFilter() && !myWasHoldingFilter && myToExpandOnResetFilter == null) {
         myToExpandOnResetFilter = myBuilder.getUi().getExpandedElements();
       }
@@ -860,12 +846,10 @@ final class SettingsTreeView extends JComponent implements Accessible, Disposabl
 
       ActionCallback result = super.refilterNow(preferredSelection, adjustSelection);
       myRefilteringNow = true;
-      return result.doWhenDone(new Runnable() {
-        public void run() {
-          myRefilteringNow = false;
-          if (!myFilter.myContext.isHoldingFilter() && getSelectedElements().isEmpty()) {
-            restoreExpandedState(toRestore);
-          }
+      return result.doWhenDone(() -> {
+        myRefilteringNow = false;
+        if (!myFilter.myContext.isHoldingFilter() && getSelectedElements().isEmpty()) {
+          restoreExpandedState(toRestore);
         }
       });
     }
@@ -876,7 +860,7 @@ final class SettingsTreeView extends JComponent implements Accessible, Disposabl
         selected = new TreePath[0];
       }
 
-      List<TreePath> toCollapse = new ArrayList<TreePath>();
+      List<TreePath> toCollapse = new ArrayList<>();
 
       for (int eachRow = 0; eachRow < myTree.getRowCount(); eachRow++) {
         if (!myTree.isExpanded(eachRow)) continue;
