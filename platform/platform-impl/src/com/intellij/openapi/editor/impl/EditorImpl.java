@@ -20,6 +20,7 @@ import com.intellij.codeInsight.hint.DocumentFragmentTooltipRenderer;
 import com.intellij.codeInsight.hint.EditorFragmentComponent;
 import com.intellij.codeInsight.hint.TooltipController;
 import com.intellij.codeInsight.hint.TooltipGroup;
+import com.intellij.concurrency.JobScheduler;
 import com.intellij.diagnostic.Dumpable;
 import com.intellij.diagnostic.LogMessageEx;
 import com.intellij.ide.*;
@@ -56,6 +57,7 @@ import com.intellij.openapi.fileEditor.impl.EditorsSplitters;
 import com.intellij.openapi.keymap.KeymapUtil;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.ui.AbstractPainter;
 import com.intellij.openapi.ui.Queryable;
 import com.intellij.openapi.util.*;
 import com.intellij.openapi.util.registry.Registry;
@@ -63,6 +65,7 @@ import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.openapi.wm.IdeGlassPane;
+import com.intellij.openapi.wm.IdeGlassPaneUtil;
 import com.intellij.openapi.wm.ToolWindowAnchor;
 import com.intellij.openapi.wm.ex.ToolWindowManagerEx;
 import com.intellij.openapi.wm.impl.IdeBackgroundUtil;
@@ -87,7 +90,6 @@ import com.intellij.util.ui.update.UiNotifyConnector;
 import gnu.trove.TIntArrayList;
 import gnu.trove.TIntHashSet;
 import gnu.trove.TIntIntHashMap;
-import javafx.scene.input.DragEvent;
 import org.intellij.lang.annotations.JdkConstants;
 import org.intellij.lang.annotations.MagicConstant;
 import org.jetbrains.annotations.NonNls;
@@ -95,6 +97,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 
+import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.Timer;
 import javax.swing.border.Border;
@@ -116,6 +119,7 @@ import java.awt.im.InputMethodRequests;
 import java.awt.image.BufferedImage;
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
+import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.text.AttributedCharacterIterator;
@@ -125,6 +129,7 @@ import java.util.*;
 import java.util.List;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class EditorImpl extends UserDataHolderBase implements EditorEx, HighlighterClient, Queryable, Dumpable {
   private static final boolean isOracleRetina = UIUtil.isRetina() /*&& SystemInfo.isOracleJvm*/;
@@ -6493,16 +6498,97 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
     }
   }
 
+  private static class ExplosionPainter extends AbstractPainter {
+
+    private Point myExplosionLocation;
+    private final static long TIME_PER_FRAME = 50;
+    private long lastRepaintTime = System.currentTimeMillis();;
+    private int spriteIndex = 0;
+    private final static int SPRITE_SIZE = 64;
+    private final static int SPRITES_IN_ROW = 4;
+
+    private Image [] sprites = new Image [16];
+    private AtomicBoolean nrp = new AtomicBoolean(true);
+
+    public ExplosionPainter(final Point explosionLocation) {
+      myExplosionLocation = new Point(explosionLocation.x, explosionLocation.y);
+      Image explosionImage = ImageLoader.loadFromResource("/debugger/explosion.png");
+
+      for (int i = 0; i < sprites.length; i ++) {
+        sprites[i] = initSprites(i, explosionImage);
+      }
+    }
+
+    private static BufferedImage initSprites(int index, Image explosionImage) {
+      BufferedImage spriteImage =  UIUtil.createImage(SPRITE_SIZE, SPRITE_SIZE, BufferedImage.TYPE_INT_ARGB);
+      Graphics2D spriteGraphics = (Graphics2D)spriteImage.getGraphics();
+      int sourceX = SPRITE_SIZE * (index % SPRITES_IN_ROW);
+      int sourceY = SPRITE_SIZE * (index / SPRITES_IN_ROW);
+      spriteGraphics.drawImage(explosionImage,
+                               0, 0, SPRITE_SIZE, SPRITE_SIZE,
+                               sourceX, sourceY, sourceX + 64, sourceY + 64,
+                               null);
+      return spriteImage;
+    }
+
+    @Override
+    public void executePaint(Component component, Graphics2D g) {
+
+      if (!nrp.get()) return;
+
+      int x = myExplosionLocation.x - 32;
+      int y = myExplosionLocation.y - 32;
+
+      long currentTimeMillis = System.currentTimeMillis();
+      if ((currentTimeMillis - lastRepaintTime) < TIME_PER_FRAME) {
+        g.drawImage(sprites[spriteIndex], x, y, null);
+        JobScheduler.getScheduler().schedule(() -> {component.repaint(x, y, 12, 64);}, TIME_PER_FRAME, TimeUnit.MILLISECONDS);
+        return;
+      }
+      lastRepaintTime = currentTimeMillis;
+
+      g.drawImage(sprites[spriteIndex++], x, y, null);
+      if (spriteIndex == sprites.length) {
+        nrp.set(false);
+        ApplicationManager.getApplication().invokeLater(() -> IdeGlassPaneUtil.find(component).removePainter(this));
+        component.repaint(x, y, SPRITE_SIZE, SPRITE_SIZE);
+      }
+      component.repaint(x, y, SPRITE_SIZE, SPRITE_SIZE);
+    }
+
+    @Override
+    public boolean needsRepaint() {
+      return nrp.get();
+    }
+
+  }
+
   static boolean handleDrop(@NotNull EditorImpl editor, @NotNull final Transferable t) {
     final EditorDropHandler dropHandler = editor.getDropHandler();
 
     if (Registry.is("debugger.click.disable.breakpoints")) {
       try {
-        Object attachedObject = t.getTransferData(t.getTransferDataFlavors()[0]);
-        if (attachedObject instanceof GutterIconRenderer) {
-          GutterDraggableObject object = ((GutterIconRenderer)attachedObject).getDraggableObject();
-          if (object != null) {
-            object.remove();
+        if (t.isDataFlavorSupported(GutterDraggableObject.flavor)) {
+          Object attachedObject = t.getTransferData(GutterDraggableObject.flavor);
+          if (attachedObject instanceof GutterIconRenderer) {
+            GutterDraggableObject object = ((GutterIconRenderer)attachedObject).getDraggableObject();
+            if (object != null) {
+              object.remove();
+              Point mouseLocationOnScreen = MouseInfo.getPointerInfo().getLocation();
+              JComponent editorComponent = editor.getComponent();
+              Point editorComponentLocationOnScreen = editorComponent.getLocationOnScreen();
+              IdeGlassPaneUtil.installPainter(
+                editorComponent,
+                new ExplosionPainter(
+                  new Point(
+                    mouseLocationOnScreen.x - editorComponentLocationOnScreen.x,
+                    mouseLocationOnScreen.y - editorComponentLocationOnScreen.y
+                  )
+                ),
+                editor.getDisposable()
+              );
+              return true;
+            }
           }
         }
       }
@@ -6589,7 +6675,7 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
         if (transferFlavor.equals(DataFlavor.stringFlavor)) return true;
         if (Registry.is("debugger.click.disable.breakpoints")) {
           //should be used a better representation class
-          if (transferFlavor.isRepresentationClassInputStream()) {
+          if (GutterDraggableObject.flavor.equals(transferFlavor)) {
             return true;
           }
         }
