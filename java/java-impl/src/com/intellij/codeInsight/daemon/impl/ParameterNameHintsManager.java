@@ -40,11 +40,13 @@ public class ParameterNameHintsManager {
     Couple.of("min", "max")
   );
   
-  private static final List<String> COMMON_METHODS = ContainerUtil.newArrayList(
+  private static final List<String> COMMON_METHOD_NAMES = ContainerUtil.newArrayList(
     "get", "set", "contains", "append", 
     "print", "println", 
     "charAt", "startsWith", "indexOf"
   );
+
+  private static final List<String> COMMON_CLASSES = ContainerUtil.newArrayList(JAVA_LANG_STRING);
 
   @NotNull
   private final List<InlayInfo> myDescriptors;
@@ -59,11 +61,25 @@ public class ParameterNameHintsManager {
         && hasUnclearExpressions(callArguments)) 
     {
       PsiMethod method = (PsiMethod)resolveResult.getElement();
+      if (isInBlackList(method)) {
+        myDescriptors = descriptors;
+        return;
+      }
+      
       PsiParameter[] parameters = method.getParameterList().getParameters();
       descriptors = buildDescriptorsForLiteralArguments(callArguments, parameters, resolveResult);
     }
 
     myDescriptors = descriptors;
+  }
+
+  private static boolean isInBlackList(PsiMethod method) {
+    PsiClass aClass = method.getContainingClass();
+    if (aClass != null) {
+      String fqn = aClass.getQualifiedName();
+      return COMMON_CLASSES.stream().anyMatch((e) -> e.equals(fqn));
+    }
+    return false;
   }
 
   private static boolean isMethodToShowParams(JavaResolveResult resolveResult) {
@@ -77,7 +93,7 @@ public class ParameterNameHintsManager {
 
   private static boolean isCommonMethod(PsiMethod method) {
     String methodName = method.getName();
-    return COMMON_METHODS.stream().anyMatch((name) -> methodName.equals(name));
+    return COMMON_METHOD_NAMES.stream().anyMatch((name) -> methodName.equals(name));
   }
 
   private static boolean isSetter(PsiMethod method) {
@@ -135,12 +151,22 @@ public class ParameterNameHintsManager {
       }
     }
     
-    if (descriptors.size() == 1 && isStringLiteral(descriptors.get(0)) 
+    if (descriptors.size() == 1 && isStringLiteral(descriptors.get(0)) && !hasMultipleStringParams(parameters) 
         || parameters.length == 2 && descriptors.size() == 2 && isCommonlyNamedParameterPair(descriptors.get(0), descriptors.get(1))) {
       return ContainerUtil.emptyList();
     }
     
     return descriptors;
+  }
+
+  private static boolean hasMultipleStringParams(PsiParameter[] parameters) {
+    int stringParams = 0;
+    for (PsiParameter parameter : parameters) {
+      if (parameter.getType().equalsToText(JAVA_LANG_STRING)) {
+        stringParams++;
+      }
+    }
+    return stringParams > 1;
   }
 
   private static boolean isStringLiteral(InlayInfo info) {

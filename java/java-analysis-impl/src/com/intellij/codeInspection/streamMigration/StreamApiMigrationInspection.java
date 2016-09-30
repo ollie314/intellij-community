@@ -39,7 +39,9 @@ import com.intellij.util.ArrayUtil;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.IntArrayList;
 import com.siyeh.ig.psiutils.BoolUtils;
+import com.siyeh.ig.psiutils.EquivalenceChecker;
 import com.siyeh.ig.psiutils.ExpressionUtils;
+import one.util.streamex.EntryStream;
 import one.util.streamex.StreamEx;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.Nls;
@@ -56,6 +58,14 @@ import static com.intellij.codeInspection.streamMigration.StreamApiMigrationInsp
  */
 public class StreamApiMigrationInspection extends BaseJavaBatchLocalInspectionTool {
   private static final Logger LOG = Logger.getInstance("#" + StreamApiMigrationInspection.class.getName());
+
+  static final Map<String, String> COLLECTION_TO_ARRAY = EntryStream.of(
+    CommonClassNames.JAVA_UTIL_ARRAY_LIST, "toArray",
+    "java.util.LinkedList", "toArray",
+    CommonClassNames.JAVA_UTIL_HASH_SET, "distinct().toArray",
+    "java.util.LinkedHashSet", "distinct().toArray",
+    "java.util.TreeSet", "distinct().sorted().toArray"
+  ).toMap();
 
   public boolean REPLACE_TRIVIAL_FOREACH;
   public boolean SUGGEST_FOREACH;
@@ -108,6 +118,12 @@ public class StreamApiMigrationInspection extends BaseJavaBatchLocalInspectionTo
   @Contract("_, null -> false")
   static boolean isVariableReferenced(PsiVariable variable, PsiExpression value) {
     return value != null && ReferencesSearch.search(variable, new LocalSearchScope(value)).findFirst() != null;
+  }
+
+  static boolean isReferencedInOperations(PsiElement element, List<Operation> operations) {
+    return ReferencesSearch
+             .search(element, new LocalSearchScope(operations.stream().map(Operation::getExpression).toArray(PsiElement[]::new)))
+             .findFirst() != null;
   }
 
   @Nullable
@@ -211,13 +227,9 @@ public class StreamApiMigrationInspection extends BaseJavaBatchLocalInspectionTo
     if(!(operand instanceof PsiReferenceExpression)) return null;
     PsiElement element = ((PsiReferenceExpression)operand).resolve();
 
-    // the referred variable is the same as non-final variable
-    if(!(element instanceof PsiLocalVariable) || !variables.contains(element)) return null;
+    // the referred variable is the same as non-final variable and not used in intermediate operations
+    if(!(element instanceof PsiLocalVariable) || !variables.contains(element) || isReferencedInOperations(element, operations)) return null;
 
-    // the referred variable is not used in intermediate operations
-    for(Operation operation : operations) {
-      if(ReferencesSearch.search(element, new LocalSearchScope(operation.getExpression())).findFirst() != null) return null;
-    }
     return (PsiLocalVariable)element;
   }
 
@@ -409,12 +421,15 @@ public class StreamApiMigrationInspection extends BaseJavaBatchLocalInspectionTo
   }
 
   static InitializerUsageStatus getInitializerUsageStatus(PsiVariable var, PsiStatement nextStatement) {
-    if(var.getInitializer() == null) return UNKNOWN;
+    if(!(var instanceof PsiLocalVariable) || var.getInitializer() == null) return UNKNOWN;
     if(isDeclarationJustBefore(var, nextStatement)) return DECLARED_JUST_BEFORE;
     PsiElement declaration = var.getParent();
     // Check if variable is not referenced in the same declaration like "int a = 0, b = a;"
     if(!PsiTreeUtil.processElements(declaration, e -> !(e instanceof PsiReferenceExpression) ||
                                                   ((PsiReferenceExpression)e).resolve() != var)) return UNKNOWN;
+    // Check that variable is declared in the same method or the same lambda expression
+    if(PsiTreeUtil.getParentOfType(var, PsiLambdaExpression.class, PsiMethod.class) !=
+       PsiTreeUtil.getParentOfType(nextStatement, PsiLambdaExpression.class, PsiMethod.class)) return UNKNOWN;
     PsiElement block = PsiUtil.getVariableCodeBlock(var, null);
     if(block == null) return UNKNOWN;
     final ControlFlow controlFlow;
@@ -428,7 +443,8 @@ public class StreamApiMigrationInspection extends BaseJavaBatchLocalInspectionTo
     int start = controlFlow.getEndOffset(declaration);
     int stop = controlFlow.getStartOffset(nextStatement);
     if(ControlFlowUtil.isVariableReferencedBetween(controlFlow, start, stop, var)) return UNKNOWN;
-    return ControlFlowUtil.isValueUsedWithoutVisitingStop(controlFlow, start, stop, var) ? AT_WANTED_PLACE : AT_WANTED_PLACE_ONLY;
+    if (!ControlFlowUtil.isValueUsedWithoutVisitingStop(controlFlow, start, stop, var)) return AT_WANTED_PLACE_ONLY;
+    return var.hasModifierProperty(PsiModifier.FINAL) ? UNKNOWN : AT_WANTED_PLACE;
   }
 
   static boolean isDeclarationJustBefore(PsiVariable var, PsiStatement nextStatement) {
@@ -476,7 +492,7 @@ public class StreamApiMigrationInspection extends BaseJavaBatchLocalInspectionTo
           isArray = false;
         } else return;
       }
-      if (!ExceptionUtil.getThrownCheckedExceptions(new PsiElement[]{body}).isEmpty()) return;
+      if (!ExceptionUtil.getThrownCheckedExceptions(body).isEmpty()) return;
 
       TerminalBlock tb = TerminalBlock.from(statement.getIterationParameter(), body);
       List<Operation> operations = tb.extractOperations();
@@ -517,7 +533,10 @@ public class StreamApiMigrationInspection extends BaseJavaBatchLocalInspectionTo
           } else {
             PsiMethodCallExpression methodCallExpression = tb.getSingleMethodCall();
             if(canCollect(statement, methodCallExpression)) {
-              methodName = "collect";
+              if(extractToArrayExpression(statement, methodCallExpression) != null)
+                methodName = "toArray";
+              else
+                methodName = "collect";
             } else {
               if (!SUGGEST_FOREACH) return;
               methodName = "forEach";
@@ -540,6 +559,12 @@ public class StreamApiMigrationInspection extends BaseJavaBatchLocalInspectionTo
         if (nonFinalVariables.isEmpty() && tb.getSingleStatement() instanceof PsiReturnStatement) {
           handleSingleReturn(statement, tb, operations);
         }
+        // Intermediate ops should not refer to non-final variables
+        if (StreamEx.of(operations).map(Operation::getExpression)
+          .flatCollection(expr -> PsiTreeUtil.collectElementsOfType(expr, PsiReferenceExpression.class))
+          .map(PsiReferenceExpression::resolve).anyMatch(nonFinalVariables::contains)) {
+          return;
+        }
         PsiStatement[] statements = tb.getStatements();
         if (statements.length == 2) {
           PsiStatement breakStatement = statements[1];
@@ -561,7 +586,7 @@ public class StreamApiMigrationInspection extends BaseJavaBatchLocalInspectionTo
             if(!(var instanceof PsiVariable) || !nonFinalVariables.contains(var)) return;
             PsiExpression rValue = assignment.getRExpression();
             if(rValue == null || isVariableReferenced((PsiVariable)var, rValue)) return;
-            if(tb.getVariable() instanceof PsiPrimitiveType && !isIdentityMapping(tb.getVariable(), rValue)) return;
+            if(tb.getVariable().getType() instanceof PsiPrimitiveType && !isIdentityMapping(tb.getVariable(), rValue)) return;
             registerProblem(statement, "findFirst", new ReplaceWithFindFirstFix());
           }
         }
@@ -647,6 +672,73 @@ public class StreamApiMigrationInspection extends BaseJavaBatchLocalInspectionTo
     }
   }
 
+  @Nullable
+  static PsiMethodCallExpression extractToArrayExpression(PsiForeachStatement statement, PsiMethodCallExpression expression) {
+    // return collection.toArray() or collection.toArray(new Type[0]) or collection.toArray(new Type[collection.size()]);
+    PsiElement nextElement = PsiTreeUtil.skipSiblingsForward(statement, PsiComment.class, PsiWhiteSpace.class);
+    PsiExpression toArrayCandidate;
+    if (nextElement instanceof PsiReturnStatement) {
+      toArrayCandidate = ((PsiReturnStatement)nextElement).getReturnValue();
+    }
+    else {
+      PsiAssignmentExpression assignment = ExpressionUtils.getAssignment(nextElement);
+      if (assignment != null) {
+        toArrayCandidate = assignment.getRExpression();
+      }
+      else if (nextElement instanceof PsiDeclarationStatement) {
+        PsiElement[] elements = ((PsiDeclarationStatement)nextElement).getDeclaredElements();
+        if (elements.length == 1 && elements[0] instanceof PsiLocalVariable) {
+          toArrayCandidate = ((PsiLocalVariable)elements[0]).getInitializer();
+        }
+        else {
+          return null;
+        }
+      }
+      else {
+        return null;
+      }
+    }
+    if (!(toArrayCandidate instanceof PsiMethodCallExpression)) return null;
+    PsiMethodCallExpression call = (PsiMethodCallExpression)toArrayCandidate;
+    PsiReferenceExpression methodExpression = call.getMethodExpression();
+    if (!"toArray".equals(methodExpression.getReferenceName())) return null;
+    PsiExpression qualifierExpression = methodExpression.getQualifierExpression();
+    if (!(qualifierExpression instanceof PsiReferenceExpression)) return null;
+    PsiLocalVariable collectionVariable = extractCollectionVariable(expression.getMethodExpression().getQualifierExpression());
+    if (collectionVariable == null || ((PsiReferenceExpression)qualifierExpression).resolve() != collectionVariable) return null;
+    PsiExpression initializer = collectionVariable.getInitializer();
+    if (initializer == null) return null;
+    PsiType type = initializer.getType();
+    if (!(type instanceof PsiClassType) || !COLLECTION_TO_ARRAY.containsKey(((PsiClassType)type).rawType().getCanonicalText())) {
+      return null;
+    }
+
+    if (!(nextElement instanceof PsiReturnStatement) && !ReferencesSearch.search(collectionVariable, collectionVariable.getUseScope())
+      .forEach(ref ->
+                 ref.getElement() == collectionVariable || PsiTreeUtil.isAncestor(statement, ref.getElement(), false) ||
+                 PsiTreeUtil.isAncestor(toArrayCandidate, ref.getElement(), false)
+      )) {
+      return null;
+    }
+
+    PsiExpression[] args = call.getArgumentList().getExpressions();
+    if (args.length == 0) return call;
+    if (args.length != 1 || !(args[0] instanceof PsiNewExpression)) return null;
+    PsiNewExpression newArray = (PsiNewExpression)args[0];
+    PsiExpression[] dimensions = newArray.getArrayDimensions();
+    if (dimensions.length != 1) return null;
+    if (ExpressionUtils.isLiteral(dimensions[0], 0)) return call;
+    if (!(dimensions[0] instanceof PsiMethodCallExpression)) return null;
+    PsiMethodCallExpression maybeSizeCall = (PsiMethodCallExpression)dimensions[0];
+    if (maybeSizeCall.getArgumentList().getExpressions().length != 0) return null;
+    PsiReferenceExpression maybeSizeExpression = maybeSizeCall.getMethodExpression();
+    if (!"size".equals(maybeSizeExpression.getReferenceName()) || !EquivalenceChecker.getCanonicalPsiEquivalence()
+      .expressionsAreEquivalent(qualifierExpression, maybeSizeExpression.getQualifierExpression())) {
+      return null;
+    }
+    return call;
+  }
+
   /**
    * Intermediate stream operation representation
    */
@@ -724,7 +816,8 @@ public class StreamApiMigrationInspection extends BaseJavaBatchLocalInspectionTo
       } else if(myVariable.getType() instanceof PsiPrimitiveType) {
         operationName = "mapToObj";
       }
-      return "." + operationName + "(" + LambdaUtil.createLambda(myVariable, myExpression) + ")";
+      PsiExpression expression = myType == null ? myExpression : ExpressionUtils.convertInitializerToNormalExpression(myExpression, myType);
+      return "." + operationName + "(" + LambdaUtil.createLambda(myVariable, expression) + ")";
     }
   }
 

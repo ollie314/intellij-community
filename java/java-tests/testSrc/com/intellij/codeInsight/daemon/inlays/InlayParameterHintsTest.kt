@@ -86,6 +86,26 @@ class Groo {
     onLineStartingWith("configure(testNow").assertNoInlays()
   }
 
+  fun `test show hint for single string literal if there is multiple string params`() {
+    setup("""class Groo {
+
+ public void test() {
+   String message = "sdfsdfdsf";
+   assertEquals("fooo", message);
+
+   String title = "TT";
+   show(title, "Hi");
+ }
+
+ public void assertEquals(String expected, String actual) {}
+ public void show(String title, String message) {}
+
+}""")
+
+    onLineStartingWith("assertEquals").assertInlays("expected->\"fooo\"")
+    onLineStartingWith("show").assertInlays("message->\"Hi\"")
+  }
+
   fun `test do not show hints on setters`() {
     setup("""class Groo {
 
@@ -440,6 +460,24 @@ public class VarArgTest {
 
     onLineStartingWith("check(")
         .assertInlays("beginIndex->10", "endIndex->1000")
+  }
+  
+  fun `test ignore String methods`() {
+    setup("""
+class Test {
+  
+  public void main() {
+    "qq".replace("a", "a");
+    "ww".replace('a', 'b');
+    String.format("line", "eee", "www");
+  }
+  
+}
+""")
+    
+    onLineStartingWith("\"q").assertNoInlays()
+    onLineStartingWith("\"w").assertNoInlays()
+    onLineStartingWith("String").assertNoInlays()
   }
 
   fun `test inline common name pair if more that 2 args xxx`() {
