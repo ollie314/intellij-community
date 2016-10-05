@@ -17,10 +17,8 @@ package com.siyeh.ig.psiutils;
 
 import com.intellij.codeInsight.AnnotationUtil;
 import com.intellij.codeInsight.NullableNotNullManager;
-import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.*;
-import com.intellij.psi.codeStyle.CodeStyleManager;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.util.ConstantExpressionUtil;
 import com.intellij.psi.util.PsiTreeUtil;
@@ -37,8 +35,6 @@ import java.util.HashSet;
 import java.util.Set;
 
 public class ExpressionUtils {
-  private static final Logger LOG = Logger.getInstance(ExpressionUtils.class);
-
   @NonNls static final Set<String> convertableBoxedClassNames = new HashSet<>(3);
   static {
     convertableBoxedClassNames.add(CommonClassNames.JAVA_LANG_BYTE);
@@ -720,10 +716,10 @@ public class ExpressionUtils {
 
   /**
    * Returns assignment expression if supplied element is a statement which contains assignment expression
-   * or it's an assignment expression itself
+   * or it's an assignment expression itself. Only simple assignments are returned (like a = b, not a+= b).
    *
    * @param element element to get assignment expression from
-   * @return extracted assignment or null if assignment is not found
+   * @return extracted assignment or null if assignment is not found or assignment is compound
    */
   @Contract("null -> null")
   public static PsiAssignmentExpression getAssignment(PsiElement element) {
@@ -731,7 +727,10 @@ public class ExpressionUtils {
       element = ((PsiExpressionStatement)element).getExpression();
     }
     if (element instanceof PsiAssignmentExpression) {
-      return (PsiAssignmentExpression)element;
+      PsiAssignmentExpression assignment = (PsiAssignmentExpression)element;
+      if(assignment.getOperationTokenType().equals(JavaTokenType.EQ)) {
+        return assignment;
+      }
     }
     return null;
   }
@@ -791,25 +790,5 @@ public class ExpressionUtils {
       }
     }
     return true;
-  }
-
-  @Contract("null, _ -> null")
-  public static PsiExpression convertInitializerToNormalExpression(@Nullable PsiExpression expression, @NotNull PsiType forcedReturnType) {
-    if (expression instanceof PsiArrayInitializerExpression && forcedReturnType instanceof PsiArrayType) {
-      return createNewExpressionFromArrayInitializer((PsiArrayInitializerExpression)expression, (PsiArrayType)forcedReturnType);
-    }
-    return expression;
-  }
-
-  public static PsiExpression createNewExpressionFromArrayInitializer(@NotNull PsiArrayInitializerExpression initializer,
-                                                                      @NotNull PsiArrayType targetType) {
-    PsiElementFactory factory = JavaPsiFacade.getInstance(initializer.getProject()).getElementFactory();
-    PsiNewExpression result =
-      (PsiNewExpression)factory.createExpressionFromText("new " + targetType.getPresentableText() + "{}", null);
-    result = (PsiNewExpression)CodeStyleManager.getInstance(initializer.getProject()).reformat(result);
-    PsiArrayInitializerExpression arrayInitializer = result.getArrayInitializer();
-    LOG.assertTrue(arrayInitializer != null);
-    arrayInitializer.replace(initializer);
-    return result;
   }
 }

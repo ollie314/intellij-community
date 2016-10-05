@@ -41,12 +41,8 @@ public class ParameterNameHintsManager {
     Couple.of("min", "max"),
     Couple.of("format", "arg")
   );
-
-  private static final Set<Character> ALLOWED_PARAMETER_NAME_CHARS = ContainerUtil.newHashSet('x', 'y', 'z', 'w', 'h');
   
-  private static final Set<String> COMMON_METHOD_NAMES = ContainerUtil.newHashSet(
-    "get", "set", "contains", "append", "print", "println", "charAt", "startsWith", "endsWith", "indexOf"
-  );
+  private static final Set<String> COMMON_METHOD_NAMES = ContainerUtil.newHashSet("set", "print", "println");
   
   @NotNull
   private final List<InlayInfo> myDescriptors;
@@ -57,7 +53,7 @@ public class ParameterNameHintsManager {
     
     List<InlayInfo> descriptors = Collections.emptyList();
     if (resolveResult.getElement() instanceof PsiMethod
-        && isMethodToShowParams(resolveResult)
+        && isMethodToShowParams(callExpression, resolveResult)
         && hasUnclearExpressions(callArguments)) 
     {
       PsiMethod method = (PsiMethod)resolveResult.getElement();
@@ -68,13 +64,52 @@ public class ParameterNameHintsManager {
     myDescriptors = descriptors;
   }
 
-  private static boolean isMethodToShowParams(JavaResolveResult resolveResult) {
+  private static boolean isMethodToShowParams(@NotNull PsiCallExpression callExpression, @NotNull JavaResolveResult resolveResult) {
     PsiElement element = resolveResult.getElement();
     if (element instanceof PsiMethod) {
       PsiMethod method = (PsiMethod)element;
-      return !isSetter(method) && !isCommonMethod(method);
+      if (isSetter(method) || isBuilder(callExpression, method)) return false;
+      if (hasSingleParameter(method)) {
+        PsiParameter parameter = method.getParameterList().getParameters()[0];
+        return PsiType.VOID.equals(method.getReturnType()) || isBoolean(parameter) || isNullOrThis(callExpression);
+      }
+      return !isCommonMethod(method);
     }
     return false;
+  }
+
+  private static boolean isNullOrThis(@NotNull PsiCallExpression callExpression) {
+    PsiExpressionList list = callExpression.getArgumentList();
+    PsiExpression[] expressions = list != null ? list.getExpressions() : null;
+    if (expressions != null && expressions.length > 0) {
+      PsiExpression expression = expressions[0];
+      if (expression.textMatches("null") || expression.textMatches("this")) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean isBuilder(PsiCallExpression expression, PsiMethod method) {
+    if (expression instanceof PsiNewExpression) {
+      return false;
+    }
+    final PsiType returnType = method.getReturnType();
+    final PsiClass aClass = method.getContainingClass();
+    final String calledMethodFqn = aClass != null ? aClass.getQualifiedName() : null;
+    if (calledMethodFqn != null && returnType != null) {
+      return returnType.equalsToText(calledMethodFqn);
+    }
+    return false;
+  }
+
+  private static boolean isBoolean(PsiParameter parameter) {
+    PsiType type = parameter.getType();
+    return PsiType.BOOLEAN.equals(type) || PsiType.BOOLEAN.equals(PsiPrimitiveType.getUnboxedType(type));
+  }
+
+  private static boolean hasSingleParameter(PsiMethod method) {
+    return method.getParameterList().getParametersCount() == 1;
   }
 
   private static boolean isCommonMethod(PsiMethod method) {
@@ -83,7 +118,7 @@ public class ParameterNameHintsManager {
 
   private static boolean isSetter(PsiMethod method) {
     String methodName = method.getName();
-    if (method.getParameterList().getParametersCount() == 1
+    if (hasSingleParameter(method)
         && methodName.startsWith("set")
         && methodName.length() > 3 && Character.isUpperCase(methodName.charAt(3))) {
       return true;
@@ -138,30 +173,18 @@ public class ParameterNameHintsManager {
 
     final int totalDescriptors = descriptors.size();
     if (totalDescriptors == 1 && shouldIgnoreSingleHint(parameters, descriptors)
-        || totalDescriptors == 2 && parameters.length == 2 && isParamPairToIgnore(descriptors.get(0), descriptors.get(1))
-        || countOneCharLengthHints(descriptors) == totalDescriptors && !containsAnyMeaningfull(descriptors)) {
+        || totalDescriptors == 2 && parameters.length == 2 && isParamPairToIgnore(descriptors.get(0), descriptors.get(1))) 
+    {
       return ContainerUtil.emptyList();
     }
     
     return descriptors;
   }
-
-
-  private static long countOneCharLengthHints(List<InlayInfo> inlays) {
-    return inlays.stream().filter((e) -> e.getText().length() == 1).count();
-  }
-
+  
   private static boolean shouldIgnoreSingleHint(@NotNull PsiParameter[] parameters, List<InlayInfo> descriptors) {
     return isStringLiteral(descriptors.get(0)) && !hasMultipleStringParams(parameters);
   }
-
-  private static boolean containsAnyMeaningfull(List<InlayInfo> descriptors) {
-    return descriptors.stream().anyMatch((e) -> {
-      String text = e.getText();
-      return text.length() == 1 && ALLOWED_PARAMETER_NAME_CHARS.contains(text.charAt(0));
-    });
-  }
-
+  
   private static boolean hasMultipleStringParams(PsiParameter[] parameters) {
     int stringParams = 0;
     for (PsiParameter parameter : parameters) {

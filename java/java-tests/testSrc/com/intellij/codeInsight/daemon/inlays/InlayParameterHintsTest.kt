@@ -525,6 +525,50 @@ public class VarArgTest {
     onLineStartingWith("check(t")
         .assertInlays("test->this", "endIndex->1000")
   }
+  
+  fun `test inline strange methods`() {
+    setup("""
+public class Test {
+  
+  void main() {
+    createContent(null);
+    createNewContent(this);
+  }
+
+  Content createContent(DockManager manager) {}
+  Content createNewContent(Test test) {}
+
+}
+interface DockManager {}
+interface Content {}
+""")
+
+    onLineStartingWith("createContent").assertInlays("manager->null")
+    onLineStartingWith("createNewContent").assertInlays("test->this")
+  }
+  
+  fun `test do not inline builder pattern`() {
+    setup("""
+class Builder {
+  void await(boolean value) {}
+  Builder bwait(boolean xvalue) {}
+  Builder timeWait(int time) {}
+}
+
+class Test {
+  
+  public void test() {
+    Builder builder = new Builder();
+    builder.await(true);
+    builder.bwait(false).timeWait(100);
+  }
+  
+}
+""")
+
+    onLineStartingWith("builder.await").assertInlays("value->true")
+    onLineStartingWith("builder.bwait").assertNoInlays()
+  }
 
   fun `test do not show single parameter hint if it is string literal`() {
     setup("""
@@ -578,15 +622,32 @@ class Test {
     drawRect(x, y, 10, 12);
   }
 
+  void blah(int a, int b) {}
   void draw(int x, int y, int z) {}
   void drawRect(int x, int y, int w, int h) {}
 
 }
 """)
     
-    onLineStartingWith("blah").assertNoInlays()
+    onLineStartingWith("blah").assertInlays("a->1", "b->2")
     onLineStartingWith("draw").assertInlays("x->10", "y->20")
     onLineStartingWith("drawRect").assertInlays("w->10", "h->12")
+  }
+  
+  fun `test show for method with boolean param and return value`() {
+    setup("""
+class Test {
+  
+  void test() {
+    String name = getTestName(true);
+    System.out.println("");
+  }
+  
+  String getTestName(boolean lowerCase) {}
+}
+""")
+    
+    onLineStartingWith("String name").assertInlays("lowerCase->true")
   }
   
   private fun getInlays(): List<Inlay> {
