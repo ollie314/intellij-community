@@ -54,7 +54,6 @@ import javax.swing.plaf.basic.BasicComboBoxUI;
 import javax.swing.plaf.basic.BasicRadioButtonUI;
 import javax.swing.plaf.basic.ComboPopup;
 import javax.swing.text.*;
-import javax.swing.text.html.HTMLDocument;
 import javax.swing.text.html.HTMLEditorKit;
 import javax.swing.text.html.StyleSheet;
 import javax.swing.undo.UndoManager;
@@ -1310,13 +1309,25 @@ public class UIUtil {
   }
 
   public static Icon getTreeSelectedCollapsedIcon() {
-    return isUnderAquaBasedLookAndFeel() || isUnderNimbusLookAndFeel() || isUnderGTKLookAndFeel() || isUnderDarcula() || isUnderIntelliJLaF()
-           ? AllIcons.Mac.Tree_white_right_arrow : getTreeCollapsedIcon();
+    if (isUnderAquaBasedLookAndFeel() ||
+        isUnderNimbusLookAndFeel() ||
+        isUnderGTKLookAndFeel() ||
+        isUnderDarcula() ||
+        (isUnderIntelliJLaF() && !(SystemInfo.isWindows && Registry.is("ide.intellij.laf.win10.ui")))) {
+      return AllIcons.Mac.Tree_white_right_arrow;
+    }
+    return getTreeCollapsedIcon();
   }
 
   public static Icon getTreeSelectedExpandedIcon() {
-    return isUnderAquaBasedLookAndFeel() || isUnderNimbusLookAndFeel() || isUnderGTKLookAndFeel() || isUnderDarcula() || isUnderIntelliJLaF()
-           ? AllIcons.Mac.Tree_white_down_arrow : getTreeExpandedIcon();
+    if (isUnderAquaBasedLookAndFeel() ||
+        isUnderNimbusLookAndFeel() ||
+        isUnderGTKLookAndFeel() ||
+        isUnderDarcula() ||
+        (isUnderIntelliJLaF() && !(SystemInfo.isWindows && Registry.is("ide.intellij.laf.win10.ui")))) {
+      return AllIcons.Mac.Tree_white_down_arrow;
+    }
+    return getTreeExpandedIcon();
   }
 
   public static Border getTableHeaderCellBorder() {
@@ -1378,6 +1389,10 @@ public class UIUtil {
   @SuppressWarnings({"HardCodedStringLiteral"})
   public static boolean isUnderDarcula() {
     return UIManager.getLookAndFeel().getName().contains("Darcula");
+  }
+
+  public static boolean isUnderWin10LookAndFeel() {
+    return SystemInfo.isWindows && isUnderIntelliJLaF() && Registry.is("ide.intellij.laf.win10.ui");
   }
 
   @SuppressWarnings({"HardCodedStringLiteral"})
@@ -2370,32 +2385,13 @@ public class UIUtil {
     final StyleSheet style = new StyleSheet();
     style.addStyleSheet(isUnderDarcula() ? (StyleSheet)UIManager.getDefaults().get("StyledEditorKit.JBDefaultStyle") : DEFAULT_HTML_KIT_CSS);
     style.addRule(customCss);
-    scaleStyleSheetFontSize(style, size);
 
     return new HTMLEditorKit() {
-
-      @Override
-      public Document createDefaultDocument() {
-        Document document = super.createDefaultDocument();
-        if (document instanceof HTMLDocument) {
-          scaleStyleSheetFontSize(((HTMLDocument)document).getStyleSheet(), size);
-        }
-        return document;
-      }
-
       @Override
       public StyleSheet getStyleSheet() {
         return style;
       }
     };
-  }
-
-  private static void scaleStyleSheetFontSize(@Nullable StyleSheet styleSheet, int bodyFontSize) {
-    // In compliance with javax.swing.text.html.StyleSheet logic, where 14pt font size is specified in
-    // javax/swing/text/html/default.css and javax.swing.text.html.StyleSheet.sizeMapDefault[3].
-    if (styleSheet != null) {
-      styleSheet.addRule("BASE_SIZE " + bodyFontSize);
-    }
   }
 
   public static void removeScrollBorder(final Component c) {

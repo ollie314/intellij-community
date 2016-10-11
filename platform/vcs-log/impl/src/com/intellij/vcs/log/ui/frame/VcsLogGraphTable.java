@@ -74,12 +74,14 @@ import java.util.Date;
 import java.util.EventObject;
 import java.util.List;
 
+import static com.intellij.vcs.log.VcsLogHighlighter.TextStyle.BOLD;
+import static com.intellij.vcs.log.VcsLogHighlighter.TextStyle.ITALIC;
+
 public class VcsLogGraphTable extends TableWithProgress implements DataProvider, CopyProvider {
   private static final Logger LOG = Logger.getInstance(VcsLogGraphTable.class);
 
-  public static final int ROOT_INDICATOR_COLORED_WIDTH = 8;
   public static final int ROOT_INDICATOR_WHITE_WIDTH = 5;
-  private static final int ROOT_INDICATOR_WIDTH = ROOT_INDICATOR_WHITE_WIDTH + ROOT_INDICATOR_COLORED_WIDTH;
+  private static final int ROOT_INDICATOR_WIDTH = ROOT_INDICATOR_WHITE_WIDTH + 8;
   private static final int ROOT_NAME_MAX_WIDTH = 200;
   private static final int MAX_DEFAULT_AUTHOR_COLUMN_WIDTH = 200;
   private static final int MAX_ROWS_TO_CALC_WIDTH = 1000;
@@ -91,18 +93,12 @@ public class VcsLogGraphTable extends TableWithProgress implements DataProvider,
   @NotNull private final TableCellRenderer myDummyRenderer = new DefaultTableCellRenderer();
   @NotNull private final GraphCommitCellRenderer myGraphCommitCellRenderer;
   @NotNull private final GraphTableController myController;
-  private final StringCellRenderer myStringCellRenderer;
+  @NotNull private final StringCellRenderer myStringCellRenderer;
   private boolean myColumnsSizeInitialized = false;
 
   @Nullable private Selection mySelection = null;
 
   @NotNull private final Collection<VcsLogHighlighter> myHighlighters = ContainerUtil.newArrayList();
-  @NotNull private final GraphCellPainter myGraphCellPainter = new SimpleGraphCellPainter(new DefaultColorGenerator()) {
-    @Override
-    protected int getRowHeight() {
-      return VcsLogGraphTable.this.getRowHeight();
-    }
-  };
 
   public VcsLogGraphTable(@NotNull VcsLogUiImpl ui, @NotNull VcsLogData logData, @NotNull VisiblePack initialDataPack) {
     super(new GraphTableModel(initialDataPack, logData, ui));
@@ -110,7 +106,13 @@ public class VcsLogGraphTable extends TableWithProgress implements DataProvider,
 
     myUi = ui;
     myLogData = logData;
-    myGraphCommitCellRenderer = new GraphCommitCellRenderer(logData, myGraphCellPainter, this);
+    GraphCellPainter graphCellPainter = new SimpleGraphCellPainter(new DefaultColorGenerator()) {
+      @Override
+      protected int getRowHeight() {
+        return VcsLogGraphTable.this.getRowHeight();
+      }
+    };
+    myGraphCommitCellRenderer = new GraphCommitCellRenderer(logData, graphCellPainter, this);
     myStringCellRenderer = new StringCellRenderer();
 
     myLogData.getProgress().addProgressIndicatorListener(new MyProgressListener(), ui);
@@ -123,7 +125,7 @@ public class VcsLogGraphTable extends TableWithProgress implements DataProvider,
     setIntercellSpacing(JBUI.emptySize());
     setTableHeader(new InvisibleResizableHeader());
 
-    myController = new GraphTableController(this, ui, logData, myGraphCellPainter, myGraphCommitCellRenderer);
+    myController = new GraphTableController(this, ui, logData, graphCellPainter, myGraphCommitCellRenderer);
 
     getSelectionModel().addListSelectionListener(new MyListSelectionListener());
 
@@ -183,11 +185,18 @@ public class VcsLogGraphTable extends TableWithProgress implements DataProvider,
         int maxWidth = 0;
         for (int row = 0; row < maxRowsToCheck; row++) {
           String value = getModel().getValueAt(row, i).toString();
-          maxWidth = Math.max(getFontMetrics(tableFont.deriveFont(Font.BOLD)).stringWidth(value), maxWidth);
+          Font font = tableFont;
+          VcsLogHighlighter.TextStyle style = getStyle(row, i, value, false, false).getTextStyle();
+          if (BOLD.equals(style)) {
+            font = tableFont.deriveFont(Font.BOLD);
+          }
+          else if (ITALIC.equals(style)) {
+            font = tableFont.deriveFont(Font.ITALIC);
+          }
+          maxWidth = Math.max(getFontMetrics(font).stringWidth(value + "*"), maxWidth);
           if (!value.isEmpty()) sizeCalculated = true;
         }
-        int min =
-          Math.min(maxWidth + UIUtil.DEFAULT_HGAP, MAX_DEFAULT_AUTHOR_COLUMN_WIDTH + myStringCellRenderer.getHorizontalTextPadding());
+        int min = Math.min(maxWidth + myStringCellRenderer.getHorizontalTextPadding(), JBUI.scale(MAX_DEFAULT_AUTHOR_COLUMN_WIDTH));
         column.setPreferredWidth(min);
       }
       else if (i == GraphTableModel.DATE_COLUMN) { // all dates have nearly equal sizes
@@ -220,10 +229,10 @@ public class VcsLogGraphTable extends TableWithProgress implements DataProvider,
       rootWidth = 0;
     }
     else if (!myUi.isShowRootNames()) {
-      rootWidth = ROOT_INDICATOR_WIDTH;
+      rootWidth = JBUI.scale(ROOT_INDICATOR_WIDTH);
     }
     else {
-      rootWidth = Math.min(calculateMaxRootWidth(), ROOT_NAME_MAX_WIDTH);
+      rootWidth = Math.min(calculateMaxRootWidth(), JBUI.scale(ROOT_NAME_MAX_WIDTH));
     }
 
     // NB: all further instructions and their order are important, otherwise the minimum size which is less than 15 won't be applied
@@ -546,7 +555,7 @@ public class VcsLogGraphTable extends TableWithProgress implements DataProvider,
         g.setColor(getRootBackgroundColor(getModel().getRoot(lastRow), myUi.getColorManager()));
 
         int rootWidth = getColumnModel().getColumn(GraphTableModel.ROOT_COLUMN).getWidth();
-        if (!myUi.isShowRootNames()) rootWidth -= ROOT_INDICATOR_WHITE_WIDTH;
+        if (!myUi.isShowRootNames()) rootWidth -= JBUI.scale(ROOT_INDICATOR_WHITE_WIDTH);
 
         g.fillRect(x, y, rootWidth, height);
       }
@@ -580,9 +589,10 @@ public class VcsLogGraphTable extends TableWithProgress implements DataProvider,
       int width = getWidth();
 
       if (isNarrow) {
-        g.fillRect(0, 0, width - ROOT_INDICATOR_WHITE_WIDTH, myUi.getTable().getRowHeight());
+        g.fillRect(0, 0, width - JBUI.scale(ROOT_INDICATOR_WHITE_WIDTH), myUi.getTable().getRowHeight());
         g.setColor(myBorderColor);
-        g.fillRect(width - ROOT_INDICATOR_WHITE_WIDTH, 0, ROOT_INDICATOR_WHITE_WIDTH, myUi.getTable().getRowHeight());
+        g.fillRect(width - JBUI.scale(ROOT_INDICATOR_WHITE_WIDTH), 0, JBUI.scale(ROOT_INDICATOR_WHITE_WIDTH),
+                   myUi.getTable().getRowHeight());
       }
       else {
         g.fillRect(0, 0, width, myUi.getTable().getRowHeight());

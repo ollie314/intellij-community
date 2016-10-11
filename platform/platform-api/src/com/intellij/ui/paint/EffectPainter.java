@@ -51,8 +51,8 @@ public enum EffectPainter implements RegionPainter<Font> {
       if (!Registry.is("ide.text.effect.new")) {
         g.drawLine(x, y + 1, x + width, y + 1);
       }
-      else if (width > 0 && height > 0) {
-        drawLineUnderscore(g, x, y, width, height, font, 1, this);
+      else {
+        paintUnderline(g, x, y, width, height, font, 1, this);
       }
     }
   },
@@ -76,8 +76,8 @@ public enum EffectPainter implements RegionPainter<Font> {
         int h = JBUI.scale(Registry.intValue("editor.bold.underline.height", 2));
         g.fillRect(x, y, width, h);
       }
-      else if (width > 0 && height > 0) {
-        drawLineUnderscore(g, x, y, width, height, font, 2, this);
+      else {
+        paintUnderline(g, x, y, width, height, font, 2, this);
       }
     }
   },
@@ -97,9 +97,7 @@ public enum EffectPainter implements RegionPainter<Font> {
      */
     @Override
     public void paint(Graphics2D g, int x, int y, int width, int height, Font font) {
-      if (width > 0 && height > 0) {
-        drawLineUnderscore(g, x, y, width, height, font, 2, this);
-      }
+      paintUnderline(g, x, y, width, height, font, 2, this);
     }
   },
   /**
@@ -120,6 +118,9 @@ public enum EffectPainter implements RegionPainter<Font> {
     public void paint(Graphics2D g, int x, int y, int width, int height, Font font) {
       if (!Registry.is("ide.text.effect.new")) {
         WavePainter.forColor(g.getColor()).paint(g, x, x + width, y + height);
+      }
+      else if (Registry.is("ide.text.effect.new.metrics")) {
+        paintUnderline(g, x, y, width, height, font, 3, this);
       }
       else if (width > 0 && height > 0) {
         Cached.WAVE_UNDERSCORE.paint(g, x, y, width, height, null);
@@ -161,14 +162,17 @@ public enum EffectPainter implements RegionPainter<Font> {
     return height > 7 && Registry.is("ide.text.effect.new.scale") ? height >> 1 : 3;
   }
 
-  private static void drawLineUnderscore(Graphics2D g, int x, int y, int width, int height, Font font, int thickness,
-                                         EffectPainter painter) {
+  private static void paintUnderline(Graphics2D g, int x, int y, int width, int height, Font font, int thickness, EffectPainter painter) {
     if (width > 0 && height > 0) {
       if (Registry.is("ide.text.effect.new.metrics")) {
         if (font == null) font = g.getFont();
         LineMetrics metrics = font.getLineMetrics("", g.getFontRenderContext());
-        int offset = Math.max(1, (int)(0.5 + metrics.getUnderlineOffset()));
         thickness = Math.max(thickness, (int)(0.5 + thickness * metrics.getUnderlineThickness()));
+        int offset = Math.min(height - thickness, Math.max(1, (int)(0.5 + metrics.getUnderlineOffset())));
+        if (offset < 1) {
+          offset = height > 3 ? 1 : 0;
+          thickness = height - offset;
+        }
         drawLine(g, x, y + offset, width, thickness, painter);
       }
       else {
@@ -201,6 +205,9 @@ public enum EffectPainter implements RegionPainter<Font> {
       int dw = (w % height + height) % height;
       Cached.BOLD_DOTTED_UNDERSCORE.paint(g, x - dx, y, dw == 0 ? w : w - dw + height, height, null);
     }
+    else if (painter == WAVE_UNDERSCORE) {
+      Cached.WAVE_UNDERSCORE.paint(g, x, y, width, height, null);
+    }
     else {
       g.fillRect(x, y, width, height);
     }
@@ -226,7 +233,7 @@ public enum EffectPainter implements RegionPainter<Font> {
 
       @Override
       int getPeriod(int height) {
-        return getMaxHeight(height) - 1;
+        return (Registry.is("ide.text.effect.new.metrics") ? height : getMaxHeight(height)) - 1;
       }
 
       @Override
@@ -234,6 +241,22 @@ public enum EffectPainter implements RegionPainter<Font> {
         double dx = 0;
         double lower = height - 1;
         double upper = lower - period;
+        if (Registry.is("ide.text.effect.new.metrics")) {
+          if (height > 3) {
+            float fix = height / 3f;
+            g.setStroke(new BasicStroke(fix));
+            if (fix > 1) {
+              fix = (fix - 1) / 2;
+              lower -= fix;
+              upper += fix;
+            }
+          }
+          height += 2;
+          if (g.getClass().getName().equals("com.intellij.util.HiDPIScaledGraphics")) {
+            lower += .5;
+            upper += .5;
+          }
+        }
         Path2D path = new Path2D.Double();
         path.moveTo(dx, lower);
         if (height < 6) {

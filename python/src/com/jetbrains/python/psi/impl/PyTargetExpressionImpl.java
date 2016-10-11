@@ -320,7 +320,7 @@ public class PyTargetExpressionImpl extends PyBaseElementImpl<PyTargetExpression
     }
     final PyComprehensionElement comprh = PsiTreeUtil.getParentOfType(this, PyComprehensionElement.class);
     if (comprh != null) {
-      for (ComprhForComponent c : comprh.getForComponents()) {
+      for (PyComprehensionForComponent c : comprh.getForComponents()) {
         final PyExpression expr = c.getIteratorVariable();
         if (PsiTreeUtil.isAncestor(expr, this, false)) {
           target = expr;
@@ -364,43 +364,27 @@ public class PyTargetExpressionImpl extends PyBaseElementImpl<PyTargetExpression
       final PyFunction iterateMethod = findMethodByName(iterableType, PyNames.ITER, context);
       if (iterateMethod != null) {
         final PyType iterateReturnType = getContextSensitiveType(iterateMethod, context, source);
-        final PyType type = getCollectionElementType(iterateReturnType, context);
-        if (!isTrivialType(type)) {
-          return type;
-        }
+        return getCollectionElementType(iterateReturnType, context);
       }
       final String nextMethodName = LanguageLevel.forElement(anchor).isAtLeast(LanguageLevel.PYTHON30) ?
                                     PyNames.DUNDER_NEXT : PyNames.NEXT;
       final PyFunction next = findMethodByName(iterableType, nextMethodName, context);
       if (next != null) {
-        final PyType type = getContextSensitiveType(next, context, source);
-        if (!isTrivialType(type)) {
-          return type;
-        }
+        return getContextSensitiveType(next, context, source);
       }
       final PyFunction getItem = findMethodByName(iterableType, PyNames.GETITEM, context);
       if (getItem != null) {
-        final PyType type = getContextSensitiveType(getItem, context, source);
-        if (!isTrivialType(type)) {
-          return type;
-        }
+        return getContextSensitiveType(getItem, context, source);
       }
     }
     else if (iterableType != null && PyABCUtil.isSubtype(iterableType, PyNames.ASYNC_ITERABLE, context)) {
       final PyFunction iterateMethod = findMethodByName(iterableType, PyNames.AITER, context);
       if (iterateMethod != null) {
         final PyType iterateReturnType = getContextSensitiveType(iterateMethod, context, source);
-        final PyType type = getCollectionElementType(iterateReturnType, context);
-        if (!isTrivialType(type)) {
-          return type;
-        }
+        return getCollectionElementType(iterateReturnType, context);
       }
     }
     return null;
-  }
-
-  private static boolean isTrivialType(@Nullable PyType type) {
-    return type == null || type instanceof PyNoneType;
   }
 
   @Nullable
