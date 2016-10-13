@@ -47,6 +47,7 @@ import com.intellij.openapi.progress.EmptyProgressIndicator;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
+import com.intellij.openapi.progress.impl.CoreProgressManager;
 import com.intellij.openapi.progress.util.ProgressWindow;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
@@ -683,11 +684,7 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
   @Override
   @NotNull
   public ModalityState getDefaultModalityState() {
-    if (isDispatchThread()) {
-      return getCurrentModalityState();
-    }
-    ProgressIndicator progress = ProgressManager.getInstance().getProgressIndicator();
-    return progress == null ? getNoneModalityState() : progress.getModalityState();
+    return isDispatchThread() ? getCurrentModalityState() : CoreProgressManager.getCurrentThreadProgressModality();
   }
 
   @Override
@@ -1251,6 +1248,10 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
     }
 
     TransactionGuard.getInstance().submitTransactionAndWait(() -> {
+      if (gatherStatistics) {
+        ActionPauses.WRITE.finished("write action ("+myWriteActionsStack.get(0)+")");
+      }
+
       List<Class> savedStack = new ArrayList<>(myWriteActionsStack);
       myWriteActionsStack.clear();
       myLock.writeUnlock();
@@ -1262,6 +1263,10 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
         myWriteActionsStack.addAll(savedStack);
         myLock.writeLock();
         LOG.assertTrue(stackWasEmpty);
+
+        if (gatherStatistics) {
+          ActionPauses.WRITE.started();
+        }
       }
     });
   }
