@@ -44,6 +44,7 @@ import com.intellij.internal.statistic.UsageTrigger;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.ex.ActionUtil;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.TransactionGuard;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Caret;
@@ -63,15 +64,20 @@ import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.Sdk;
 import com.intellij.openapi.ui.Messages;
-import com.intellij.openapi.util.*;
+import com.intellij.openapi.util.Couple;
+import com.intellij.openapi.util.Key;
+import com.intellij.openapi.util.SystemInfo;
+import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.io.StreamUtil;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.CharsetToolkit;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.psi.PsiFile;
 import com.intellij.remote.RemoteProcess;
 import com.intellij.remote.Tunnelable;
 import com.intellij.testFramework.LightVirtualFile;
+import com.intellij.ui.GuiUtils;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.SideBorder;
 import com.intellij.ui.content.Content;
@@ -107,8 +113,10 @@ import java.awt.event.KeyEvent;
 import java.io.File;
 import java.io.IOException;
 import java.net.ServerSocket;
-import java.util.*;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Scanner;
 import java.util.stream.Collectors;
 
 import static com.intellij.execution.runners.AbstractConsoleRunnerWithHistory.registerActionShortcuts;
@@ -317,10 +325,9 @@ public class PydevConsoleRunnerImpl implements PydevConsoleRunner {
 
 
   private void showContentDescriptor(RunContentDescriptor contentDescriptor) {
-    PythonConsoleToolWindow toolWindow = PythonConsoleToolWindow.getInstance(myProject);
-    if (toolWindow != null) {
-      toolWindow
-        .init(PythonConsoleToolWindow.getToolWindow(myProject), contentDescriptor);
+    ToolWindow toolwindow = PythonConsoleToolWindow.getToolWindow(myProject);
+    if (toolwindow != null) {
+      PythonConsoleToolWindow.getInstance(myProject).init(toolwindow, contentDescriptor);
     }
     else {
       ExecutionManager
@@ -945,9 +952,7 @@ public class PydevConsoleRunnerImpl implements PydevConsoleRunner {
           myProcessHandler.waitFor();
         }
 
-        UIUtil.invokeLaterIfNeeded(() -> {
-          myRerunAction.consume(myConsoleTitle);
-        });
+        GuiUtils.invokeLaterIfNeeded(() -> myRerunAction.consume(myConsoleTitle), ModalityState.defaultModalityState());
       }
     }.queue();
   }

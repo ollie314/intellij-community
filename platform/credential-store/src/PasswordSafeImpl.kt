@@ -25,6 +25,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.SettingsSavingComponent
 import com.intellij.openapi.diagnostic.catchAndLog
 import org.jetbrains.concurrency.runAsync
+import java.nio.file.Path
 
 class PasswordSafeImpl(/* public - backward compatibility */val settings: PasswordSafeSettings) : PasswordSafe(), SettingsSavingComponent {
   private @Volatile var currentProvider: PasswordStorage
@@ -80,16 +81,12 @@ class PasswordSafeImpl(/* public - backward compatibility */val settings: Passwo
 
   override fun set(attributes: CredentialAttributes, credentials: Credentials?) {
     currentProvider.set(attributes, credentials)
-    if (!credentials.isEmpty() && attributes.isPasswordMemoryOnly) {
+    if (attributes.isPasswordMemoryOnly && credentials.isFulfilled()) {
       // we must store because otherwise on get will be no password
       memoryHelperProvider.value.set(attributes.toPasswordStoreable(), credentials)
     }
     else if (memoryHelperProvider.isInitialized()) {
-      val memoryHelper = memoryHelperProvider.value
-      // update password in the memory helper, but only if it was previously set
-      if (credentials == null || memoryHelper.get(attributes) != null) {
-        memoryHelper.set(attributes.toPasswordStoreable(), credentials)
-      }
+      memoryHelperProvider.value.set(attributes, null)
     }
   }
 
@@ -125,8 +122,26 @@ class PasswordSafeImpl(/* public - backward compatibility */val settings: Passwo
     ApplicationManager.getApplication().messageBus.syncPublisher(PasswordSafeSettings.TOPIC).credentialStoreCleared()
   }
 
-  fun setMasterPassword(password: String) {
+  fun setFileDatabaseMasterPassword(password: String) {
     (currentProvider as KeePassCredentialStore).setMasterPassword(password)
+  }
+
+  fun importFileDatabase(path: Path, masterPassword: String) {
+    currentProvider = copyFileDatabase(path, masterPassword)
+  }
+
+  override fun isPasswordStoredOnlyInMemory(attributes: CredentialAttributes): Boolean {
+    if (isMemoryOnly) {
+      return true
+    }
+
+    if (!memoryHelperProvider.isInitialized()) {
+      return false
+    }
+
+    return memoryHelperProvider.value.get(attributes)?.let {
+      !it.password.isNullOrEmpty()
+    } ?: false
   }
 
   // public - backward compatibility

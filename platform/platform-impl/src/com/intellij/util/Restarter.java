@@ -15,6 +15,7 @@
  */
 package com.intellij.util;
 
+import com.intellij.execution.process.UnixProcessManager;
 import com.intellij.ide.actions.CreateDesktopEntryAction;
 import com.intellij.jna.JnaLoader;
 import com.intellij.openapi.application.PathManager;
@@ -40,13 +41,19 @@ public class Restarter {
 
   public static boolean isSupported() {
     if (SystemInfo.isWindows) {
-      return JnaLoader.isLoaded() && new File(PathManager.getBinPath(), "restarter.exe").exists();
+      return JnaLoader.isLoaded() &&
+             new File(PathManager.getBinPath(), "restarter.exe").exists();
     }
+
     if (SystemInfo.isMac) {
-      return PathManager.getHomePath().contains(".app") && new File(PathManager.getBinPath(), "restarter").canExecute();
+      return PathManager.getHomePath().contains(".app") &&
+             new File(PathManager.getBinPath(), "restarter").canExecute();
     }
+
     if (SystemInfo.isUnix) {
-      return CreateDesktopEntryAction.getLauncherScript() != null && new File(PathManager.getBinPath(), "restart.py").canExecute();
+      return UnixProcessManager.getCurrentProcessId() > 0 &&
+             CreateDesktopEntryAction.getLauncherScript() != null &&
+             new File(PathManager.getBinPath(), "restart.py").canExecute();
     }
 
     return false;
@@ -135,7 +142,12 @@ public class Restarter {
   private static void restartOnUnix(String... beforeRestart) throws IOException {
     String launcherScript = CreateDesktopEntryAction.getLauncherScript();
     if (launcherScript == null) throw new IOException("Launcher script not found in " + PathManager.getBinPath());
+
+    int pid = UnixProcessManager.getCurrentProcessId();
+    if (pid <= 0) throw new IOException("Invalid process ID: " + pid);
+
     doScheduleRestart(new File(PathManager.getBinPath(), "restart.py"), commands -> {
+      commands.add(String.valueOf(pid));
       commands.add(launcherScript);
       Collections.addAll(commands, beforeRestart);
     });

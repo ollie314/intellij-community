@@ -24,6 +24,7 @@ import com.intellij.debugger.DebuggerBundle;
 import com.intellij.debugger.DebuggerManagerEx;
 import com.intellij.debugger.SourcePosition;
 import com.intellij.debugger.engine.DebugProcessImpl;
+import com.intellij.debugger.engine.DebuggerManagerThreadImpl;
 import com.intellij.debugger.engine.JVMName;
 import com.intellij.debugger.engine.JVMNameUtil;
 import com.intellij.debugger.engine.evaluation.EvaluateException;
@@ -31,6 +32,7 @@ import com.intellij.debugger.engine.evaluation.EvaluationContextImpl;
 import com.intellij.debugger.engine.requests.RequestManagerImpl;
 import com.intellij.debugger.impl.DebuggerUtilsEx;
 import com.intellij.debugger.impl.PositionUtil;
+import com.intellij.debugger.jdi.MethodBytecodeUtil;
 import com.intellij.debugger.requests.Requestor;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.application.ApplicationManager;
@@ -42,17 +44,17 @@ import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.InvalidDataException;
 import com.intellij.openapi.util.JDOMExternalizerUtil;
 import com.intellij.openapi.util.Key;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.psi.*;
 import com.intellij.util.StringBuilderSpinAllocator;
+import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.text.CharArrayUtil;
 import com.intellij.xdebugger.breakpoints.XBreakpoint;
-import com.sun.jdi.AbsentInformationException;
-import com.sun.jdi.Location;
-import com.sun.jdi.Method;
-import com.sun.jdi.ReferenceType;
+import com.sun.jdi.*;
 import com.sun.jdi.event.LocatableEvent;
 import com.sun.jdi.event.MethodEntryEvent;
 import com.sun.jdi.event.MethodExitEvent;
+import com.sun.jdi.request.ClassPrepareRequest;
 import com.sun.jdi.request.EventRequest;
 import com.sun.jdi.request.MethodEntryRequest;
 import com.sun.jdi.request.MethodExitRequest;
@@ -61,9 +63,14 @@ import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.java.debugger.breakpoints.properties.JavaMethodBreakpointProperties;
+import org.jetbrains.org.objectweb.asm.Label;
+import org.jetbrains.org.objectweb.asm.MethodVisitor;
+import org.jetbrains.org.objectweb.asm.Opcodes;
 
 import javax.swing.*;
+import java.util.List;
 import java.util.Set;
+import java.util.function.Consumer;
 
 public class MethodBreakpoint extends BreakpointWithHighlighter<JavaMethodBreakpointProperties> {
   private static final Logger LOG = Logger.getInstance("#com.intellij.debugger.ui.breakpoints.MethodBreakpoint");
@@ -123,7 +130,84 @@ public class MethodBreakpoint extends BreakpointWithHighlighter<JavaMethodBreakp
     }
   }
 
+  private void createRequestForSubClasses(@NotNull DebugProcessImpl debugProcess, @NotNull ReferenceType baseType) {
+    DebuggerManagerThreadImpl.assertIsManagerThread();
+    ClassPrepareRequest request = debugProcess.getRequestsManager().createClassPrepareRequest((debuggerProcess, referenceType) -> {
+      if (instanceOf(referenceType, baseType)) {
+        createRequestForPreparedClassEmulated(debugProcess, referenceType, false);
+      }
+    }, null);
+    if (request != null) {
+      request.enable();
+    }
+
+    processSubTypes(baseType, subType -> createRequestForPreparedClassEmulated(debugProcess, subType, false));
+  }
+
+  private void createRequestForPreparedClassEmulated(@NotNull DebugProcessImpl debugProcess, @NotNull ReferenceType classType, boolean base) {
+    try {
+      for (Method method : classType.methods()) {
+        if (getMethodName().equals(method.name()) && mySignature.getName(debugProcess).equals(method.signature())) {
+          List<Location> allLineLocations = method.allLineLocations();
+          if (isWatchEntry()) {
+            createLocationBreakpoint(ContainerUtil.getFirstItem(allLineLocations), debugProcess);
+          }
+          if (isWatchExit()) {
+            MethodBytecodeUtil.visit(classType, method, new MethodVisitor(Opcodes.API_VERSION) {
+              int myLastLine = 0;
+              @Override
+              public void visitLineNumber(int line, Label start) {
+                myLastLine = line;
+              }
+
+              @Override
+              public void visitInsn(int opcode) {
+                switch (opcode) {
+                  case Opcodes.RETURN:
+                  case Opcodes.IRETURN:
+                  case Opcodes.FRETURN:
+                  case Opcodes.ARETURN:
+                  case Opcodes.LRETURN:
+                  case Opcodes.DRETURN:
+                  case Opcodes.ATHROW:
+                    allLineLocations.stream()
+                      .filter(l -> l.lineNumber() == myLastLine)
+                      .findFirst().ifPresent(location -> createLocationBreakpoint(location, debugProcess));
+                }
+              }
+            });
+          }
+          if (base) {
+            // desired class found - now also track all new classes
+            createRequestForSubClasses(debugProcess, classType);
+          }
+          break;
+        }
+      }
+    }
+    catch (Exception e) {
+      LOG.debug(e);
+    }
+  }
+
+  private void createLocationBreakpoint(@Nullable Location location, @NotNull DebugProcessImpl debugProcess) {
+    if (location != null) {
+      RequestManagerImpl requestsManager = debugProcess.getRequestsManager();
+      requestsManager.enableRequest(requestsManager.createBreakpointRequest(this, location));
+    }
+  }
+
+
   protected void createRequestForPreparedClass(@NotNull DebugProcessImpl debugProcess, @NotNull ReferenceType classType) {
+    if (Registry.is("debugger.emulate.method.breakpoints")) {
+      createRequestForPreparedClassEmulated(debugProcess, classType, true);
+    }
+    else {
+      createRequestForPreparedClassOriginal(debugProcess, classType);
+    }
+  }
+
+  private void createRequestForPreparedClassOriginal(@NotNull DebugProcessImpl debugProcess, @NotNull ReferenceType classType) {
     try {
       boolean hasMethod = false;
       for (Method method : classType.allMethods()) {
@@ -398,5 +482,38 @@ public class MethodBreakpoint extends BreakpointWithHighlighter<JavaMethodBreakp
     JVMName methodSignature;
     boolean isStatic;
     int methodLine;
+  }
+
+  private static boolean instanceOf(@Nullable Type type, @NotNull Type superType) {
+    if (type == null) {
+      return false;
+    }
+    if (superType.equals(type)) {
+      return true;
+    }
+    if (type instanceof InterfaceType) {
+      return ((InterfaceType)type).superinterfaces().stream().anyMatch(t -> instanceOf(t, superType));
+    } else if (type instanceof ClassType) {
+      if (((ClassType)type).interfaces().stream().anyMatch(t -> instanceOf(t, superType))) {
+        return true;
+      }
+      return instanceOf(((ClassType)type).superclass(), superType);
+    }
+    return false;
+  }
+
+  private static void processSubTypes(ReferenceType classType, Consumer<ReferenceType> consumer) {
+    List<? extends ReferenceType> inheritors = null;
+    if (classType instanceof InterfaceType) {
+      inheritors = ContainerUtil.concat(((InterfaceType)classType).subinterfaces(), ((InterfaceType)classType).implementors());
+    } else if (classType instanceof ClassType) {
+      inheritors = ((ClassType)classType).subclasses();
+    }
+    if (inheritors != null) {
+      inheritors.forEach(type -> {
+        consumer.accept(type);
+        processSubTypes(type, consumer);
+      });
+    }
   }
 }

@@ -24,6 +24,8 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.*;
 import com.intellij.psi.util.InheritanceUtil;
 import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.testIntegration.TestFramework;
+import com.siyeh.ig.junit.JUnitCommonClassNames;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -61,7 +63,11 @@ public class TestUtils {
   }
 
   public static boolean isJUnitTestMethod(@Nullable PsiMethod method) {
-    return isRunnable(method) && (isJUnit3TestMethod(method) || isJUnit4TestMethod(method));
+    if (method == null) return false;
+    final PsiClass containingClass = method.getContainingClass();
+    if (containingClass == null) return false;
+    final TestFramework framework = TestFrameworks.detectFramework(containingClass);
+    return framework != null && framework.getName().startsWith("JUnit") && framework.isTestMethod(method);
   }
 
   public static boolean isRunnable(PsiMethod method) {
@@ -98,8 +104,23 @@ public class TestUtils {
     return method != null && AnnotationUtil.isAnnotated(method, "org.junit.Test", true);
   }
 
+  public static boolean isAnnotatedTestMethod(@Nullable PsiMethod method) {
+    if (method == null) return false;
+    final PsiClass containingClass = method.getContainingClass();
+    if (containingClass == null) return false;
+    final TestFramework testFramework = TestFrameworks.detectFramework(containingClass);
+    if (testFramework == null) return false;
+    if (testFramework.isTestMethod(method)) {
+      final String testFrameworkName = testFramework.getName();
+      return testFrameworkName.equals("JUnit4") || testFrameworkName.equals("JUnit5");
+    }
+    return false;
+  }
+
+
+
   public static boolean isJUnitTestClass(@Nullable PsiClass targetClass) {
-    return targetClass != null && InheritanceUtil.isInheritor(targetClass, "junit.framework.TestCase");
+    return targetClass != null && InheritanceUtil.isInheritor(targetClass, JUnitCommonClassNames.JUNIT_FRAMEWORK_TEST_CASE);
   }
 
   public static boolean isJUnit4TestClass(@Nullable PsiClass aClass, boolean runWithIsTestClass) {

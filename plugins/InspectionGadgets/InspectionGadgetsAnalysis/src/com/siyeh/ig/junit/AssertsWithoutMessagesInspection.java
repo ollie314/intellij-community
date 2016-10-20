@@ -16,7 +16,6 @@
 package com.siyeh.ig.junit;
 
 import com.intellij.psi.*;
-import com.intellij.psi.util.InheritanceUtil;
 import com.siyeh.InspectionGadgetsBundle;
 import com.siyeh.ig.BaseInspection;
 import com.siyeh.ig.BaseInspectionVisitor;
@@ -82,8 +81,9 @@ public class AssertsWithoutMessagesInspection extends BaseInspection {
         return;
       }
       final PsiClass containingClass = method.getContainingClass();
-      if (!InheritanceUtil.isInheritor(containingClass, "junit.framework.Assert") &&
-          !InheritanceUtil.isInheritor(containingClass, "org.junit.Assert")) {
+      final boolean messageOnFirstPosition = AssertHint.isMessageOnFirstPosition(containingClass);
+      final boolean messageOnLastPosition = AssertHint.isMessageOnLastPosition(containingClass);
+      if (!messageOnFirstPosition && !messageOnLastPosition) {
         return;
       }
       final PsiParameterList parameterList = method.getParameterList();
@@ -98,7 +98,7 @@ public class AssertsWithoutMessagesInspection extends BaseInspection {
       }
       final PsiType stringType = TypeUtils.getStringType(expression);
       final PsiParameter[] parameters = parameterList.getParameters();
-      final PsiType parameterType1 = parameters[0].getType();
+      final PsiType parameterType1 = parameters[messageOnFirstPosition ? 0 : parameters.length - 1].getType();
       if (!parameterType1.equals(stringType)) {
         registerMethodCallError(expression);
         return;
@@ -106,7 +106,7 @@ public class AssertsWithoutMessagesInspection extends BaseInspection {
       if (parameters.length != 2) {
         return;
       }
-      final PsiType parameterType2 = parameters[1].getType();
+      final PsiType parameterType2 = parameters[messageOnFirstPosition ? parameterCount - 1 : 0].getType();
       if (!parameterType2.equals(stringType)) {
         return;
       }
