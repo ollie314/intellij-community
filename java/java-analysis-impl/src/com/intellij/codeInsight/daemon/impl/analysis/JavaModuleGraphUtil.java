@@ -42,6 +42,12 @@ public class JavaModuleGraphUtil {
   private JavaModuleGraphUtil() { }
 
   @Nullable
+  public static PsiJavaModule findDescriptorByElement(@NotNull PsiElement element) {
+    PsiFileSystemItem fsItem = element instanceof PsiFileSystemItem ? (PsiFileSystemItem)element : element.getContainingFile();
+    return fsItem != null ? ModuleHighlightUtil.getModuleDescriptor(fsItem) : null;
+  }
+
+  @Nullable
   public static Collection<PsiJavaModule> findCycle(@NotNull PsiJavaModule module) {
     Project project = module.getProject();
     List<Set<PsiJavaModule>> cycles = CachedValuesManager.getManager(project).getCachedValue(project, () ->

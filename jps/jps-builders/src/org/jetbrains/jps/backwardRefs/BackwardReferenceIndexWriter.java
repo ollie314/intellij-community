@@ -32,19 +32,14 @@ import org.jetbrains.jps.incremental.storage.BuildDataManager;
 import org.jetbrains.jps.javac.ast.api.JavacRefSymbol;
 import org.jetbrains.jps.model.java.compiler.JavaCompilers;
 
-import javax.tools.*;
 import java.io.File;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 import static com.sun.tools.javac.code.Flags.PRIVATE;
 
 public class BackwardReferenceIndexWriter {
-  public static final String PROP_KEY = "ref.index.builder";
-  public static volatile boolean forceEnabled;
+  public static final String PROP_KEY = "jps.backward.ref.index.builder";
 
   private static volatile BackwardReferenceIndexWriter ourInstance;
 
@@ -56,8 +51,14 @@ public class BackwardReferenceIndexWriter {
     myRebuild = rebuild;
   }
 
-  public static void clearInstance() {
-    ourInstance = null;
+  public static void closeIfNeed() {
+    if (ourInstance != null) {
+      try {
+        ourInstance.close();
+      } finally {
+        ourInstance = null;
+      }
+    }
   }
 
   static BackwardReferenceIndexWriter getInstance() {
@@ -87,16 +88,12 @@ public class BackwardReferenceIndexWriter {
     }
   }
 
-  static boolean isEnabled() {
-    return SystemProperties.getBooleanProperty(PROP_KEY, false) || forceEnabled;
+  public static boolean isEnabled() {
+    return SystemProperties.getBooleanProperty(PROP_KEY, false);
   }
 
   void close() {
     myIndex.close();
-  }
-
-  int enumerateFile(JavaFileObject file) {
-    return enumeratePath(file.getName());
   }
 
   synchronized LightRef.JavaLightClassRef asClassUsage(Symbol name) {
@@ -105,7 +102,7 @@ public class BackwardReferenceIndexWriter {
 
   synchronized void processDeletedFiles(Collection<String> paths) {
     for (String path : paths) {
-      final int deletedFileId = enumeratePath(path);
+      final int deletedFileId = enumeratePath(new File(path).getPath());
 
       //remove from reference maps
       final Collection<LightRef> refs = myIndex.getReferenceMap().get(deletedFileId);
@@ -199,7 +196,7 @@ public class BackwardReferenceIndexWriter {
     }
   }
 
-  private synchronized int enumeratePath(String file) {
+  synchronized int enumeratePath(String file) {
     try {
       return myIndex.getFilePathEnumerator().enumerate(file);
     }
@@ -217,7 +214,23 @@ public class BackwardReferenceIndexWriter {
 
   private void updateHierarchyIndicesIncrementally(final CompilerBackwardReferenceIndex.LightDefinition classId, LightRef.JavaLightClassRef[] superIds) {
     final Collection<LightRef> rawOldSupers = myIndex.getHierarchyMap().get(classId);
-    Set<LightRef> oldSuperClasses = rawOldSupers == null ? null : new THashSet<LightRef>(rawOldSupers);
+    Set<LightRef> oldSuperClasses;
+    if (rawOldSupers == null) {
+      oldSuperClasses = null;
+    }
+    else {
+      if (superIds.length == rawOldSupers.size()) {
+        boolean needUpdate = false;
+        for (LightRef.JavaLightClassRef id : superIds) {
+          if (!rawOldSupers.contains(id)) {
+            needUpdate = true;
+            break;
+          }
+        }
+        if (!needUpdate) return;
+      }
+      oldSuperClasses = new THashSet<LightRef>(rawOldSupers);
+    }
     for (LightRef.JavaLightClassRef superId: superIds) {
       if (oldSuperClasses == null || !oldSuperClasses.remove(superId)) {
         myIndex.getBackwardHierarchyMap().put(superId, classId);
@@ -250,12 +263,12 @@ public class BackwardReferenceIndexWriter {
     }
   }
 
-  static byte[] bytes(Symbol symbol) {
+  private static byte[] bytes(Symbol symbol) {
     return symbol.flatName().toUtf();
   }
 
   @Nullable
-  static LightRef fromSymbol(JavacRefSymbol refSymbol, ByteArrayEnumerator byteArrayEnumerator) {
+  private static LightRef fromSymbol(JavacRefSymbol refSymbol, ByteArrayEnumerator byteArrayEnumerator) {
     Symbol symbol = refSymbol.getSymbol();
     final Tree.Kind kind = refSymbol.getPlaceKind();
     if (symbol instanceof Symbol.ClassSymbol) {

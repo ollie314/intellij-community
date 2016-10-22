@@ -15,6 +15,7 @@
  */
 package com.intellij.execution.application;
 
+import com.intellij.codeInsight.daemon.impl.analysis.JavaModuleGraphUtil;
 import com.intellij.diagnostic.logging.LogConfigurationPanel;
 import com.intellij.execution.*;
 import com.intellij.execution.configuration.EnvironmentVariablesComponent;
@@ -29,11 +30,14 @@ import com.intellij.openapi.module.Module;
 import com.intellij.openapi.options.SettingsEditor;
 import com.intellij.openapi.options.SettingsEditorGroup;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.projectRoots.JavaSdk;
+import com.intellij.openapi.projectRoots.JavaSdkVersion;
 import com.intellij.openapi.util.DefaultJDOMExternalizer;
 import com.intellij.openapi.util.InvalidDataException;
 import com.intellij.openapi.util.WriteExternalException;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiJavaModule;
 import com.intellij.psi.util.PsiMethodUtil;
 import com.intellij.refactoring.listeners.RefactoringElementListener;
 import org.jdom.Element;
@@ -43,6 +47,9 @@ import org.jetbrains.annotations.Nullable;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
+
+import static com.intellij.openapi.util.Pair.pair;
 
 public class ApplicationConfiguration extends ModuleBasedConfiguration<JavaRunConfigurationModule>
   implements CommonJavaRunConfigurationParameters, SingleClassConfiguration, RefactoringListenerProvider {
@@ -206,24 +213,24 @@ public class ApplicationConfiguration extends ModuleBasedConfiguration<JavaRunCo
 
   @Override
   public boolean isAlternativeJrePathEnabled() {
-     return ALTERNATIVE_JRE_PATH_ENABLED;
-   }
+    return ALTERNATIVE_JRE_PATH_ENABLED;
+  }
 
-   @Override
-   public void setAlternativeJrePathEnabled(boolean enabled) {
-     ALTERNATIVE_JRE_PATH_ENABLED = enabled;
-   }
+  @Override
+  public void setAlternativeJrePathEnabled(boolean enabled) {
+    ALTERNATIVE_JRE_PATH_ENABLED = enabled;
+  }
 
-   @Nullable
-   @Override
-   public String getAlternativeJrePath() {
-     return ALTERNATIVE_JRE_PATH;
-   }
+  @Nullable
+  @Override
+  public String getAlternativeJrePath() {
+    return ALTERNATIVE_JRE_PATH;
+  }
 
-   @Override
-   public void setAlternativeJrePath(String path) {
-     ALTERNATIVE_JRE_PATH = path;
-   }
+  @Override
+  public void setAlternativeJrePath(String path) {
+    ALTERNATIVE_JRE_PATH = path;
+  }
 
   @Override
   public Collection<Module> getValidModules() {
@@ -258,9 +265,9 @@ public class ApplicationConfiguration extends ModuleBasedConfiguration<JavaRunCo
     protected JavaParameters createJavaParameters() throws ExecutionException {
       final JavaParameters params = new JavaParameters();
       params.setUseClasspathJar(true);
+
       final JavaRunConfigurationModule module = myConfiguration.getConfigurationModule();
       final String jreHome = myConfiguration.ALTERNATIVE_JRE_PATH_ENABLED ? myConfiguration.ALTERNATIVE_JRE_PATH : null;
-
       if (module.getModule() != null) {
         final int classPathType = JavaParametersUtil.getClasspathType(module, myConfiguration.MAIN_CLASS_NAME, false);
         JavaParametersUtil.configureModule(module, params, classPathType, jreHome);
@@ -268,10 +275,31 @@ public class ApplicationConfiguration extends ModuleBasedConfiguration<JavaRunCo
       else {
         JavaParametersUtil.configureProject(module.getProject(), params, JavaParameters.JDK_AND_CLASSES_AND_TESTS, jreHome);
       }
+
       params.setMainClass(myConfiguration.MAIN_CLASS_NAME);
+
       setupJavaParameters(params);
 
+      setupModulePath(params, module);
+
       return params;
+    }
+
+    private static void setupModulePath(JavaParameters params, JavaRunConfigurationModule module) {
+      JavaSdkVersion version = Optional.ofNullable(params.getJdk())
+        .map(jdk -> pair(jdk.getSdkType(), jdk))
+        .map(p -> p.first instanceof JavaSdk ? ((JavaSdk)p.first).getVersion(p.second) : null)
+        .orElse(null);
+      if (version != null && version.isAtLeast(JavaSdkVersion.JDK_1_9)) {
+        PsiClass mainClass = module.findClass(params.getMainClass());
+        if (mainClass != null) {
+          PsiJavaModule mainModule = JavaModuleGraphUtil.findDescriptorByElement(mainClass);
+          if (mainModule != null) {
+            params.setModuleName(mainModule.getModuleName());
+            params.getModulePath().addAll(params.getClassPath().getPathList());
+          }
+        }
+      }
     }
   }
 }
