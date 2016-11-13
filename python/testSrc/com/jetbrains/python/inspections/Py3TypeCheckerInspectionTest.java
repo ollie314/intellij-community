@@ -163,4 +163,14 @@ public class Py3TypeCheckerInspectionTest extends PyTestCase {
   public void testAsyncFunctionReturnType() {
     doTest();
   }
+
+  // PY-21083
+  public void testFloatFromhex() {
+    doTest();
+  }
+
+  // PY-20073
+  public void testMapArgumentsInOppositeOrder() {
+    doTest();
+  }
 }

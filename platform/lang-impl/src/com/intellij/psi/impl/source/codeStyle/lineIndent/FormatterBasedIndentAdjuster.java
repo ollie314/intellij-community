@@ -15,15 +15,22 @@
  */
 package com.intellij.psi.impl.source.codeStyle.lineIndent;
 
+import com.intellij.formatting.FormattingMode;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.codeStyle.CodeStyleManager;
+import com.intellij.psi.codeStyle.CodeStyleSettings;
+import com.intellij.psi.codeStyle.CodeStyleSettingsManager;
 import org.jetbrains.annotations.NotNull;
 
+import static com.intellij.formatting.CoreFormatterUtil.MODE;
+
 public class FormatterBasedIndentAdjuster  {
+  
+  private final static int MAX_SYNCHRONOUS_ADJUSTMENT_DOC_SIZE = 100000;
 
   private FormatterBasedIndentAdjuster() {
   }
@@ -33,13 +40,17 @@ public class FormatterBasedIndentAdjuster  {
                                               int myOffset) {
     IndentAdjusterRunnable fixer = new IndentAdjusterRunnable(myProject, myDocument, myOffset);
     PsiDocumentManager documentManager = PsiDocumentManager.getInstance(myProject);
-    if (ApplicationManager.getApplication().isUnitTestMode()) {
+    if (isSynchronousAdjustment(myDocument)) {
       documentManager.commitDocument(myDocument);
       fixer.run();
     }
     else {
       documentManager.performLaterWhenAllCommitted(fixer);
     }
+  }
+  
+  private static boolean isSynchronousAdjustment(@NotNull Document document) {
+    return ApplicationManager.getApplication().isUnitTestMode() || document.getTextLength() <= MAX_SYNCHRONOUS_ADJUSTMENT_DOC_SIZE;
   }
   
   public static class IndentAdjusterRunnable implements Runnable {
@@ -57,9 +68,15 @@ public class FormatterBasedIndentAdjuster  {
       int lineStart = myDocument.getLineStartOffset(myLine);
       CommandProcessor.getInstance().runUndoTransparentAction(() ->
         ApplicationManager.getApplication().runWriteAction(() -> {
-          CodeStyleManager.getInstance(myProject).adjustLineIndent(myDocument, lineStart);
+          CodeStyleSettings settings = CodeStyleSettingsManager.getInstance(myProject).getCurrentSettings();
+          settings.putUserData(MODE, FormattingMode.ADJUST_INDENT_ON_ENTER);
+          try {
+            CodeStyleManager.getInstance(myProject).adjustLineIndent(myDocument, lineStart);
+          }
+          finally {
+            settings.putUserData(MODE, null);
+          }
         }));
     }
   }
-  
 }

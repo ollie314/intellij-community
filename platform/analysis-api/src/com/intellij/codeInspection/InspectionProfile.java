@@ -22,7 +22,6 @@ import com.intellij.codeInspection.ex.InspectionToolWrapper;
 import com.intellij.codeInspection.ex.Tools;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Key;
-import com.intellij.profile.Profile;
 import com.intellij.psi.PsiElement;
 import com.intellij.util.Consumer;
 import org.jetbrains.annotations.NotNull;
@@ -34,14 +33,21 @@ import java.util.List;
  * User: anna
  * Date: Dec 7, 2004
  */
-public interface InspectionProfile extends Profile {
+public interface InspectionProfile extends Comparable {
+  void setName(@NotNull String name);
+
+  @NotNull
+  String getName();
 
   HighlightDisplayLevel getErrorLevel(@NotNull HighlightDisplayKey inspectionToolKey, PsiElement element);
 
   /**
    * If you need to modify tool's settings, please use {@link #modifyToolSettings}
+   *
+   * @return {@link com.intellij.codeInspection.ex.InspectionToolWrapper}
+   * @see #getUnwrappedTool(String, com.intellij.psi.PsiElement)
    */
-  InspectionToolWrapper getInspectionTool(@NotNull String shortName, @NotNull PsiElement element);
+  InspectionToolWrapper getInspectionTool(@NotNull String shortName, @Nullable PsiElement element);
 
   @Nullable
   InspectionToolWrapper getInspectionTool(@NotNull String shortName, Project project);
@@ -52,8 +58,6 @@ public interface InspectionProfile extends Profile {
   /** Returns (unwrapped) inspection */
   <T extends InspectionProfileEntry>
   T getUnwrappedTool(@NotNull Key<T> shortNameKey, @NotNull PsiElement element);
-
-  void modifyProfile(@NotNull Consumer<ModifiableModel> modelConsumer);
 
   /**
    * Allows a plugin to modify the settings of the inspection tool with the specified ID programmatically, without going through
@@ -75,12 +79,6 @@ public interface InspectionProfile extends Profile {
   InspectionToolWrapper[] getInspectionTools(@Nullable PsiElement element);
 
   void cleanup(@NotNull Project project);
-
-  /**
-   * @see #modifyProfile(com.intellij.util.Consumer)
-   */
-  @NotNull
-  ModifiableModel getModifiableModel();
 
   boolean isToolEnabled(@Nullable HighlightDisplayKey key, PsiElement element);
 

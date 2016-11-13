@@ -15,12 +15,12 @@
  */
 package com.intellij.codeInspection.streamMigration;
 
-import com.intellij.codeInsight.PsiEquivalenceUtil;
 import com.intellij.codeInspection.streamMigration.StreamApiMigrationInspection.InitializerUsageStatus;
+import com.intellij.codeInspection.util.OptionalUtil;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
-import com.intellij.refactoring.util.RefactoringUtil;
+import com.intellij.psi.util.PsiTypesUtil;
 import com.siyeh.ig.psiutils.ExpressionUtils;
 import org.jetbrains.annotations.NotNull;
 
@@ -51,7 +51,7 @@ class ReplaceWithFindFirstFix extends MigrateToStreamFix {
       if (nextReturnStatement == null) return null;
       PsiExpression orElseExpression = nextReturnStatement.getReturnValue();
       if (!ExpressionUtils.isSimpleExpression(orElseExpression)) return null;
-      stream = generateOptionalUnwrap(stream, tb, value, orElseExpression, null);
+      stream = generateOptionalUnwrap(stream, tb, value, orElseExpression, PsiTypesUtil.getMethodReturnType(returnStatement));
       restoreComments(loopStatement, body);
       boolean sibling = nextReturnStatement.getParent() == loopStatement.getParent();
       PsiElement replacement = loopStatement.replace(elementFactory.createStatementFromText("return " + stream + ";", loopStatement));
@@ -87,51 +87,21 @@ class ReplaceWithFindFirstFix extends MigrateToStreamFix {
           return replaceInitializer(loopStatement, var, initializer, replacementText, status);
         }
       }
-      PsiAssignmentExpression previousAssignment =
-        ExpressionUtils.getAssignment(PsiTreeUtil.skipSiblingsBackward(loopStatement, PsiWhiteSpace.class, PsiComment.class));
-      if(previousAssignment != null) {
-        PsiExpression prevRValue = previousAssignment.getRExpression();
-        PsiExpression prevLValue = previousAssignment.getLExpression();
-        if(prevRValue != null && prevLValue instanceof PsiReferenceExpression && ((PsiReferenceExpression)prevLValue).isReferenceTo(var)) {
-          previousAssignment.delete();
-          return loopStatement.replace(elementFactory.createStatementFromText(
-            var.getName() + " = " + generateOptionalUnwrap(stream, tb, value, prevRValue, var.getType()) + ";", loopStatement));
-        }
+      PsiElement maybeAssignment = PsiTreeUtil.skipSiblingsBackward(loopStatement, PsiWhiteSpace.class, PsiComment.class);
+      PsiExpression prevRValue = ExpressionUtils.getAssignmentTo(maybeAssignment, var);
+      if(prevRValue != null) {
+        maybeAssignment.delete();
+        return loopStatement.replace(elementFactory.createStatementFromText(
+          var.getName() + " = " + generateOptionalUnwrap(stream, tb, value, prevRValue, var.getType()) + ";", loopStatement));
       }
       return loopStatement.replace(elementFactory.createStatementFromText(
         var.getName() + " = " + generateOptionalUnwrap(stream, tb, value, lValue, var.getType()) + ";", loopStatement));
     }
   }
 
-  private static String generateOptionalUnwrap(String stream, @NotNull StreamApiMigrationInspection.TerminalBlock tb,
-                                               PsiExpression trueExpression, PsiExpression falseExpression, PsiType targetType) {
-    PsiVariable var = tb.getVariable();
-    if (!StreamApiMigrationInspection.isIdentityMapping(var, trueExpression)) {
-      if(trueExpression instanceof PsiTypeCastExpression && ExpressionUtils.isNullLiteral(falseExpression)) {
-        PsiTypeCastExpression castExpression = (PsiTypeCastExpression)trueExpression;
-        PsiTypeElement castType = castExpression.getCastType();
-        // pull cast outside to avoid the .map() step
-        if(castType != null && StreamApiMigrationInspection.isIdentityMapping(var, castExpression.getOperand())) {
-          return "(" + castType.getText() + ")" + stream + ".orElse(null)";
-        }
-      }
-      if(ExpressionUtils.isLiteral(falseExpression, Boolean.FALSE) && PsiType.BOOLEAN.equals(trueExpression.getType())) {
-        return stream + ".filter(" + LambdaUtil.createLambda(var, trueExpression) + ").isPresent()";
-      }
-      if(trueExpression instanceof PsiConditionalExpression) {
-        PsiConditionalExpression condition = (PsiConditionalExpression)trueExpression;
-        PsiExpression elseExpression = condition.getElseExpression();
-        if(elseExpression != null && PsiEquivalenceUtil.areElementsEquivalent(falseExpression, elseExpression)) {
-          return generateOptionalUnwrap(
-            stream + ".filter(" + LambdaUtil.createLambda(var, condition.getCondition()) + ")", tb,
-            condition.getThenExpression(), falseExpression, targetType);
-        }
-      }
-      trueExpression =
-        targetType == null ? trueExpression : RefactoringUtil.convertInitializerToNormalExpression(trueExpression, targetType);
-      stream += ".map(" + LambdaUtil.createLambda(var, trueExpression) + ")";
-    }
-    stream += ".orElse(" + falseExpression.getText() + ")";
-    return stream;
+  private static String generateOptionalUnwrap(String qualifier, StreamApiMigrationInspection.TerminalBlock tb,
+                                               PsiExpression trueExpression, PsiExpression falseExpression,
+                                               PsiType targetType) {
+    return OptionalUtil.generateOptionalUnwrap(qualifier, tb.getVariable(), trueExpression, falseExpression, targetType, false);
   }
 }

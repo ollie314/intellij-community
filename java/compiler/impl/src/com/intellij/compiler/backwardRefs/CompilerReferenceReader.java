@@ -16,21 +16,14 @@
 package com.intellij.compiler.backwardRefs;
 
 import com.intellij.compiler.server.BuildManager;
-import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Couple;
 import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileWithId;
-import com.intellij.psi.PsiElement;
-import com.intellij.psi.PsiManager;
-import com.intellij.psi.PsiNamedElement;
-import com.intellij.psi.impl.source.PsiFileWithStubSupport;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.util.containers.Queue;
-import gnu.trove.THashMap;
 import gnu.trove.THashSet;
 import gnu.trove.TIntHashSet;
 import org.jetbrains.annotations.NotNull;
@@ -66,7 +59,7 @@ class CompilerReferenceReader {
     final LightRef.NamedLightRef[] hierarchy = getWholeHierarchy(hierarchyElement, checkBaseClassAmbiguity);
     if (hierarchy == null) return null;
     for (LightRef.NamedLightRef aClass : hierarchy) {
-      final LightRef overriderUsage = aClass.override(aClass.getName());
+      final LightRef overriderUsage = ref.override(aClass.getName());
       addUsages(overriderUsage, set);
     }
     return set;
@@ -78,25 +71,23 @@ class CompilerReferenceReader {
    * 1st map: inheritors. Can be used without explicit inheritance verification
    * 2nd map: candidates. One need to check that these classes are really direct inheritors
    */
-  @Nullable
-  <T extends PsiElement> Couple<Map<VirtualFile, T[]>> getDirectInheritors(@NotNull PsiNamedElement baseClass,
-                                                                           @NotNull LightRef searchElement,
-                                                                           @NotNull GlobalSearchScope searchScope,
-                                                                           @NotNull GlobalSearchScope dirtyScope,
-                                                                           @NotNull Project project,
-                                                                           @NotNull FileType fileType,
-                                                                           @NotNull CompilerHierarchySearchType searchType) {
+  @NotNull
+  Map<VirtualFile, Object[]> getDirectInheritors(@NotNull LightRef searchElement,
+                                                 @NotNull GlobalSearchScope searchScope,
+                                                 @NotNull GlobalSearchScope dirtyScope,
+                                                 @NotNull FileType fileType,
+                                                 @NotNull CompilerHierarchySearchType searchType) {
     Collection<CompilerBackwardReferenceIndex.LightDefinition> candidates;
     synchronized (myHierarchyLock) {
       candidates = myIndex.getBackwardHierarchyMap().get(searchElement);
     }
-    if (candidates == null) return Couple.of(Collections.emptyMap(), Collections.emptyMap());
+    if (candidates == null) return Collections.emptyMap();
 
     GlobalSearchScope effectiveSearchScope = GlobalSearchScope.notScope(dirtyScope).intersectWith(searchScope);
     LanguageLightRefAdapter adapter = CompilerReferenceServiceImpl.findAdapterForFileType(fileType);
     LOG.assertTrue(adapter != null, "adapter is null for file type: " + fileType);
     Class<? extends LightRef> requiredLightRefClass = searchType.getRequiredClass(adapter);
-    Map<VirtualFile, List<LightRef>> candidatesPerFile;
+    Map<VirtualFile, Object[]> candidatesPerFile;
     synchronized (myReferenceLock) {
       candidatesPerFile = candidates
         .stream()
@@ -114,28 +105,10 @@ class CompilerReferenceReader {
           }
         })
         .filter(Objects::nonNull)
-        .collect(groupingBy(x -> x.containingFile, mapping(x -> x.def, toList())));
+        .collect(groupingBy(x -> x.containingFile, mapping(x -> x.def, collectingAndThen(toList(), l -> searchType.convertToIds(l, myIndex.getByteSeqEum())))));
     }
 
-    if (candidatesPerFile.isEmpty()) return Couple.of(Collections.emptyMap(), Collections.emptyMap());
-
-    Map<VirtualFile, T[]> inheritors = new THashMap<>(candidatesPerFile.size());
-    Map<VirtualFile, T[]> inheritorCandidates = new THashMap<>();
-
-    final PsiManager psiManager = ReadAction.compute(() -> PsiManager.getInstance(project));
-
-    candidatesPerFile.forEach((file, directInheritors) -> ReadAction.run(() -> {
-      final PsiFileWithStubSupport psiFile = (PsiFileWithStubSupport) psiManager.findFile(file);
-      final T[] currInheritors = searchType.performSearchInFile(directInheritors, baseClass, myIndex.getByteSeqEum(), psiFile, adapter);
-      if (currInheritors.length == directInheritors.size()) {
-        inheritors.put(file, currInheritors);
-      }
-      else {
-        inheritorCandidates.put(file, currInheritors);
-      }
-    }));
-
-    return Couple.of(inheritors, inheritorCandidates);
+    return candidatesPerFile.isEmpty() ? Collections.emptyMap() : candidatesPerFile;
   }
 
   @NotNull
@@ -197,6 +170,12 @@ class CompilerReferenceReader {
         if (result.add(curClass)) {
           if (checkBaseClassAmbiguity || curClass != hierarchyElement) {
             final Collection<Integer> definitionFiles = myIndex.getBackwardClassDefinitionMap().get(curClass);
+            if (definitionFiles == null) {
+              //diagnostic
+              String baseHierarchyElement = getNameEnumerator().getName(hierarchyElement.getName());
+              String curHierarchyElement = getNameEnumerator().getName(curClass.getName());
+              LOG.error("Can't get definition files for :" + curHierarchyElement + " base class: " + baseHierarchyElement);
+            }
             if (definitionFiles.size() != 1) {
               return null;
             }

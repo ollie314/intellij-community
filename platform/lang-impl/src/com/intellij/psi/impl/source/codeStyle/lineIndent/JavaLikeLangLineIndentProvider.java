@@ -45,6 +45,7 @@ public abstract class JavaLikeLangLineIndentProvider implements LineIndentProvid
     BlockOpeningBrace,
     BlockClosingBrace,
     ArrayOpeningBracket,
+    ArrayClosingBracket,
     RightParenthesis,
     LeftParenthesis,
     Colon,
@@ -53,6 +54,7 @@ public abstract class JavaLikeLangLineIndentProvider implements LineIndentProvid
     ElseKeyword,
     IfKeyword,
     ForKeyword,
+    DoKeyword,
     BlockComment,
     DocBlockStart,
     DocBlockEnd,
@@ -83,9 +85,13 @@ public abstract class JavaLikeLangLineIndentProvider implements LineIndentProvid
     if (getPosition(editor, offset).matchesRule(
       position -> position.isAt(Whitespace) &&
                   position.isAtMultiline())) {
-      //noinspection StatementWithEmptyBody
       if (getPosition(editor, offset).before().isAt(Comma)) {
-        // TODO: Add support
+        SemanticEditorPosition position = getPosition(editor,offset);
+        if (position.hasEmptyLineAfter(offset) &&
+            !position.after().isAtAnyOf(ArrayClosingBracket, BlockOpeningBrace, BlockClosingBrace, RightParenthesis) &&
+            !position.isAtEnd()) {
+            return myFactory.createIndentCalculator(NONE, IndentCalculator.LINE_AFTER);
+        }
       }
       else if (getPosition(editor, offset + 1).isAt(BlockClosingBrace)) {
         return myFactory.createIndentCalculator(
@@ -135,7 +141,7 @@ public abstract class JavaLikeLangLineIndentProvider implements LineIndentProvid
       else if (getPosition(editor, offset).matchesRule(
         position -> position.before().isAt(Colon) && position.isAfterOnSameLine(SwitchCase, SwitchDefault)
       ) || getPosition(editor, offset).matchesRule(
-        position -> position.before().isAt(ElseKeyword)
+        position -> position.before().isAtAnyOf(ElseKeyword, DoKeyword) 
       )) {
         return myFactory.createIndentCalculator(NORMAL, IndentCalculator.LINE_BEFORE);
       }
@@ -195,17 +201,22 @@ public abstract class JavaLikeLangLineIndentProvider implements LineIndentProvid
       else if (position.isAt(RightParenthesis)) {
         position.beforeParentheses(LeftParenthesis, RightParenthesis);
       }
+      else if (position.isAt(BlockClosingBrace)) {
+        position.beforeParentheses(BlockOpeningBrace, BlockClosingBrace);
+      }
+      else if (position.isAt(ArrayClosingBracket)) {
+        position.beforeParentheses(ArrayOpeningBracket, ArrayClosingBracket);
+      }
       else if (position.isAtAnyOf(Semicolon,
                                   BlockOpeningBrace, 
-                                  BlockClosingBrace,
                                   BlockComment, 
                                   DocBlockEnd, 
-                                  LineComment, 
                                   LeftParenthesis,
                                   LanguageStartDelimiter) ||
                (position.getLanguage() != Language.ANY) && !position.isAtLanguage(currLanguage)) {
         SemanticEditorPosition statementStart = getPosition(position.getEditor(), position.getStartOffset());
-        if (!statementStart.after().afterOptional(Whitespace).isAtEnd()) {
+        statementStart.after().afterOptionalMix(Whitespace, LineComment);
+        if (!statementStart.isAtEnd()) {
           return statementStart.getStartOffset();
         }
       }

@@ -16,7 +16,6 @@
 package com.intellij.compiler;
 
 import com.intellij.JavaTestUtil;
-import com.intellij.codeInsight.completion.AbstractCompilerAwareTest;
 import com.intellij.compiler.backwardRefs.CompilerReferenceServiceImpl;
 import com.intellij.openapi.fileTypes.StdFileTypes;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -36,24 +35,15 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 @SkipSlowTestLocally
-public class CompilerReferencesTest extends AbstractCompilerAwareTest {
-  private boolean myDefaultEnableState;
+public class CompilerReferencesTest extends CompilerReferencesTestBase {
+  protected String getTestDataPath() {
+    return JavaTestUtil.getJavaTestDataPath() + "/compiler/bytecodeReferences/";
+  }
 
   @Override
   public void setUp() throws Exception {
-    myDefaultEnableState = CompilerReferenceService.IS_ENABLED_KEY.asBoolean();
-    CompilerReferenceService.IS_ENABLED_KEY.setValue(true);
     super.setUp();
-  }
-
-  @Override
-  public void tearDown() throws Exception {
-    CompilerReferenceService.IS_ENABLED_KEY.setValue(myDefaultEnableState);
-    super.tearDown();
-  }
-
-  protected String getTestDataPath() {
-    return JavaTestUtil.getJavaTestDataPath() + "/compiler/bytecodeReferences/";
+    installCompiler();
   }
 
   public void testIsNotReady() {
@@ -77,8 +67,8 @@ public class CompilerReferencesTest extends AbstractCompilerAwareTest {
   public void testLambda() {
     myFixture.configureByFiles(getName() + "/Foo.java", getName() + "/FooImpl.java", getName() + "/Bar.java", getName() + "/BarRef.java");
     rebuildProject();
-    final CompilerDirectHierarchyInfo<PsiFunctionalExpression> funExpressions = getFunctionalExpressionsForElementUnderCaret();
-    List<PsiFunctionalExpression> funExprs = funExpressions.getHierarchyChildren().collect(Collectors.toList());
+    final CompilerDirectHierarchyInfo funExpressions = getFunctionalExpressionsForElementUnderCaret();
+    List<PsiFunctionalExpression> funExprs = funExpressions.getHierarchyChildren().map(PsiFunctionalExpression.class::cast).collect(Collectors.toList());
     assertSize(2, funExprs);
   }
 
@@ -86,7 +76,10 @@ public class CompilerReferencesTest extends AbstractCompilerAwareTest {
     myFixture.configureByFiles(getName() + "/Foo.java");
     rebuildProject();
     List<PsiFunctionalExpression> funExpressions =
-      getFunExpressionsFor(myFixture.getJavaFacade().findClass(CommonClassNames.JAVA_LANG_RUNNABLE)).getHierarchyChildren().collect(Collectors.toList());
+      getFunExpressionsFor(myFixture.getJavaFacade().findClass(CommonClassNames.JAVA_LANG_RUNNABLE))
+        .getHierarchyChildren()
+        .map(PsiFunctionalExpression.class::cast)
+        .collect(Collectors.toList());
     assertSize(6, funExpressions);
 
     Set<String> funTypeNames = funExpressions
@@ -105,9 +98,9 @@ public class CompilerReferencesTest extends AbstractCompilerAwareTest {
   public void testHierarchy() {
     myFixture.configureByFiles(getName() + "/Foo.java", getName() + "/FooImpl.java", getName() + "/Bar.java", getName() + "/Baz.java", getName() + "/Test.java");
     rebuildProject();
-    CompilerDirectHierarchyInfo<PsiClass> directInheritorInfo = getHierarchyForElementUnderCaret();
+    CompilerDirectHierarchyInfo directInheritorInfo = getHierarchyForElementUnderCaret();
 
-    Collection<PsiClass> inheritors = directInheritorInfo.getHierarchyChildren().collect(Collectors.toList());
+    Collection<PsiClass> inheritors = directInheritorInfo.getHierarchyChildren().map(PsiClass.class::cast).collect(Collectors.toList());
     assertSize(6, inheritors);
     for (PsiClass inheritor : inheritors) {
       if (inheritor instanceof PsiAnonymousClass) {
@@ -116,20 +109,17 @@ public class CompilerReferencesTest extends AbstractCompilerAwareTest {
         assertOneOf(inheritor.getName(), "FooImpl", "FooImpl2", "FooInsideMethodImpl");
       }
     }
-
-    Collection<PsiClass> candidates = directInheritorInfo.getHierarchyChildCandidates().collect(Collectors.toList());
-    assertEmpty(candidates);
   }
 
   public void testHierarchyOfLibClass() {
     myFixture.configureByFiles(getName() + "/Foo.java");
     rebuildProject();
-    CompilerDirectHierarchyInfo<PsiClass> directInheritorInfo = getDirectInheritorsFor(myFixture.getJavaFacade().findClass(CommonClassNames.JAVA_UTIL_LIST));
-    PsiClass inheritor = assertOneElement(directInheritorInfo.getHierarchyChildren().collect(Collectors.toList()));
+    CompilerDirectHierarchyInfo directInheritorInfo = getDirectInheritorsFor(myFixture.getJavaFacade().findClass(CommonClassNames.JAVA_UTIL_LIST));
+    PsiClass inheritor = assertOneElement(directInheritorInfo.getHierarchyChildren().map(PsiClass.class::cast).collect(Collectors.toList()));
     assertEquals("Foo.ListImpl", inheritor.getQualifiedName());
   }
 
-  private CompilerDirectHierarchyInfo<PsiClass> getHierarchyForElementUnderCaret() {
+  private CompilerDirectHierarchyInfo getHierarchyForElementUnderCaret() {
     final PsiElement atCaret = myFixture.getElementAtCaret();
     assertNotNull(atCaret);
     final PsiClass classAtCaret = PsiTreeUtil.getParentOfType(atCaret, PsiClass.class, false);
@@ -137,7 +127,7 @@ public class CompilerReferencesTest extends AbstractCompilerAwareTest {
     return getDirectInheritorsFor(classAtCaret);
   }
 
-  private CompilerDirectHierarchyInfo<PsiFunctionalExpression> getFunctionalExpressionsForElementUnderCaret() {
+  private CompilerDirectHierarchyInfo getFunctionalExpressionsForElementUnderCaret() {
     final PsiElement atCaret = myFixture.getElementAtCaret();
     assertNotNull(atCaret);
     final PsiClass classAtCaret = PsiTreeUtil.getParentOfType(atCaret, PsiClass.class, false);
@@ -145,14 +135,14 @@ public class CompilerReferencesTest extends AbstractCompilerAwareTest {
     return getFunExpressionsFor(classAtCaret);
   }
 
-  private CompilerDirectHierarchyInfo<PsiClass> getDirectInheritorsFor(PsiClass classAtCaret) {
+  private CompilerDirectHierarchyInfo getDirectInheritorsFor(PsiClass classAtCaret) {
     return CompilerReferenceService.getInstance(myFixture.getProject()).getDirectInheritors(classAtCaret,
                                                                                             assertInstanceOf(classAtCaret.getUseScope(), GlobalSearchScope.class),
                                                                                             assertInstanceOf(classAtCaret.getUseScope(), GlobalSearchScope.class),
                                                                                             StdFileTypes.JAVA);
   }
 
-  private CompilerDirectHierarchyInfo<PsiFunctionalExpression> getFunExpressionsFor(PsiClass classAtCaret) {
+  private CompilerDirectHierarchyInfo getFunExpressionsFor(PsiClass classAtCaret) {
     return CompilerReferenceService.getInstance(myFixture.getProject()).getFunExpressions(classAtCaret,
                                                                                           assertInstanceOf(classAtCaret.getUseScope(), GlobalSearchScope.class),
                                                                                           assertInstanceOf(classAtCaret.getUseScope(), GlobalSearchScope.class),

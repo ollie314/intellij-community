@@ -15,15 +15,26 @@
  */
 package com.intellij.profile.codeInspection;
 
+import com.intellij.codeInsight.daemon.impl.SeverityRegistrar;
+import com.intellij.codeInspection.InspectionProfile;
+import com.intellij.codeInspection.ex.InspectionProfileImpl;
 import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.profile.Profile;
-import com.intellij.profile.ProfileManager;
+import com.intellij.psi.search.scope.packageSet.NamedScopesHolder;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public interface InspectionProfileManager extends ProfileManager, SeverityProvider {
+import java.util.Collection;
+
+public interface InspectionProfileManager {
   String INSPECTION_DIR = "inspection";
+
+  @NotNull
+  Collection<InspectionProfileImpl> getProfiles();
+
+  default NamedScopesHolder getScopesManager() {
+    return null;
+  }
 
   @NotNull
   static InspectionProfileManager getInstance() {
@@ -35,15 +46,26 @@ public interface InspectionProfileManager extends ProfileManager, SeverityProvid
     return InspectionProjectProfileManager.getInstance(project);
   }
 
-  void fireProfileChanged(@Nullable Profile profile);
-
-  void fireProfileChanged(@Nullable Profile oldProfile, @NotNull Profile profile);
-
   void setRootProfile(@Nullable String name);
 
   @NotNull
   @Deprecated
-  default Profile getRootProfile() {
+  default InspectionProfile getRootProfile() {
     return getCurrentProfile();
   }
+
+  @NotNull
+  InspectionProfileImpl getCurrentProfile();
+
+  InspectionProfileImpl getProfile(@NotNull String name, boolean returnRootProfileIfNamedIsAbsent);
+
+  default InspectionProfileImpl getProfile(@NotNull String name) {
+    return getProfile(name, true);
+  }
+
+  @NotNull
+  SeverityRegistrar getSeverityRegistrar();
+
+  @NotNull
+  SeverityRegistrar getOwnSeverityRegistrar();
 }

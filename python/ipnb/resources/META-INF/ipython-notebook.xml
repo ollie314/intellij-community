@@ -1,4 +1,4 @@
-<idea-plugin version="2">
+<idea-plugin>
   <project-components>
     <component>
       <implementation-class>org.jetbrains.plugins.ipnb.configuration.IpnbConnectionManager</implementation-class>
@@ -19,6 +19,7 @@
     <dialectsTokenSetContributor implementation="org.jetbrains.plugins.ipnb.psi.IpnbPyTokenSetContributor"/>
     <visitorFilter language="IpnbPython" implementationClass="org.jetbrains.plugins.ipnb.IpnbVisitorFilter"/>
     <pep8ProblemSuppressor implementation="org.jetbrains.plugins.ipnb.IpnbPep8ProblemSuppressor"/>
+    <unresolvedReferenceSkipper implementation="org.jetbrains.plugins.ipnb.psi.IpnbUnresolvedReferenceSkipper"/>
   </extensions>
   <actions>
     <action class="org.jetbrains.plugins.ipnb.editor.actions.IpnbRunCellInplaceAction" id="IpnbRunCellInplaceAction"

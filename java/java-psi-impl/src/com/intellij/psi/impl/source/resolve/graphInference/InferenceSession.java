@@ -86,6 +86,7 @@ public class InferenceSession {
   private List<String> myErrorMessages;
   
   private boolean myErased;
+  private boolean myCheckApplicabilityPhase = true;
 
   public final InferenceIncorporationPhase myIncorporationPhase = new InferenceIncorporationPhase(this);
 
@@ -374,6 +375,7 @@ public class InferenceSession {
       return;
     }
 
+    myCheckApplicabilityPhase = false;
     if (properties != null && !properties.isApplicabilityCheck()) {
       final PsiMethod method = properties.getMethod();
       if (parent instanceof PsiCallExpression && PsiPolyExpressionUtil.isMethodCallPolyExpression((PsiExpression)parent, method)) {
@@ -1613,7 +1615,10 @@ public class InferenceSession {
 
       if (methodContainingClass != null) {
         psiSubstitutor = TypeConversionUtil.getClassSubstitutor(methodContainingClass, containingClass, psiSubstitutor);
-        LOG.assertTrue(psiSubstitutor != null, "derived: " + containingClass + "; super: " + methodContainingClass);
+        LOG.assertTrue(psiSubstitutor != null, "derived: " + containingClass +
+                                               "; super: " + methodContainingClass +
+                                               "; reference: " + reference.getText() +
+                                               "; containingFile: " + reference.getContainingFile().getName());
       }
 
       for (int i = 0; i < functionalMethodParameters.length; i++) {
@@ -1667,6 +1672,12 @@ public class InferenceSession {
     }
 
     return null;
+  }
+
+  public void setErasedDuringApplicabilityCheck() {
+    if (myCheckApplicabilityPhase) {
+      myErased = true;
+    }
   }
 
   public void setErased() {

@@ -358,9 +358,10 @@ public class HighlightUtil extends HighlightUtilBase {
           }
         }
       } else {
+        String description = extendUnsupportedLanguageLevelDescription("Intersection types in cast are not supported at this language level", expression, languageLevel, expression.getContainingFile(), LanguageLevel.JDK_1_8);
         return HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR)
           .range(expression)
-          .descriptionAndTooltip("Intersection types in cast are not supported at this language level").create();
+          .descriptionAndTooltip(description).create();
       }
     }
     return null;
@@ -1540,7 +1541,7 @@ public class HighlightUtil extends HighlightUtilBase {
       }
     }
 
-    if (qualifier != null && aClass.isInterface() && languageLevel.isAtLeast(LanguageLevel.JDK_1_8)) {
+    if (qualifier != null && aClass.isInterface() && expr instanceof PsiSuperExpression && languageLevel.isAtLeast(LanguageLevel.JDK_1_8)) {
       //15.12.1 for method invocation expressions; 15.13 for method references
       //If TypeName denotes an interface, I, then let T be the type declaration immediately enclosing the method reference expression.
       //It is a compile-time error if I is not a direct superinterface of T,
@@ -3000,21 +3001,7 @@ public class HighlightUtil extends HighlightUtilBase {
     if (file.getManager().isInProject(file) && !level.isAtLeast(feature.level)) {
       String message = JavaErrorMessages.message("insufficient.language.level", JavaErrorMessages.message(feature.key));
 
-      Module module = ModuleUtilCore.findModuleForPsiElement(element);
-      if (module != null) {
-        LanguageLevel moduleLanguageLevel = EffectiveLanguageLevelUtil.getEffectiveLanguageLevel(module);
-        if (moduleLanguageLevel.isAtLeast(feature.level)) {
-          for (FilePropertyPusher pusher : FilePropertyPusher.EP_NAME.getExtensions()) {
-            if (pusher instanceof JavaLanguageLevelPusher) {
-              String newMessage = ((JavaLanguageLevelPusher)pusher).getInconsistencyLanguageLevelMessage(message, element, level, file);
-              if (newMessage != null) {
-                message = newMessage;
-                break;
-              }
-            }
-          }
-        }
-      }
+      message = extendUnsupportedLanguageLevelDescription(message, element, level, file, feature.level);
       HighlightInfo info = HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(element).descriptionAndTooltip(message).create();
       QuickFixAction.registerQuickFixAction(info, QUICK_FIX_FACTORY.createIncreaseLanguageLevelFix(feature.level));
       QuickFixAction.registerQuickFixAction(info, QUICK_FIX_FACTORY.createShowModulePropertiesFix(element));
@@ -3022,5 +3009,27 @@ public class HighlightUtil extends HighlightUtilBase {
     }
 
     return null;
+  }
+
+  static String extendUnsupportedLanguageLevelDescription(@NotNull String message,
+                                                          @NotNull PsiElement element,
+                                                          @NotNull LanguageLevel fileLanguageLevel,
+                                                          @NotNull PsiFile file,
+                                                          @NotNull LanguageLevel featureLevel) {
+    Module module = ModuleUtilCore.findModuleForPsiElement(element);
+    if (module != null) {
+      LanguageLevel moduleLanguageLevel = EffectiveLanguageLevelUtil.getEffectiveLanguageLevel(module);
+      if (moduleLanguageLevel.isAtLeast(featureLevel)) {
+        for (FilePropertyPusher pusher : FilePropertyPusher.EP_NAME.getExtensions()) {
+          if (pusher instanceof JavaLanguageLevelPusher) {
+            String newMessage = ((JavaLanguageLevelPusher)pusher).getInconsistencyLanguageLevelMessage(message, element, fileLanguageLevel, file);
+            if (newMessage != null) {
+              return newMessage;
+            }
+          }
+        }
+      }
+    }
+    return message;
   }
 }

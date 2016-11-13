@@ -16,6 +16,7 @@ import os
 import sys
 
 from _pydev_imps._pydev_saved_modules import threading
+from _pydevd_bundle.pydevd_constants import dict_iter_items
 
 import traceback
 from _pydev_bundle import fix_getpass
@@ -39,7 +40,7 @@ except NameError: # version < 2.3 -- didn't have the True/False builtins
     setattr(__builtin__, 'True', 1) #Python 3.0 does not accept __builtin__.True = 1 in its syntax
     setattr(__builtin__, 'False', 0)
 
-from _pydev_bundle.pydev_console_utils import BaseInterpreterInterface, BaseStdIn, set_result_ipython_value
+from _pydev_bundle.pydev_console_utils import BaseInterpreterInterface, BaseStdIn
 from _pydev_bundle.pydev_console_utils import CodeFragment
 
 IS_PYTHON_3K = False
@@ -154,9 +155,8 @@ def set_debug_hook(debug_hook):
     _ProcessExecQueueHelper._debug_hook = debug_hook
 
 
-def process_exec_queue(interpreter):
-
-    from pydev_ipython.inputhook import get_inputhook, set_return_control_callback
+def init_mpl_in_console(interpreter):
+    from pydev_ipython.inputhook import set_return_control_callback
 
     def return_control():
         ''' A function that the inputhooks can call (via inputhook.stdin_ready()) to find
@@ -185,6 +185,11 @@ def process_exec_queue(interpreter):
     # interpreter.enableGui which put it into the interpreter's exec_queue and executes it in the main thread.
     import_hook_manager.add_module_name("pylab", activate_pylab)
     import_hook_manager.add_module_name("pyplot", activate_pyplot)
+
+
+def process_exec_queue(interpreter):
+    init_mpl_in_console(interpreter)
+    from pydev_ipython.inputhook import get_inputhook
 
     while 1:
         # Running the request may have changed the inputhook in use
@@ -246,7 +251,6 @@ except:
     IPYTHON = False
     pass
 
-set_result_ipython_value(IPYTHON)
 
 #=======================================================================================================================
 # _DoExit
@@ -339,7 +343,7 @@ def start_console_server(host, port, interpreter):
                 pass
             if not retry:
                 raise
-            # Otherwise, keep on going
+                # Otherwise, keep on going
     return server
 
 
@@ -362,9 +366,15 @@ def get_ipython_hidden_vars_dict():
         if IPYTHON and hasattr(__builtin__, 'interpreter'):
             pydev_interpreter = get_interpreter().interpreter
             if hasattr(pydev_interpreter, 'ipython') and hasattr(pydev_interpreter.ipython, 'user_ns_hidden'):
-                res_dict = dict([(key, val) for key, val in pydev_interpreter.ipython.user_ns_hidden.items()
-                            if key not in useful_ipython_vars])
-                return res_dict
+                user_ns_hidden = pydev_interpreter.ipython.user_ns_hidden
+                if isinstance(user_ns_hidden, dict):
+                    # Since IPython 2 dict `user_ns_hidden` contains hidden variables and values
+                    user_hidden_dict = user_ns_hidden
+                else:
+                    # In IPython 1.x `user_ns_hidden` used to be a set with names of hidden variables
+                    user_hidden_dict = dict([(key, val) for key, val in dict_iter_items(pydev_interpreter.ipython.user_ns)
+                                             if key in user_ns_hidden])
+                return dict([(key, val) for key, val in dict_iter_items(user_hidden_dict) if key not in useful_ipython_vars])
         return None
     except Exception:
         traceback.print_exc()

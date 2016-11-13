@@ -36,6 +36,7 @@ import com.intellij.vcs.log.paint.GraphCellPainter;
 import com.intellij.vcs.log.paint.PositionUtil;
 import com.intellij.vcs.log.ui.VcsLogUiImpl;
 import com.intellij.vcs.log.ui.render.GraphCommitCellRenderer;
+import com.intellij.vcs.log.ui.render.SimpleColoredComponentLinkMouseListener;
 import com.intellij.vcs.log.ui.tables.GraphTableModel;
 import com.intellij.vcs.log.util.VcsUserUtil;
 import org.jetbrains.annotations.NotNull;
@@ -184,21 +185,31 @@ public class GraphTableController {
   }
 
   private void showOrHideCommitTooltip(int row, int column, @NotNull MouseEvent e) {
-    JComponent tipComponent = myCommitRenderer.getTooltip(myTable.getValueAt(row, column), calcPoint4Graph(e.getPoint()),
-                                                          myTable.getColumnModel().getColumn(GraphTableModel.COMMIT_COLUMN)
-                                                            .getWidth());
-
-    if (tipComponent != null) {
-      myTable.getExpandableItemsHandler().setEnabled(false);
-      IdeTooltip tooltip =
-        new IdeTooltip(myTable, e.getPoint(), new Wrapper(tipComponent)).setPreferredPosition(Balloon.Position.below);
-      IdeTooltipManager.getInstance().show(tooltip, false);
-    }
-    else {
+    if (!showTooltip(row, column, e.getPoint(), false)) {
       if (IdeTooltipManager.getInstance().hasCurrent()) {
         IdeTooltipManager.getInstance().hideCurrent(e);
       }
     }
+  }
+
+  private boolean showTooltip(int row, int column, @NotNull Point point, boolean now) {
+    JComponent tipComponent = myCommitRenderer.getTooltip(myTable.getValueAt(row, column), calcPoint4Graph(point), row);
+
+    if (tipComponent != null) {
+      myTable.getExpandableItemsHandler().setEnabled(false);
+      IdeTooltip tooltip =
+        new IdeTooltip(myTable, point, new Wrapper(tipComponent)).setPreferredPosition(Balloon.Position.below);
+      IdeTooltipManager.getInstance().show(tooltip, now);
+      return true;
+    }
+    return false;
+  }
+
+  public void showTooltip(int row) {
+    TableColumn rootColumn = myTable.getColumnModel().getColumn(GraphTableModel.ROOT_COLUMN);
+    Point point = new Point(rootColumn.getWidth() + myCommitRenderer.getTooltipXCoordinate(row),
+                            row * myTable.getRowHeight() + myTable.getRowHeight() / 2);
+    showTooltip(row, GraphTableModel.COMMIT_COLUMN, point, true);
   }
 
   private void performRootColumnAction() {
@@ -220,7 +231,7 @@ public class GraphTableController {
   }
 
   private class MyMouseAdapter extends MouseAdapter {
-    @NotNull private final TableLinkMouseListener myLinkListener = new TableLinkMouseListener();
+    @NotNull private final TableLinkMouseListener myLinkListener = new SimpleColoredComponentLinkMouseListener();
 
     @Override
     public void mouseClicked(MouseEvent e) {

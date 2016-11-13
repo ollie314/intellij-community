@@ -33,6 +33,7 @@ import com.intellij.openapi.editor.colors.EditorColorsManager;
 import com.intellij.openapi.editor.colors.EditorColorsScheme;
 import com.intellij.openapi.editor.ex.DocumentEx;
 import com.intellij.openapi.editor.ex.EditorEx;
+import com.intellij.openapi.editor.ex.FoldingModelEx;
 import com.intellij.openapi.editor.ex.util.LexerEditorHighlighter;
 import com.intellij.openapi.editor.highlighter.EditorHighlighter;
 import com.intellij.openapi.editor.markup.HighlighterTargetArea;
@@ -114,6 +115,31 @@ public class PythonConsoleView extends LanguageConsoleImpl implements Observable
     getFile().putCopyableUserData(PydevConsoleRunner.CONSOLE_KEY, communication);
   }
 
+  private PyConsoleStartFolding createConsoleFolding() {
+    PyConsoleStartFolding startFolding = new PyConsoleStartFolding(this);
+    myExecuteActionHandler.getConsoleCommunication().addCommunicationListener(startFolding);
+    getEditor().getDocument().addDocumentListener(startFolding);
+    ((FoldingModelEx)getEditor().getFoldingModel()).addListener(startFolding, this);
+    return startFolding;
+  }
+
+  public void addConsoleFolding(boolean isDebugConsole) {
+    try {
+      if (isDebugConsole && myExecuteActionHandler != null) {
+        PyConsoleStartFolding folding = createConsoleFolding();
+        // in debug console we should add folding from the place where the folding was turned on
+        folding.setStartLineOffset(getEditor().getDocument().getTextLength());
+        folding.setNumberOfCommandToStop(2);
+      }
+      else {
+        myInitialized.doWhenDone(this::createConsoleFolding);
+      }
+    }
+    catch (Exception e) {
+      LOG.error(e.getMessage());
+    }
+  }
+
   public void setExecutionHandler(@NotNull PydevConsoleExecuteActionHandler consoleExecuteActionHandler) {
     myExecuteActionHandler = consoleExecuteActionHandler;
   }
@@ -156,30 +182,32 @@ public class PythonConsoleView extends LanguageConsoleImpl implements Observable
 
   @Override
   public void executeCode(final @NotNull String code, @Nullable final Editor editor) {
-    myInitialized.doWhenDone(() ->
-                               ProgressManager.getInstance().run(new Task.Backgroundable(null, "Executing Code in Console...", false) {
-                                 @Override
-                                 public void run(@NotNull final ProgressIndicator indicator) {
-                                   long time = System.currentTimeMillis();
-                                   while (!myExecuteActionHandler.isEnabled() || !myExecuteActionHandler.canExecuteNow()) {
-                                     if (indicator.isCanceled()) {
-                                       break;
-                                     }
-                                     if (System.currentTimeMillis() - time > 1000) {
-                                       if (editor != null) {
-                                         UIUtil.invokeLaterIfNeeded(
-                                           () -> HintManager.getInstance()
-                                             .showErrorHint(editor, myExecuteActionHandler.getCantExecuteMessage()));
-                                       }
-                                       return;
-                                     }
-                                     TimeoutUtil.sleep(300);
-                                   }
-                                   if (!indicator.isCanceled()) {
-                                     executeInConsole(code);
-                                   }
-                                 }
-                               }));
+    myInitialized.doWhenDone(
+      () ->
+        ProgressManager.getInstance().run(new Task.Backgroundable(null, "Executing Code in Console...", false) {
+          @Override
+          public void run(@NotNull final ProgressIndicator indicator) {
+            long time = System.currentTimeMillis();
+            while (!myExecuteActionHandler.isEnabled() || !myExecuteActionHandler.canExecuteNow()) {
+              if (indicator.isCanceled()) {
+                break;
+              }
+              if (System.currentTimeMillis() - time > 1000) {
+                if (editor != null) {
+                  UIUtil.invokeLaterIfNeeded(
+                    () -> HintManager.getInstance()
+                      .showErrorHint(editor, myExecuteActionHandler.getCantExecuteMessage()));
+                }
+                return;
+              }
+              TimeoutUtil.sleep(300);
+            }
+            if (!indicator.isCanceled()) {
+              executeInConsole(code);
+            }
+          }
+        })
+    );
   }
 
 

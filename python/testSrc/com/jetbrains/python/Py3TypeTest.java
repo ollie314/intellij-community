@@ -435,6 +435,19 @@ public class Py3TypeTest extends PyTestCase {
            "        expr = x\n");
   }
 
+  // PY-21083
+  public void testFloatFromhex() {
+    doTest("float",
+           "expr = float.fromhex(\"0.5\")");
+  }
+
+  // PY-20073
+  public void testMapReturnType() {
+    doTest("int", 
+           "for x in map(lambda x: 42, 'foo'):\n" +
+           "    expr = x");
+  }
+
   private void doTest(final String expectedType, final String text) {
     myFixture.configureByText(PythonFileType.INSTANCE, text);
     final PyExpression expr = myFixture.findElementByText("expr", PyExpression.class);

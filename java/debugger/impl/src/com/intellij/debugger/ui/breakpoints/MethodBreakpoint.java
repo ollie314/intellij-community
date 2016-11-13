@@ -38,6 +38,9 @@ import com.intellij.icons.AllIcons;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.progress.ProgressIndicator;
+import com.intellij.openapi.progress.ProgressManager;
+import com.intellij.openapi.progress.util.ProgressWindowWithNotification;
 import com.intellij.openapi.project.IndexNotReadyException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Computable;
@@ -48,6 +51,7 @@ import com.intellij.openapi.util.registry.Registry;
 import com.intellij.psi.*;
 import com.intellij.util.StringBuilderSpinAllocator;
 import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.containers.MultiMap;
 import com.intellij.util.text.CharArrayUtil;
 import com.intellij.xdebugger.breakpoints.XBreakpoint;
 import com.sun.jdi.*;
@@ -58,6 +62,7 @@ import com.sun.jdi.request.ClassPrepareRequest;
 import com.sun.jdi.request.EventRequest;
 import com.sun.jdi.request.MethodEntryRequest;
 import com.sun.jdi.request.MethodExitRequest;
+import one.util.streamex.StreamEx;
 import org.jdom.Element;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -69,8 +74,9 @@ import org.jetbrains.org.objectweb.asm.Opcodes;
 
 import javax.swing.*;
 import java.util.List;
-import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.stream.Stream;
 
 public class MethodBreakpoint extends BreakpointWithHighlighter<JavaMethodBreakpointProperties> {
   private static final Logger LOG = Logger.getInstance("#com.intellij.debugger.ui.breakpoints.MethodBreakpoint");
@@ -132,28 +138,66 @@ public class MethodBreakpoint extends BreakpointWithHighlighter<JavaMethodBreakp
 
   private void createRequestForSubClasses(@NotNull DebugProcessImpl debugProcess, @NotNull ReferenceType baseType) {
     DebuggerManagerThreadImpl.assertIsManagerThread();
-    ClassPrepareRequest request = debugProcess.getRequestsManager().createClassPrepareRequest((debuggerProcess, referenceType) -> {
+    RequestManagerImpl requestsManager = debugProcess.getRequestsManager();
+    ClassPrepareRequest request = requestsManager.createClassPrepareRequest((debuggerProcess, referenceType) -> {
       if (instanceOf(referenceType, baseType)) {
         createRequestForPreparedClassEmulated(debugProcess, referenceType, false);
       }
     }, null);
     if (request != null) {
+      requestsManager.registerRequest(this, request);
       request.enable();
     }
 
-    processSubTypes(baseType, subType -> createRequestForPreparedClassEmulated(debugProcess, subType, false));
+    AtomicReference<ProgressIndicator> indicatorRef = new AtomicReference<>();
+    ApplicationManager.getApplication().invokeAndWait(() -> indicatorRef.set(new ProgressWindowWithNotification(true, myProject)));
+    ProgressIndicator indicator = indicatorRef.get();
+    ProgressManager.getInstance().executeProcessUnderProgress(
+      () -> processPreparedSubTypes(baseType, subType -> createRequestForPreparedClassEmulated(debugProcess, subType, false), indicator),
+      indicator);
+    if (indicator.isCanceled()) {
+      ApplicationManager.getApplication().invokeLater(
+        () -> DebuggerManagerEx.getInstanceEx(myProject).getBreakpointManager().removeBreakpoint(this));
+    }
   }
 
   private void createRequestForPreparedClassEmulated(@NotNull DebugProcessImpl debugProcess, @NotNull ReferenceType classType, boolean base) {
+    if (!base && !shouldCreateRequest(debugProcess, true)) {
+      return;
+    }
     try {
-      for (Method method : classType.methods()) {
-        if (getMethodName().equals(method.name()) && mySignature.getName(debugProcess).equals(method.signature())) {
-          List<Location> allLineLocations = method.allLineLocations();
+      Method method = MethodBytecodeUtil.getLambdaMethod(classType, debugProcess.getVirtualMachineProxy());
+      if (method == null) {
+        for (Method m : classType.methods()) {
+          if (!base && m.isAbstract()) {
+            continue;
+          }
+          if (getMethodName().equals(m.name()) && mySignature.getName(debugProcess).equals(m.signature())) {
+            method = m;
+            break;
+          }
+        }
+      }
+      if (method != null) {
+        if (base && method.isNative()) {
+          ApplicationManager.getApplication().invokeLater(() -> {
+            getProperties().EMULATED = false;
+            fireBreakpointChanged();
+          });
+          return;
+        }
+        Method target = MethodBytecodeUtil.getBridgeTargetMethod(method, debugProcess.getVirtualMachineProxy());
+        if (target != null && !DebuggerUtilsEx.allLineLocations(target).isEmpty()) {
+          method = target;
+        }
+
+        List<Location> allLineLocations = DebuggerUtilsEx.allLineLocations(method);
+        if (!allLineLocations.isEmpty()) {
           if (isWatchEntry()) {
             createLocationBreakpointRequest(ContainerUtil.getFirstItem(allLineLocations), debugProcess);
           }
           if (isWatchExit()) {
-            MethodBytecodeUtil.visit(classType, method, new MethodVisitor(Opcodes.API_VERSION) {
+            MethodBytecodeUtil.visit(method, new MethodVisitor(Opcodes.API_VERSION) {
               int myLastLine = 0;
               @Override
               public void visitLineNumber(int line, Label start) {
@@ -175,13 +219,12 @@ public class MethodBreakpoint extends BreakpointWithHighlighter<JavaMethodBreakp
                       .findFirst().ifPresent(location -> createLocationBreakpointRequest(location, debugProcess));
                 }
               }
-            });
+            }, true);
           }
-          if (base) {
-            // desired class found - now also track all new classes
-            createRequestForSubClasses(debugProcess, classType);
-          }
-          break;
+        }
+        if (base) {
+          // desired class found - now also track all new classes
+          createRequestForSubClasses(debugProcess, classType);
         }
       }
     }
@@ -349,6 +392,9 @@ public class MethodBreakpoint extends BreakpointWithHighlighter<JavaMethodBreakp
   }
 
   public boolean matchesEvent(@NotNull final LocatableEvent event, final DebugProcessImpl process) throws EvaluateException {
+    if (isEmulated()) {
+      return true;
+    }
     if (getMethodName() == null || mySignature == null) {
       return false;
     }
@@ -420,13 +466,7 @@ public class MethodBreakpoint extends BreakpointWithHighlighter<JavaMethodBreakp
 
   @Nullable
   static <T extends EventRequest> T findRequest(@NotNull DebugProcessImpl debugProcess, Class<T> requestClass, Requestor requestor) {
-    Set<EventRequest> requests = debugProcess.getRequestsManager().findRequests(requestor);
-    for (EventRequest eventRequest : requests) {
-      if (eventRequest.getClass().equals(requestClass)) {
-        return (T)eventRequest;
-      }
-    }
-    return null;
+    return StreamEx.of(debugProcess.getRequestsManager().findRequests(requestor)).select(requestClass).findFirst().orElse(null);
   }
 
   @Override
@@ -452,7 +492,7 @@ public class MethodBreakpoint extends BreakpointWithHighlighter<JavaMethodBreakp
     return false;
   }
 
-  private boolean isEmulated() {
+  public boolean isEmulated() {
     return getProperties().EMULATED && Registry.is("debugger.emulate.method.breakpoints");
   }
 
@@ -480,36 +520,66 @@ public class MethodBreakpoint extends BreakpointWithHighlighter<JavaMethodBreakp
     int methodLine;
   }
 
-  private static boolean instanceOf(@Nullable Type type, @NotNull Type superType) {
+  private static boolean instanceOf(@Nullable ReferenceType type, @NotNull ReferenceType superType) {
     if (type == null) {
       return false;
     }
     if (superType.equals(type)) {
       return true;
     }
-    if (type instanceof InterfaceType) {
-      return ((InterfaceType)type).superinterfaces().stream().anyMatch(t -> instanceOf(t, superType));
-    } else if (type instanceof ClassType) {
-      if (((ClassType)type).interfaces().stream().anyMatch(t -> instanceOf(t, superType))) {
-        return true;
-      }
-      return instanceOf(((ClassType)type).superclass(), superType);
-    }
-    return false;
+    return supertypes(type).anyMatch(t -> instanceOf(t, superType));
   }
 
-  private static void processSubTypes(ReferenceType classType, Consumer<ReferenceType> consumer) {
-    List<? extends ReferenceType> inheritors = null;
-    if (classType instanceof InterfaceType) {
-      inheritors = ContainerUtil.concat(((InterfaceType)classType).subinterfaces(), ((InterfaceType)classType).implementors());
-    } else if (classType instanceof ClassType) {
-      inheritors = ((ClassType)classType).subclasses();
+  private static Stream<? extends ReferenceType> supertypes(ReferenceType type) {
+    if (type instanceof InterfaceType) {
+      return ((InterfaceType)type).superinterfaces().stream();
+    } else if (type instanceof ClassType) {
+      return StreamEx.<ReferenceType>ofNullable(((ClassType)type).superclass()).prepend(((ClassType)type).interfaces());
     }
-    if (inheritors != null) {
-      inheritors.forEach(type -> {
-        consumer.accept(type);
-        processSubTypes(type, consumer);
-      });
+    return StreamEx.empty();
+  }
+
+  private static void processPreparedSubTypes(ReferenceType classType, Consumer<ReferenceType> consumer, ProgressIndicator progressIndicator) {
+    long start = 0;
+    if (LOG.isDebugEnabled()) {
+      start = System.currentTimeMillis();
+    }
+    progressIndicator.start();
+    progressIndicator.setText(DebuggerBundle.message("label.method.breakpoints.processing.classes"));
+    try {
+      MultiMap<ReferenceType, ReferenceType> inheritance = new MultiMap<>();
+      List<ReferenceType> allTypes = classType.virtualMachine().allClasses();
+      for (int i = 0; i < allTypes.size(); i++) {
+        if (progressIndicator.isCanceled()) {
+          return;
+        }
+        ReferenceType type = allTypes.get(i);
+        if (type.isPrepared()) {
+          supertypes(type).forEach(st -> inheritance.putValue(st, type));
+        }
+        progressIndicator.setText2(i + "/" + allTypes.size());
+        progressIndicator.setFraction((double)i / allTypes.size());
+      }
+      List<ReferenceType> types = StreamEx.ofTree(classType, t -> StreamEx.of(inheritance.get(t))).skip(1).toList();
+
+      progressIndicator.setText(DebuggerBundle.message("label.method.breakpoints.setting.breakpoints"));
+
+      for (int i = 0; i < types.size(); i++) {
+        if (progressIndicator.isCanceled()) {
+          return;
+        }
+        consumer.accept(types.get(i));
+
+        progressIndicator.setText2(i + "/" + types.size());
+        progressIndicator.setFraction((double)i / types.size());
+      }
+
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Processed " + types.size() + " classes in " + String.valueOf(System.currentTimeMillis() - start) + "ms");
+      }
+    }
+    finally {
+      progressIndicator.stop();
     }
   }
 }

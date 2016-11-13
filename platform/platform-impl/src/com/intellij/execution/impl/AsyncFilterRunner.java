@@ -22,19 +22,17 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.RangeMarker;
+import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.util.ProgressIndicatorUtils;
 import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.NullableComputable;
 import com.intellij.openapi.util.Ref;
-import com.intellij.util.TimeoutUtil;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.containers.ContainerUtil;
 import one.util.streamex.IntStreamEx;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -49,6 +47,7 @@ class AsyncFilterRunner {
   private static final ExecutorService ourExecutor = AppExecutorUtil.createBoundedApplicationPoolExecutor("console filters", 1);
   private final EditorHyperlinkSupport myHyperlinks;
   private final Editor myEditor;
+  private final Map<AtomicBoolean, Future<FilterResults>> myPendingFilterResults = new LinkedHashMap<>();
 
   AsyncFilterRunner(EditorHyperlinkSupport hyperlinks, Editor editor) {
     myHyperlinks = hyperlinks;
@@ -71,11 +70,15 @@ class AsyncFilterRunner {
     Future<FilterResults> future = ourExecutor.submit(() -> {
       FilterResults results = computeWithWritePriority(bgComputation);
       if (!results.myResults.isEmpty()) {
-        ApplicationManager.getApplication().invokeLater(() -> results.applyHighlights(myHyperlinks), ModalityState.any(), o -> handled.get());
+        ApplicationManager.getApplication().invokeLater(() -> {
+          results.applyHighlights(myHyperlinks);
+          myPendingFilterResults.remove(handled);
+        }, ModalityState.any(), o -> handled.get());
       }
       return results;
     });
-    handleSynchronouslyIfQuick(handled, future);
+    myPendingFilterResults.put(handled, future);
+    handleSynchronouslyIfQuick(handled, future, 5);
   }
 
   @NotNull
@@ -86,21 +89,40 @@ class AsyncFilterRunner {
       applyResults.set(bgComputation.compute());
     };
     while (!ProgressIndicatorUtils.runInReadActionWithWriteActionPriority(computeInReadAction)) {
-      TimeoutUtil.sleep(10);
+      ProgressIndicatorUtils.yieldToPendingWriteActions();
     }
     return applyResults.get();
   }
 
-  private void handleSynchronouslyIfQuick(AtomicBoolean handled, Future<FilterResults> future) {
+  private boolean handleSynchronouslyIfQuick(AtomicBoolean handled, Future<FilterResults> future, long timeout) {
     try {
-      future.get(5, TimeUnit.MILLISECONDS).applyHighlights(myHyperlinks);
+      future.get(timeout, TimeUnit.MILLISECONDS).applyHighlights(myHyperlinks);
       handled.set(true);
+      myPendingFilterResults.remove(handled);
+      return true;
     }
     catch (TimeoutException ignored) {
+      return false;
     }
     catch (Exception e) {
       throw new RuntimeException(e);
     }
+  }
+  
+  public boolean waitForPendingFilters(long timeoutMs) {
+    ApplicationManager.getApplication().assertIsDispatchThread();
+    
+    long started = System.currentTimeMillis();
+    while(!myPendingFilterResults.isEmpty()) {
+      Map.Entry<AtomicBoolean, Future<FilterResults>> next = myPendingFilterResults.entrySet().iterator().next();
+
+      timeoutMs -= System.currentTimeMillis() - started;
+      if (timeoutMs < 1) return false;
+      
+      if (!handleSynchronouslyIfQuick(next.getKey(), next.getValue(), timeoutMs)) return false;
+    }
+    
+    return true;
   }
 
   @NotNull
@@ -112,7 +134,8 @@ class AsyncFilterRunner {
     return () -> {
       List<Filter.Result> results = new ArrayList<>();
       for (LineHighlighter task : tasks) {
-        if (!marker.isValid()) return FilterResults.EMPTY;
+        ProgressManager.checkCanceled();
+        if (!marker.isValid() || marker.getEndOffset() == 0) return FilterResults.EMPTY;
         ContainerUtil.addIfNotNull(results, task.compute());
       }
       return new FilterResults(markerOffset, marker, results);
@@ -123,8 +146,8 @@ class AsyncFilterRunner {
   private static LineHighlighter processLine(Document document, Filter filter, int line) {
     int lineEnd = document.getLineEndOffset(line);
     int endOffset = lineEnd + (lineEnd < document.getTextLength() ? 1 /* for \n */ : 0);
-    String text = EditorHyperlinkSupport.getLineText(document, line, true);
-    return () -> checkRange(filter, endOffset, filter.applyFilter(text, endOffset));
+    CharSequence text = EditorHyperlinkSupport.getLineSequence(document, line, true);
+    return () -> checkRange(filter, endOffset, filter.applyFilter(text.toString(), endOffset));
   }
 
   private static Filter.Result checkRange(Filter filter, int endOffset, Filter.Result result) {

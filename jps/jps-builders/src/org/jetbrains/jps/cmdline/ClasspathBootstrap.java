@@ -27,11 +27,13 @@ import com.intellij.util.containers.ContainerUtil;
 import com.jgoodies.forms.layout.CellConstraints;
 import io.netty.util.NetUtil;
 import net.n3.nanoxml.IXMLBuilder;
+import org.apache.xerces.util.SecurityManager;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.jps.builders.impl.java.EclipseCompilerTool;
 import org.jetbrains.jps.builders.java.JavaCompilingTool;
 import org.jetbrains.jps.builders.java.JavaSourceTransformer;
 import org.jetbrains.jps.javac.ExternalJavacProcess;
+import org.jetbrains.jps.javac.JavaCompilerToolExtension;
 import org.jetbrains.jps.model.JpsModel;
 import org.jetbrains.jps.model.impl.JpsModelImpl;
 import org.jetbrains.jps.model.serialization.JpsProjectLoader;
@@ -125,7 +127,7 @@ public class ClasspathBootstrap {
   private ClasspathBootstrap() {
   }
 
-  public static List<String> getBuildProcessApplicationClasspath(boolean isLauncherUsed) {
+  public static List<String> getBuildProcessApplicationClasspath() {
     final Set<String> cp = ContainerUtil.newHashSet();
 
     cp.add(getResourcePath(BuildMain.class));
@@ -143,13 +145,10 @@ public class ClasspathBootstrap {
     cp.add(getResourcePath(CellConstraints.class));  // jGoodies-forms
     cp.addAll(getInstrumentationUtilRoots());
     cp.add(getResourcePath(IXMLBuilder.class));  // nano-xml
+    cp.add(getResourcePath(SecurityManager.class));  // xerces
     cp.add(getJpsPluginSystemClassesPath().getAbsolutePath().replace('\\', '/'));
     cp.addAll(getJavac8RefScannerClasspath());
     //don't forget to update layoutCommunityJps() in layouts.gant accordingly
-
-    if (!isLauncherUsed) {
-      appendJavaCompilerClasspath(cp);
-    }
 
     try {
       final Class<?> cmdLineWrapper = Class.forName("com.intellij.rt.execution.CommandLineWrapper");
@@ -161,15 +160,17 @@ public class ClasspathBootstrap {
     return ContainerUtil.newArrayList(cp);
   }
 
-  public static void appendJavaCompilerClasspath(Collection<String> cp) {
+  public static void appendJavaCompilerClasspath(Collection<String> cp, boolean includeEcj) {
     final Class<StandardJavaFileManager> optimizedFileManagerClass = getOptimizedFileManagerClass();
     if (optimizedFileManagerClass != null) {
       cp.add(getResourcePath(optimizedFileManagerClass));  // optimizedFileManager
     }
 
-    File file = EclipseCompilerTool.findEcjJarFile();
-    if (file != null) {
-      cp.add(file.getAbsolutePath());
+    if (includeEcj) {
+      File file = EclipseCompilerTool.findEcjJarFile();
+      if (file != null) {
+        cp.add(file.getAbsolutePath());
+      }
     }
   }
 
@@ -241,6 +242,10 @@ public class ClasspathBootstrap {
     final ServiceLoader<JavaSourceTransformer> loader = ServiceLoader.load(transformerClass, transformerClass.getClassLoader());
     for (JavaSourceTransformer t : loader) {
       cp.add(getResourceFile(t.getClass()));
+    }
+
+    for (JavaCompilerToolExtension toolExtension : JavaCompilerToolExtension.getExtensions()) {
+      cp.add(getResourceFile(toolExtension.getClass()));
     }
 
     return new ArrayList<File>(cp);

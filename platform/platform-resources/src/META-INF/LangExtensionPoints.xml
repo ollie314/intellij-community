@@ -13,7 +13,7 @@
                     area="IDEA_PROJECT">
       <with attribute="instance" implements="com.intellij.application.options.editor.AutoImportOptionsProvider"/>
     </extensionPoint>
-    <!--suppress ExtensionPointBeanClass -->
+    <!--suppress PluginXmlValidity -->
     <extensionPoint name="moduleService" beanClass="com.intellij.openapi.components.ServiceDescriptor"/>
 
     <extensionPoint name="moduleConfigurable"
@@ -578,7 +578,7 @@
     <extensionPoint name="codeInsight.parameterInfo" beanClass="com.intellij.lang.LanguageExtensionPoint">
       <with attribute="implementationClass" implements="com.intellij.lang.parameterInfo.ParameterInfoHandler"/>
     </extensionPoint>
-    <extensionPoint name="parameterHintsProvider" beanClass="com.intellij.lang.LanguageExtensionPoint">
+    <extensionPoint name="codeInsight.parameterNameHints" beanClass="com.intellij.lang.LanguageExtensionPoint">
       <with attribute="implementationClass" implements="com.intellij.codeInsight.hints.InlayParameterHintsProvider"/>
     </extensionPoint>
     <extensionPoint name="codeInsight.typeInfo" beanClass="com.intellij.lang.LanguageExtensionPoint">
@@ -659,7 +659,7 @@
       <with attribute="implementationClass" implements="com.intellij.psi.stubs.BinaryFileStubBuilder"/>
     </extensionPoint>
 
-    <!--suppress ExtensionPointBeanClass -->
+    <!--suppress PluginXmlValidity -->
     <extensionPoint name="stubElementTypeHolder"
                     beanClass="com.intellij.psi.stubs.StubElementTypeHolderEP"/>
 
@@ -825,7 +825,7 @@
     <extensionPoint name="stacktrace.fold" beanClass="com.intellij.execution.console.CustomizableConsoleFoldingBean"/>
     <extensionPoint name="changeSignatureDetector"
                     beanClass="com.intellij.lang.LanguageExtensionPoint">
-      <with attribute="implementationClass" implements="com.intellij.refactoring.changeSignature.LanguageChangeSignatureDetector"/>
+      <with attribute="implementationClass" implements="com.intellij.refactoring.changeSignature.inplace.LanguageChangeSignatureDetector"/>
     </extensionPoint>
 
     <extensionPoint name="preserveIndentOnPaste" beanClass="com.intellij.codeInsight.editorActions.PreserveIndentOnPasteBean"/>

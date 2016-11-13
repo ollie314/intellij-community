@@ -15,6 +15,7 @@
  */
 package git4idea.history;
 
+import com.intellij.execution.process.ProcessOutputTypes;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.diagnostic.Logger;
@@ -55,6 +56,7 @@ import git4idea.history.browser.SHAHash;
 import git4idea.history.browser.SymbolicRefs;
 import git4idea.history.browser.SymbolicRefsI;
 import git4idea.history.wholeTree.AbstractHash;
+import git4idea.i18n.GitBundle;
 import git4idea.log.GitLogProvider;
 import git4idea.log.GitRefManager;
 import org.jetbrains.annotations.NotNull;
@@ -522,7 +524,8 @@ public class GitHistoryUtils {
       catch (Throwable t) {
         if (parseError.isNull()) {
           parseError.set(t);
-          LOG.error("Could not parse \" " + builder.toString() + "\"", t);
+          LOG.error("Could not parse \" " + StringUtil.escapeStringCharacters(builder.toString()) + "\"\n" +
+                    "Command " + handler.printableCommandLine(), t);
         }
       }
     }, 0);
@@ -536,46 +539,85 @@ public class GitHistoryUtils {
                                                  @NotNull Consumer<StringBuilder> recordConsumer,
                                                  int bufferSize)
     throws VcsException {
-    final StringBuilder buffer = new StringBuilder();
+    final StringBuilder output = new StringBuilder();
+    final StringBuilder errors = new StringBuilder();
+    final Ref<Boolean> foundRecordEnd = Ref.create(false);
     final Ref<VcsException> ex = new Ref<>();
     final AtomicInteger records = new AtomicInteger();
     handler.addLineListener(new GitLineHandlerListener() {
       @Override
       public void onLineAvailable(String line, Key outputType) {
-        try {
-          String tail = null;
-          int nextRecordStart = line.indexOf(GitLogParser.RECORD_START);
-          if (nextRecordStart == -1) {
-            buffer.append(line).append("\n");
-          }
-          else if (nextRecordStart == 0) {
-            tail = line + "\n";
-          }
-          else {
-            buffer.append(line.substring(0, nextRecordStart));
-            tail = line.substring(nextRecordStart) + "\n";
-          }
-
-          if (tail != null) {
-            if (records.incrementAndGet() > bufferSize) {
-              recordConsumer.consume(buffer);
-              buffer.setLength(0);
-            }
-            buffer.append(tail);
-          }
+        if (outputType == ProcessOutputTypes.STDERR) {
+          errors.append(line).append("\n");
         }
-        catch (Exception e) {
-          ex.set(new VcsException(e));
+        else if (outputType == ProcessOutputTypes.STDOUT) {
+          try {
+            // format of the record is <RECORD_START>.*<RECORD_END>.*
+            // then next record goes
+            // (rather inconveniently, after RECORD_END there is a list of modified files)
+            // so here I'm trying to find text between two RECORD_START symbols
+            // that simultaneously contains a RECORD_END
+            // this helps to deal with commits like a929478f6720ac15d949117188cd6798b4a9c286 in linux repo that have RECORD_START symbols in the message
+            // wont help with RECORD_END symbols in the message however (have not seen those yet)
+
+            String tail = null;
+            if (!foundRecordEnd.get()) {
+              int recordEnd = line.indexOf(GitLogParser.RECORD_END);
+              if (recordEnd != -1) {
+                foundRecordEnd.set(true);
+                output.append(line.substring(0, recordEnd + 1));
+                line = line.substring(recordEnd + 1);
+              }
+              else {
+                output.append(line).append("\n");
+              }
+            }
+
+            if (foundRecordEnd.get()) {
+              int nextRecordStart = line.indexOf(GitLogParser.RECORD_START);
+              if (nextRecordStart == -1) {
+                output.append(line).append("\n");
+              }
+              else if (nextRecordStart == 0) {
+                tail = line + "\n";
+              }
+              else {
+                output.append(line.substring(0, nextRecordStart));
+                tail = line.substring(nextRecordStart) + "\n";
+              }
+            }
+
+            if (tail != null) {
+              if (records.incrementAndGet() > bufferSize) {
+                recordConsumer.consume(output);
+                output.setLength(0);
+              }
+              output.append(tail);
+              foundRecordEnd.set(tail.contains(GitLogParser.RECORD_END));
+            }
+          }
+          catch (Exception e) {
+            ex.set(new VcsException(e));
+          }
         }
       }
 
       @Override
       public void processTerminated(int exitCode) {
-        try {
-          recordConsumer.consume(buffer);
+        if (exitCode != 0) {
+          String errorMessage = errors.toString();
+          if (errorMessage.isEmpty()) {
+            errorMessage = GitBundle.message("git.error.exit", exitCode);
+          }
+          ex.set(new VcsException(errorMessage));
         }
-        catch (Exception e) {
-          ex.set(new VcsException(e));
+        else {
+          try {
+            recordConsumer.consume(output);
+          }
+          catch (Exception e) {
+            ex.set(new VcsException(e));
+          }
         }
       }
 
@@ -840,8 +882,7 @@ public class GitHistoryUtils {
         Collection<VcsRef> refsInRecord = parseRefs(record.getRefs(), commit.getId(), factory, root);
         for (VcsRef ref : refsInRecord) {
           if (!refs.add(ref)) {
-            // relying on the fact that intersection method puts elements of the first argument into the result
-            VcsRef otherRef = ContainerUtil.getFirstItem(ContainerUtil.intersection(refs, Collections.singleton(ref)));
+            VcsRef otherRef = ContainerUtil.find(refs, r -> GitLogProvider.DONT_CONSIDER_SHA.equals(r, ref));
             LOG.error("Adding duplicate element " + ref + " to the set containing " + otherRef);
           }
         }

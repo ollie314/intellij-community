@@ -119,7 +119,7 @@ class BuildTasksImpl extends BuildTasks {
       new File(classpathFile).text = ideClasspath.join("\n")
 
       buildContext.ant.java(classname: "com.intellij.rt.execution.CommandLineWrapper", fork: true, failonerror: true) {
-        jvmarg(line: "-ea -Xmx500m -XX:MaxPermSize=200m")
+        jvmarg(line: "-ea -Xmx500m")
         jvmarg(value: "-Xbootclasspath/a:${buildContext.projectBuilder.moduleOutput(buildContext.findModule("boot"))}")
         sysproperty(key: "idea.home.path", value: buildContext.paths.projectHome)
         sysproperty(key: "idea.system.path", value: systemPath)
@@ -478,6 +478,7 @@ idea.fatal.error.notification=disabled
 
   @Override
   void buildUnpackedDistribution(String targetDirectory) {
+    buildContext.paths.distAll = targetDirectory
     def jarsBuilder = new DistributionJARsBuilder(buildContext, patchApplicationInfo())
     jarsBuilder.buildJARs()
     layoutShared()
@@ -505,9 +506,6 @@ idea.fatal.error.notification=disabled
     }
     def osSpecificDistPath = builder.copyFilesForOsDistribution()
 */
-    buildContext.ant.copy(todir: targetDirectory) {
-      fileset(dir: buildContext.paths.distAll)
-    }
   }
 
   private abstract static class BuildTaskRunnable<V> {

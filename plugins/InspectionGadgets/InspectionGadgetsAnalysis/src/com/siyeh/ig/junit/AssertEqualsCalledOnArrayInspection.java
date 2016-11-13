@@ -20,6 +20,7 @@ import com.siyeh.InspectionGadgetsBundle;
 import com.siyeh.ig.BaseInspection;
 import com.siyeh.ig.BaseInspectionVisitor;
 import com.siyeh.ig.InspectionGadgetsFix;
+import com.siyeh.ig.testFrameworks.AssertHint;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 
@@ -53,7 +54,7 @@ public class AssertEqualsCalledOnArrayInspection extends BaseInspection {
     @Override
     public void visitMethodCallExpression(PsiMethodCallExpression expression) {
       super.visitMethodCallExpression(expression);
-      final AssertHint assertHint = AssertHint.createAssertEqualsHint(expression);
+      final AssertHint assertHint = AssertHint.createAssertEqualsHint(expression, false);
       if (assertHint == null) {
         return;
       }

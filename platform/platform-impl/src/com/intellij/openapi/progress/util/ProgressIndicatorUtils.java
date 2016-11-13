@@ -19,11 +19,11 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationAdapter;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.ex.ApplicationEx;
 import com.intellij.openapi.application.ex.ApplicationManagerEx;
-import com.intellij.openapi.progress.ProcessCanceledException;
-import com.intellij.openapi.progress.ProgressIndicator;
-import com.intellij.openapi.progress.ProgressManager;
+import com.intellij.openapi.progress.*;
+import com.intellij.openapi.util.EmptyRunnable;
 import com.intellij.openapi.util.Ref;
 import com.intellij.util.ui.EdtInvocationManager;
 import org.jetbrains.annotations.NotNull;
@@ -86,7 +86,7 @@ public class ProgressIndicatorUtils {
    * This method attempts to run provided action synchronously in a read action, so that, if possible, it wouldn't impact any pending, 
    * executing or future write actions (for this to work effectively the action should invoke {@link ProgressManager#checkCanceled()} or 
    * {@link ProgressIndicator#checkCanceled()} often enough). 
-   * It returns <code>true</code> if action was executed successfully. It returns <code>false</code> if the action was not
+   * It returns {@code true} if action was executed successfully. It returns {@code false} if the action was not
    * executed successfully, i.e. if:
    * <ul>
    * <li>write action was in progress when the method was called</li>
@@ -102,7 +102,7 @@ public class ProgressIndicatorUtils {
   }
 
   public static boolean runWithWriteActionPriority(@NotNull final Runnable action,
-                                                @NotNull final ProgressIndicator progressIndicator) {
+                                                   @NotNull final ProgressIndicator progressIndicator) {
     final ApplicationEx application = (ApplicationEx)ApplicationManager.getApplication();
 
     if (application.isWriteActionPending()) {
@@ -224,5 +224,13 @@ public class ProgressIndicatorUtils {
         return null;
       }
     }, progressIndicator);
+  }
+
+  /**
+   * Ensure the current EDT activity finishes in case it requires many write actions, with each being delayed a bit
+   * by background thread read action (until its first checkCanceled call). Shouldn't be called from under read action.
+   */
+  public static void yieldToPendingWriteActions() {
+    ApplicationManager.getApplication().invokeAndWait(EmptyRunnable.INSTANCE, ModalityState.any());
   }
 }

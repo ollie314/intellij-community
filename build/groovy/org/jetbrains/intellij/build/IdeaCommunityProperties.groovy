@@ -69,21 +69,18 @@ class IdeaCommunityProperties extends BaseIdeaProperties {
       }
 
       @Override
-      String fullNameIncludingEdition(ApplicationInfoProperties applicationInfo) { "IntelliJ IDEA Community Edition" }
+      String getFullNameIncludingEdition(ApplicationInfoProperties applicationInfo) { "IntelliJ IDEA Community Edition" }
 
       @Override
-      String fullNameIncludingEditionAndVendor(ApplicationInfoProperties applicationInfo) { "IntelliJ IDEA Community Edition" }
+      String getFullNameIncludingEditionAndVendor(ApplicationInfoProperties applicationInfo) { "IntelliJ IDEA Community Edition" }
 
       @Override
-      String uninstallFeedbackPageUrl(ApplicationInfoProperties applicationInfo) {
+      String getUninstallFeedbackPageUrl(ApplicationInfoProperties applicationInfo) {
         "https://www.jetbrains.com/idea/uninstall/?edition=IC-${applicationInfo.majorVersion}.${applicationInfo.minorVersion}"
       }
 
       @Override
-      String linkToJRE64(BuildContext buildContext) {
-        def versionString = buildContext.productProperties.baseArtifactName(buildContext.applicationInfo, buildContext.buildNumber)
-        return "https://download.jetbrains.com/idea/jre64-for-${versionString}.tar.gz"
-      }
+      String getBaseDownloadUrlForJre64() { "https://download.jetbrains.com/idea" }
     }
   }
 
@@ -95,7 +92,7 @@ class IdeaCommunityProperties extends BaseIdeaProperties {
       }
 
       @Override
-      String rootDirectoryName(ApplicationInfoProperties applicationInfo, String buildNumber) { "idea-IC-$buildNumber" }
+      String getRootDirectoryName(ApplicationInfoProperties applicationInfo, String buildNumber) { "idea-IC-$buildNumber" }
     }
   }
 
@@ -112,7 +109,7 @@ class IdeaCommunityProperties extends BaseIdeaProperties {
       }
 
       @Override
-      String rootDirectoryName(ApplicationInfoProperties applicationInfo, String buildNumber) {
+      String getRootDirectoryName(ApplicationInfoProperties applicationInfo, String buildNumber) {
         applicationInfo.isEAP ? "IntelliJ IDEA ${applicationInfo.majorVersion}.${applicationInfo.minorVersion} CE EAP.app"
                               : "IntelliJ IDEA CE.app"
       }
@@ -120,11 +117,11 @@ class IdeaCommunityProperties extends BaseIdeaProperties {
   }
 
   @Override
-  String systemSelector(ApplicationInfoProperties applicationInfo) { "IdeaIC${applicationInfo.majorVersion}.${applicationInfo.minorVersionMainPart}" }
+  String getSystemSelector(ApplicationInfoProperties applicationInfo) { "IdeaIC${applicationInfo.majorVersion}.${applicationInfo.minorVersionMainPart}" }
 
   @Override
-  String baseArtifactName(ApplicationInfoProperties applicationInfo, String buildNumber) { "ideaIC-$buildNumber" }
+  String getBaseArtifactName(ApplicationInfoProperties applicationInfo, String buildNumber) { "ideaIC-$buildNumber" }
 
   @Override
-  String outputDirectoryName(ApplicationInfoProperties applicationInfo) { "idea-ce" }
+  String getOutputDirectoryName(ApplicationInfoProperties applicationInfo) { "idea-ce" }
 }

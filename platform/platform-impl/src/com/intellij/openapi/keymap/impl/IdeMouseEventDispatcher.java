@@ -31,10 +31,12 @@ import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.openapi.wm.IdeFrame;
 import com.intellij.openapi.wm.impl.FocusManagerImpl;
 import com.intellij.openapi.wm.impl.IdeGlassPaneImpl;
+import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.ReflectionUtil;
 import com.intellij.util.containers.HashMap;
 import com.intellij.util.ui.UIUtil;
 import org.intellij.lang.annotations.JdkConstants;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
@@ -46,7 +48,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
-import static com.intellij.ui.components.JBScrollPane.isScrollEvent;
 import static java.awt.event.MouseEvent.*;
 
 /**
@@ -136,9 +137,9 @@ public final class IdeMouseEventDispatcher {
   }
 
   /**
-   * @return <code>true</code> if and only if the passed event is already dispatched by the
-   *         <code>IdeMouseEventDispatcher</code> and there is no need for any other processing of the event.
-   *         If the method returns <code>false</code> then it means that the event should be delivered
+   * @return {@code true} if and only if the passed event is already dispatched by the
+   *         {@code IdeMouseEventDispatcher} and there is no need for any other processing of the event.
+   *         If the method returns {@code false} then it means that the event should be delivered
    *         to normal event dispatching.
    */
   public boolean dispatchMouseEvent(MouseEvent e) {
@@ -268,15 +269,14 @@ public final class IdeMouseEventDispatcher {
         AnActionEvent actionEvent = new AnActionEvent(e, dataContext, ActionPlaces.MAIN_MENU, presentation,
                                                       ActionManager.getInstance(),
                                                       modifiers);
-        action.beforeActionPerformedUpdate(actionEvent);
-
-        if (presentation.isEnabled()) {
+        if (ActionUtil.lastUpdateAndCheckDumb(action, actionEvent, false)) {
           actionManager.fireBeforeActionPerformed(action, dataContext, actionEvent);
           final Component context = PlatformDataKeys.CONTEXT_COMPONENT.getData(dataContext);
 
           if (context != null && !context.isShowing()) continue;
 
-          action.actionPerformed(actionEvent);
+          ActionUtil.performActionDumbAware(action, actionEvent);
+          actionManager.fireAfterActionPerformed(action, dataContext, actionEvent);
           e.consume();
         }
       }
@@ -310,7 +310,7 @@ public final class IdeMouseEventDispatcher {
         FeatureUsageTracker.getInstance().triggerFeatureUsed("ui.horizontal.scrolling");
         myLastHorScrolledComponentHash = scrollBar.hashCode();
       }
-      scrollBar.setValue(scrollBar.getValue() + getScrollAmount(c, me, scrollBar));
+      scrollBar.setValue(scrollBar.getValue() + getScrollAmount(me, scrollBar));
       return true;
     }
     return false;
@@ -320,7 +320,7 @@ public final class IdeMouseEventDispatcher {
     myLastHorScrolledComponentHash = 0;
   }
 
-  private static int getScrollAmount(Component c, MouseWheelEvent me, JScrollBar scrollBar) {
+  private static int getScrollAmount(MouseWheelEvent me, JScrollBar scrollBar) {
     return me.getUnitsToScroll() * scrollBar.getUnitIncrement();
   }
 
@@ -331,7 +331,7 @@ public final class IdeMouseEventDispatcher {
       final MouseWheelEvent mwe = (MouseWheelEvent)e;
       return mwe.isShiftDown()
              && mwe.getScrollType() == MouseWheelEvent.WHEEL_UNIT_SCROLL
-             && isScrollEvent(mwe)
+             && JBScrollPane.isScrollEvent(mwe)
              && findHorizontalScrollBar(c) != null;
     }
     return false;
@@ -363,7 +363,7 @@ public final class IdeMouseEventDispatcher {
     return c != null && "y.view.Graph2DView".equals(c.getClass().getName());
   }
 
-  public void blockNextEvents(final MouseEvent e, IdeEventQueue.BlockMode blockMode) {
+  public void blockNextEvents(@NotNull MouseEvent e, @NotNull IdeEventQueue.BlockMode blockMode) {
     final JRootPane root = findRoot(e);
     if (root == null) return;
 

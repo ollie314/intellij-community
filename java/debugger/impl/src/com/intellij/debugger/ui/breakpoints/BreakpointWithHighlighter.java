@@ -294,12 +294,12 @@ public abstract class BreakpointWithHighlighter<P extends JavaBreakpointProperti
   }
 
   @Override
-  public void processClassPrepare(final DebugProcess debugProcess, final ReferenceType classType) {
-    if (!isEnabled() || !isValid()) {
-      return;
+  public void processClassPrepare(DebugProcess debugProcess, ReferenceType classType) {
+    DebugProcessImpl process = (DebugProcessImpl)debugProcess;
+    if (shouldCreateRequest(process, true)) {
+      createRequestForPreparedClass(process, classType);
+      updateUI();
     }
-    createRequestForPreparedClass((DebugProcessImpl)debugProcess, classType);
-    updateUI();
   }
 
   /**
@@ -310,14 +310,13 @@ public abstract class BreakpointWithHighlighter<P extends JavaBreakpointProperti
     if (ApplicationManager.getApplication().isUnitTestMode()) {
       return;
     }
-    final Project project = getProject();
-    DebuggerInvocationUtil.swingInvokeLater(project, () -> {
+    DebuggerInvocationUtil.swingInvokeLater(myProject, () -> {
       if (!isValid()) {
         return;
       }
 
-      DebuggerContextImpl context = DebuggerManagerEx.getInstanceEx(project).getContext();
-      final DebugProcessImpl debugProcess = context.getDebugProcess();
+      DebuggerContextImpl context = DebuggerManagerEx.getInstanceEx(myProject).getContext();
+      DebugProcessImpl debugProcess = context.getDebugProcess();
       if (debugProcess == null || !debugProcess.isAttached()) {
         updateCaches(null);
         updateGutter();
@@ -327,11 +326,11 @@ public abstract class BreakpointWithHighlighter<P extends JavaBreakpointProperti
           @Override
           protected void action() throws Exception {
             ApplicationManager.getApplication().runReadAction(() -> {
-              if (!project.isDisposed()) {
+              if (!myProject.isDisposed()) {
                 updateCaches(debugProcess);
               }
             });
-            DebuggerInvocationUtil.swingInvokeLater(project, BreakpointWithHighlighter.this::updateGutter);
+            DebuggerInvocationUtil.swingInvokeLater(myProject, BreakpointWithHighlighter.this::updateGutter);
           }
         });
       }
@@ -386,9 +385,9 @@ public abstract class BreakpointWithHighlighter<P extends JavaBreakpointProperti
 
   @Nullable
   public Document getDocument() {
-    final PsiFile file = getPsiFile();
+    PsiFile file = getPsiFile();
     if (file != null) {
-      return PsiDocumentManager.getInstance(getProject()).getDocument(file);
+      return PsiDocumentManager.getInstance(myProject).getDocument(file);
     }
     return null;
   }

@@ -215,14 +215,14 @@ public class JavaSmartStepIntoHandler extends JvmSmartStepIntoHandler {
         private void visitConditional(@Nullable PsiElement condition,
                                       @Nullable PsiElement thenBranch,
                                       @Nullable PsiElement elseBranch) {
-          if (condition != null) {
+          if (condition != null && checkTextRange(condition, true)) {
             condition.accept(this);
           }
           ThreeState conditionRes = evaluateCondition(condition);
-          if (conditionRes != ThreeState.NO && thenBranch != null) {
+          if (conditionRes != ThreeState.NO && thenBranch != null && checkTextRange(thenBranch, true)) {
             thenBranch.accept(this);
           }
-          if (conditionRes != ThreeState.YES && elseBranch != null) {
+          if (conditionRes != ThreeState.YES && elseBranch != null && checkTextRange(elseBranch, true)) {
             elseBranch.accept(this);
           }
         }
@@ -246,7 +246,7 @@ public class JavaSmartStepIntoHandler extends JvmSmartStepIntoHandler {
           super.visitExpression(expression);
         }
 
-        boolean checkTextRange(PsiElement expression, boolean expand) {
+        boolean checkTextRange(@NotNull PsiElement expression, boolean expand) {
           TextRange range = expression.getTextRange();
           if (lineRange.intersects(range)) {
             if (expand) {
@@ -324,7 +324,7 @@ public class JavaSmartStepIntoHandler extends JvmSmartStepIntoHandler {
         if (frameProxy != null) {
           try {
             Location location = frameProxy.location();
-            MethodBytecodeUtil.visit(location.declaringType(), location.method(), location.codeIndex(), new MethodVisitor(Opcodes.API_VERSION) {
+            MethodBytecodeUtil.visit(location.method(), location.codeIndex(), new MethodVisitor(Opcodes.API_VERSION) {
               boolean myLineMatch = false;
 
               @Override
@@ -344,7 +344,7 @@ public class JavaSmartStepIntoHandler extends JvmSmartStepIntoHandler {
                   });
                 }
               }
-            });
+            }, true);
           }
           catch (Exception e) {
             LOG.info(e);

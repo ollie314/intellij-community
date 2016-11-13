@@ -202,9 +202,9 @@ def map(function, sequence, *sequence_1):
     """Return a list of the results of applying the function to the items of
     the argument sequence(s).
 
-    :type function: ((T) -> V) | None
+    :type function: None | (T) -> V
     :type sequence: collections.Iterable[T]
-    :rtype: list[V] | bytes | unicode
+    :rtype: list[V]
     """
     pass
 
@@ -1070,6 +1070,15 @@ class float(object):
         :rtype: float
         """
         return 0.0
+
+    @staticmethod
+    def fromhex(cls, string):
+        """Create a floating-point number from a hexadecimal string.
+
+        :type string: str
+        :rtype: float
+        """
+        pass
 
 
 class complex(object):
@@ -2715,7 +2724,7 @@ class dict(object):
         """
         pass
 
-    def values():
+    def values(self):
         """Return a copy of the dictionary's list of values.
 
         :rtype: list[V]

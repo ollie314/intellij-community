@@ -16,7 +16,7 @@
 package com.theoryinpractice.testng.inspection;
 
 import com.siyeh.InspectionGadgetsBundle;
-import com.siyeh.ig.junit.SimplifiableAssertionInspection;
+import com.siyeh.ig.testFrameworks.SimplifiableAssertionInspection;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 
@@ -26,5 +26,10 @@ public class SimplifiedTestNGAssertionInspection extends SimplifiableAssertionIn
   @Override
   public String getDisplayName() {
     return InspectionGadgetsBundle.message("simplifiable.testng.assertion.display.name");
+  }
+
+  @Override
+  protected boolean checkTestNG() {
+    return true;
   }
 }

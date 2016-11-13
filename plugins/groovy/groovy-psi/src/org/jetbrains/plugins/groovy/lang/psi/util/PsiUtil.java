@@ -91,6 +91,9 @@ import org.jetbrains.plugins.groovy.lang.resolve.processors.MethodResolverProces
 
 import java.util.*;
 
+import static org.jetbrains.plugins.groovy.lang.psi.util.GroovyCommonClassNames.DEFAULT_INSTANCE_EXTENSIONS;
+import static org.jetbrains.plugins.groovy.lang.psi.util.GroovyCommonClassNames.DEFAULT_STATIC_EXTENSIONS;
+
 /**
  * @author ven
  */
@@ -1346,7 +1349,7 @@ public class PsiUtil {
       GrReferenceExpression ref = (GrReferenceExpression)qualifier;
 
       PsiElement resolved = ref.resolve();
-      if (resolved == null) return false;
+      if (!(resolved instanceof PsiClass)) return false;
 
       return hasEnclosingInstanceInScope((PsiClass)resolved, qualifier, false);
     }
@@ -1387,7 +1390,7 @@ public class PsiUtil {
     if (aClass == null) return false;
 
     final String qname = aClass.getQualifiedName();
-    return GroovyCommonClassNames.GROOVY_EXTENSION_CLASSES.contains(qname);
+    return DEFAULT_INSTANCE_EXTENSIONS.contains(qname) || DEFAULT_STATIC_EXTENSIONS.contains(qname);
   }
 
   public static boolean isVoidMethodCall(@Nullable GrExpression expression) {

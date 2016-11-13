@@ -5,6 +5,7 @@ import com.google.common.collect.Lists;
 import com.intellij.execution.ExecutionException;
 import com.intellij.execution.RunContentExecutor;
 import com.intellij.execution.configurations.GeneralCommandLine;
+import com.intellij.execution.filters.UrlFilter;
 import com.intellij.execution.process.KillableColoredProcessHandler;
 import com.intellij.execution.process.UnixProcessManager;
 import com.intellij.openapi.application.ApplicationManager;
@@ -42,7 +43,6 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.plugins.ipnb.editor.IpnbFileEditor;
 import org.jetbrains.plugins.ipnb.editor.panels.code.IpnbCodePanel;
 import org.jetbrains.plugins.ipnb.format.IpnbParser;
-import org.jetbrains.plugins.ipnb.format.cells.output.IpnbOutputCell;
 import org.jetbrains.plugins.ipnb.protocol.IpnbConnection;
 import org.jetbrains.plugins.ipnb.protocol.IpnbConnectionListenerBase;
 import org.jetbrains.plugins.ipnb.protocol.IpnbConnectionV3;
@@ -59,8 +59,8 @@ import java.util.Map;
 public final class IpnbConnectionManager implements ProjectComponent {
   private static final Logger LOG = Logger.getInstance(IpnbConnectionManager.class);
   private final Project myProject;
-  private Map<String, IpnbConnection> myKernels = new HashMap<>();
-  private Map<String, IpnbCodePanel> myUpdateMap = new HashMap<>();
+  private final Map<String, IpnbConnection> myKernels = new HashMap<>();
+  private final Map<String, IpnbCodePanel> myUpdateMap = new HashMap<>();
   private static final int MAX_ATTEMPTS = 10;
 
   public IpnbConnectionManager(final Project project) {
@@ -120,31 +120,31 @@ public final class IpnbConnectionManager implements ProjectComponent {
   public static String showDialogUrl(@NotNull final String initialUrl) {
     final String url = UIUtil.invokeAndWaitIfNeeded(
       () -> Messages.showInputDialog("Jupyter Notebook URL:", "Start Jupyter Notebook", null, initialUrl,
-                                   new InputValidator() {
-                                 @Override
-                                 public boolean checkInput(String inputString) {
-                                   try {
-                                     final URI uri = new URI(inputString);
-                                     if (uri.getPort() == -1 || StringUtil.isEmptyOrSpaces(uri.getHost())) {
+                                 new InputValidator() {
+                                   @Override
+                                   public boolean checkInput(String inputString) {
+                                     try {
+                                       final URI uri = new URI(inputString);
+                                       if (uri.getPort() == -1 || StringUtil.isEmptyOrSpaces(uri.getHost())) {
+                                         return false;
+                                       }
+                                     }
+                                     catch (URISyntaxException e) {
                                        return false;
                                      }
+                                     return !inputString.isEmpty();
                                    }
-                                   catch (URISyntaxException e) {
-                                     return false;
-                                   }
-                                   return !inputString.isEmpty();
-                                 }
 
-                                 @Override
-                                 public boolean canClose(String inputString) {
-                                   return true;
-                                 }
-                               }));
+                                        @Override
+                                        public boolean canClose(String inputString) {
+                                          return true;
+                                        }
+                                      }));
     return url == null ? null : StringUtil.trimEnd(url, "/");
   }
 
   public boolean startConnection(@Nullable final IpnbCodePanel codePanel, @NotNull final String path, @NotNull final String urlString,
-                                  final boolean showNotification) {
+                                 final boolean showNotification) {
     try {
       final boolean[] connectionOpened = {false};
       final IpnbConnectionListenerBase listener = new IpnbConnectionListenerBase() {
@@ -163,7 +163,7 @@ public final class IpnbConnectionManager implements ProjectComponent {
           final IpnbCodePanel cell = myUpdateMap.get(parentMessageId);
           cell.getCell().setPromptNumber(connection.getExecCount());
           //noinspection unchecked
-          cell.updatePanel(null, (List<IpnbOutputCell>)connection.getOutput().clone());
+          cell.updatePanel(null, connection.getOutput());
         }
 
         @Override
@@ -173,6 +173,14 @@ public final class IpnbConnectionManager implements ProjectComponent {
           if (payload != null) {
             cell.updatePanel(payload, null);
           }
+        }
+
+        @Override
+        public void onFinished(@NotNull IpnbConnection connection, @NotNull String parentMessageId) {
+          if (!myUpdateMap.containsKey(parentMessageId)) return;
+          final IpnbCodePanel cell = myUpdateMap.remove(parentMessageId);
+          cell.getCell().setPromptNumber(connection.getExecCount());
+          cell.finishExecution();
         }
       };
 
@@ -264,7 +272,8 @@ public final class IpnbConnectionManager implements ProjectComponent {
 
     String url = showDialogUrl(initUrl);
     if (url == null) return false;
-    IpnbSettings.getInstance(myProject).setURL(url);
+    final IpnbSettings ipnbSettings = IpnbSettings.getInstance(myProject);
+    ipnbSettings.setURL(url);
 
     final Pair<String, String> hostPort = getHostPortFromUrl(url);
     if (hostPort == null) {
@@ -302,7 +311,12 @@ public final class IpnbConnectionManager implements ProjectComponent {
       parameters.add("--port");
       parameters.add(hostPort.getSecond());
     }
-    final String directory = IpnbSettings.getInstance(myProject).getWorkingDirectory();
+    final String arguments = ipnbSettings.getArguments();
+    if (!StringUtil.isEmptyOrSpaces(arguments)) {
+      parameters.addAll(StringUtil.split(arguments, " "));
+    }
+
+    final String directory = ipnbSettings.getWorkingDirectory();
     final String baseDir = !StringUtil.isEmptyOrSpaces(directory) ? directory :
                            ModuleRootManager.getInstance(module).getContentRoots()[0].getCanonicalPath();
     final GeneralCommandLine commandLine = new GeneralCommandLine(parameters).withWorkDirectory(baseDir);
@@ -343,6 +357,7 @@ public final class IpnbConnectionManager implements ProjectComponent {
         }, () -> !processHandler.isProcessTerminated())
         .withRerun(() -> startIpythonServer(url, fileEditor))
         .withHelpId("reference.manage.py")
+        .withFilter(new UrlFilter())
         .run(), ModalityState.defaultModalityState());
       int countAttempt = 0;
       while (!serverStarted[0] && countAttempt < MAX_ATTEMPTS) {

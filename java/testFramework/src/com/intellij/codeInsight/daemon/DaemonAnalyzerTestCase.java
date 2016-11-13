@@ -24,7 +24,6 @@ import com.intellij.codeInsight.daemon.quickFix.LightQuickFixTestCase;
 import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.codeInsight.intention.IntentionManager;
 import com.intellij.codeInsight.intention.impl.ShowIntentionActionsHandler;
-import com.intellij.codeInspection.InspectionProfile;
 import com.intellij.codeInspection.InspectionProfileEntry;
 import com.intellij.codeInspection.InspectionToolProvider;
 import com.intellij.codeInspection.LocalInspectionTool;
@@ -38,6 +37,7 @@ import com.intellij.lang.StdLanguages;
 import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.lang.injection.InjectedLanguageManager;
 import com.intellij.lang.java.JavaLanguage;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.Result;
 import com.intellij.openapi.application.ex.PathManagerEx;
 import com.intellij.openapi.command.WriteCommandAction;
@@ -152,9 +152,9 @@ public abstract class DaemonAnalyzerTestCase extends CodeInsightTestCase {
   }
 
   protected void disableInspectionTool(@NotNull String shortName){
-    InspectionProfile profile = InspectionProjectProfileManager.getInstance(getProject()).getCurrentProfile();
+    InspectionProfileImpl profile = InspectionProjectProfileManager.getInstance(getProject()).getCurrentProfile();
     if (profile.getInspectionTool(shortName, getProject()) != null) {
-      ((InspectionProfileImpl)profile).disableTool(shortName, getProject());
+      profile.disableTool(shortName, getProject());
     }
   }
 
@@ -355,7 +355,8 @@ public abstract class DaemonAnalyzerTestCase extends CodeInsightTestCase {
     IntentionAction intentionAction = findIntentionAction(infos, intentionActionName, editor, file);
 
     assertNotNull(intentionActionName, intentionAction);
-    assertTrue(ShowIntentionActionsHandler.chooseActionAndInvoke(file, editor, intentionAction, intentionActionName));
+    ApplicationManager.getApplication().invokeLater(
+      () -> assertTrue(ShowIntentionActionsHandler.chooseActionAndInvoke(file, editor, intentionAction, intentionActionName)));
     UIUtil.dispatchAllInvocationEvents();
   }
 

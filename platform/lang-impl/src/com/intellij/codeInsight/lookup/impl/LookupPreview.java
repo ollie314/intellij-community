@@ -24,6 +24,7 @@ import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.refactoring.rename.inplace.InplaceRefactoring;
 import com.intellij.ui.JBColor;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.FList;
@@ -52,10 +53,15 @@ class LookupPreview {
     myInlays.clear();
 
     String suffix = getSuffixText(item);
-    if (!suffix.isEmpty() && myLookup.getTopLevelEditor() instanceof EditorImpl) {
-      myLookup.getTopLevelEditor().getCaretModel().runForEachCaret(caret -> {
-        ensureCaretBeforeInlays(caret);
-        addInlay(suffix, caret.getOffset());
+    Editor editor = myLookup.getTopLevelEditor();
+    if (!suffix.isEmpty() && editor instanceof EditorImpl &&
+        !editor.getSelectionModel().hasSelection() &&
+        InplaceRefactoring.getActiveInplaceRenamer(editor) == null) {
+      myLookup.performGuardedChange(() -> {
+        for (Caret caret : editor.getCaretModel().getAllCarets()) {
+          ensureCaretBeforeInlays(caret);
+          addInlay(suffix, caret.getOffset());
+        }
       });
     }
   }

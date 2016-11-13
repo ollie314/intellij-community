@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import com.intellij.psi.JavaElementVisitor;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.PsiMethodCallExpression;
-import com.siyeh.ig.junit.AssertHint;
+import com.siyeh.ig.testFrameworks.AssertHint;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -35,7 +35,7 @@ public class AssertEqualsBetweenInconvertibleTypesTestNGInspection extends BaseJ
       @Override
       public void visitMethodCallExpression(@NotNull PsiMethodCallExpression expression) {
         super.visitMethodCallExpression(expression);
-        final String errorMessage = AssertHint.areExpectedActualTypesCompatible(expression);
+        final String errorMessage = AssertHint.areExpectedActualTypesCompatible(expression, true);
         if (errorMessage != null) {
           final PsiElement referenceNameElement = expression.getMethodExpression().getReferenceNameElement();
           if (referenceNameElement == null) {

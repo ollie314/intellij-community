@@ -1145,6 +1145,23 @@ public class PyTypeTest extends PyTestCase {
            "expr = f\n");
   }
 
+  // PY-20832
+  public void testStructuralTypeWithDunderIter() {
+    doTest("{__iter__}",
+           "def expand(values1):\n" +
+           "    for a in values1:\n" +
+           "        print(a)\n" +
+           "    expr = values1\n");
+  }
+
+  // PY-20833
+  public void testStructuralTypeWithDunderLen() {
+    doTest("{__len__}",
+           "def expand(values1):\n" +
+           "    a = len(values1)\n" +
+           "    expr = values1\n");
+  }
+
   // PY-16267
   public void testGenericField() {
     doTest("str",
@@ -1373,6 +1390,12 @@ public class PyTypeTest extends PyTestCase {
                     "class A(object):\n" +
                     "    pass\n" +
                     "expr = copy.deepcopy(A())\n");
+  }
+
+  // PY-21083
+  public void testFloatFromhex() {
+    doTest("float",
+           "expr = float.fromhex(\"0.5\")");
   }
 
   private static List<TypeEvalContext> getTypeEvalContexts(@NotNull PyExpression element) {

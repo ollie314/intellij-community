@@ -15,6 +15,8 @@
  */
 package com.intellij.index
 
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.command.impl.CurrentEditorProvider
 import com.intellij.openapi.command.impl.UndoManagerImpl
@@ -24,9 +26,14 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditor
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileTypes.PlainTextFileType
+import com.intellij.openapi.module.StdModuleTypes
+import com.intellij.openapi.roots.ContentIterator
+import com.intellij.openapi.util.Ref
 import com.intellij.openapi.util.io.FileUtil
-import com.intellij.openapi.vfs.VfsUtil
-import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.openapi.util.text.StringUtil
+import com.intellij.openapi.vfs.*
+import com.intellij.openapi.vfs.newvfs.events.VFileEvent
+import com.intellij.openapi.vfs.newvfs.events.VFilePropertyChangeEvent
 import com.intellij.openapi.vfs.newvfs.impl.VirtualFileSystemEntry
 import com.intellij.pom.java.LanguageLevel
 import com.intellij.psi.*
@@ -36,9 +43,11 @@ import com.intellij.psi.impl.cache.impl.id.IdIndex
 import com.intellij.psi.impl.cache.impl.id.IdIndexEntry
 import com.intellij.psi.impl.file.impl.FileManagerImpl
 import com.intellij.psi.impl.java.stubs.index.JavaStubIndexKeys
+import com.intellij.psi.impl.source.JavaFileElementType
 import com.intellij.psi.impl.source.PostprocessReformattingAspect
 import com.intellij.psi.impl.source.PsiFileWithStubSupport
 import com.intellij.psi.search.EverythingGlobalScope
+import com.intellij.psi.search.FilenameIndex
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.PsiSearchHelper
 import com.intellij.psi.stubs.SerializedStubTree
@@ -47,14 +56,13 @@ import com.intellij.psi.stubs.StubIndexImpl
 import com.intellij.psi.stubs.StubUpdatingIndex
 import com.intellij.testFramework.IdeaTestUtil
 import com.intellij.testFramework.PlatformTestUtil
+import com.intellij.testFramework.PsiTestUtil
 import com.intellij.testFramework.SkipSlowTestLocally
 import com.intellij.testFramework.exceptionCases.IllegalArgumentExceptionCase
 import com.intellij.testFramework.fixtures.JavaCodeInsightFixtureTestCase
+import com.intellij.util.FileContentUtil
 import com.intellij.util.Processor
-import com.intellij.util.indexing.FileBasedIndex
-import com.intellij.util.indexing.FileBasedIndexImpl
-import com.intellij.util.indexing.MapIndexStorage
-import com.intellij.util.indexing.StorageException
+import com.intellij.util.indexing.*
 import com.intellij.util.io.*
 import org.jetbrains.annotations.NotNull
 /**
@@ -548,5 +556,122 @@ class IndexTest extends JavaCodeInsightFixtureTestCase {
         FileBasedIndex.getInstance().ensureUpToDate(IdIndex.NAME, null, allScope)
       }
     })
+  }
+
+  class RecordingVfsListener extends IndexedFilesListener {
+    def vfsEventMerger = new VfsEventsMerger()
+
+    @Override
+    protected void iterateIndexableFiles(VirtualFile file, ContentIterator iterator) {
+      VfsUtilCore.visitChildrenRecursively(file, new VirtualFileVisitor() {
+        @Override
+        boolean visitFile(@NotNull VirtualFile visitedFile) {
+          iterator.processFile(visitedFile);
+          return true;
+        }
+      });
+    }
+
+    protected void doInvalidateIndicesForFile(VirtualFile file, boolean contentChange) {
+      vfsEventMerger.recordBeforeFileEvent(((VirtualFileWithId)file).id, file, contentChange);
+    }
+
+    @Override
+    protected void buildIndicesForFile(VirtualFile file, boolean contentChange) {
+      vfsEventMerger.recordFileEvent(((VirtualFileWithId)file).id, file, contentChange)
+    }
+
+    String indexingOperation(VirtualFile file) {
+      Ref<String> operation = new Ref<>()
+      vfsEventMerger.processChanges(new VfsEventsMerger.VfsEventProcessor() {
+        @Override
+        boolean process(VfsEventsMerger.ChangeInfo info) {
+          operation.set(info.toString());
+          return true
+        }
+      })
+
+      StringUtil.replace(operation.get(), file.getPath(), file.getName());
+    }
+  }
+
+  void testIndexedFilesListener() throws Throwable {
+    def listener = new RecordingVfsListener()
+
+    ApplicationManager.getApplication().getMessageBus().connect(getTestRootDisposable()).subscribe(
+      VirtualFileManager.VFS_CHANGES,
+      listener
+    );
+
+    def fileName = "test.txt"
+    final VirtualFile testFile = myFixture.addFileToProject(fileName, "test").getVirtualFile()
+
+    assertEquals("file: $fileName\n" +
+                 "operation: UPDATE-REMOVE UPDATE ADD", listener.indexingOperation(testFile))
+
+    FileContentUtil.reparseFiles(testFile)
+
+    assertEquals("file: $fileName\n" +
+                 "operation: REMOVE ADD", listener.indexingOperation(testFile))
+
+    VfsUtil.saveText(testFile, "foo");
+    VfsUtil.saveText(testFile, "bar");
+
+    assertEquals("file: $fileName\n" +
+                 "operation: UPDATE-REMOVE UPDATE", listener.indexingOperation(testFile));
+
+    VfsUtil.saveText(testFile, "baz")
+    testFile.delete(null)
+
+    assertEquals("file: $fileName\n" +
+                 "operation: REMOVE", listener.indexingOperation(testFile));
+  }
+
+  void "test files inside copied directory are indexed"() {
+    def facade = JavaPsiFacade.getInstance(project)
+
+    def srcFile = myFixture.addFileToProject('foo/bar/A.java', 'class A {}')
+    assert facade.findClass('A', GlobalSearchScope.moduleScope(myModule)) != null
+
+    def anotherDir = myFixture.tempDirFixture.findOrCreateDir('another')
+    def anotherModule = PsiTestUtil.addModule(project, StdModuleTypes.JAVA, 'another', anotherDir)
+    assert !facade.findClass('A', GlobalSearchScope.moduleScope(anotherModule))
+
+    WriteAction.run { srcFile.virtualFile.parent.copy(this, anotherDir, 'doo') }
+
+    assert facade.findClass('A', GlobalSearchScope.moduleScope(anotherModule)) != null
+    assert JavaFileElementType.isInSourceContent(myFixture.tempDirFixture.getFile('another/doo/A.java'))
+  }
+
+
+  void "test Vfs Events Processing Performance"() {
+    def filename = 'A.java'
+    myFixture.addFileToProject('foo/bar/' + filename, 'class A {}')
+
+    PlatformTestUtil.startPerformanceTest("Vfs Event Processing By Index", 1000, {
+      def files = FilenameIndex.getFilesByName(project, filename, GlobalSearchScope.moduleScope(myModule))
+      assert files != null
+      assert files.length == 1
+
+      VirtualFile file = files[0].virtualFile
+
+      def filename2 = 'B.java'
+      def max = 100000
+      List<VFileEvent> eventList = new ArrayList<>(max);
+      def len = max / 2;
+
+      for(int i = 0; i < len; ++i) {
+        eventList.add(new VFilePropertyChangeEvent(null, file, VirtualFile.PROP_NAME, filename, filename2, true)) ;
+        eventList.add(new VFilePropertyChangeEvent(null, file, VirtualFile.PROP_NAME, filename2, filename, true)) ;
+      }
+
+      IndexedFilesListener indexedFilesListener = ((FileBasedIndexImpl)FileBasedIndex.instance).changedFilesCollector
+      indexedFilesListener.before(eventList);
+      indexedFilesListener.after(eventList);
+
+      files = FilenameIndex.getFilesByName(project, filename, GlobalSearchScope.moduleScope(myModule))
+      assert files != null
+      assert files.length == 1
+    }).cpuBound().ioBound().assertTiming();
   }
 }

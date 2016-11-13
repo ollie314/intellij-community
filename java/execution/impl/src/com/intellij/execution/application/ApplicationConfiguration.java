@@ -16,30 +16,33 @@
 package com.intellij.execution.application;
 
 import com.intellij.codeInsight.daemon.impl.analysis.JavaModuleGraphUtil;
+import com.intellij.debugger.settings.DebuggerSettings;
 import com.intellij.diagnostic.logging.LogConfigurationPanel;
 import com.intellij.execution.*;
 import com.intellij.execution.configuration.EnvironmentVariablesComponent;
 import com.intellij.execution.configurations.*;
 import com.intellij.execution.filters.TextConsoleBuilderFactory;
 import com.intellij.execution.junit.RefactoringListeners;
+import com.intellij.execution.process.KillableProcessHandler;
+import com.intellij.execution.process.OSProcessHandler;
 import com.intellij.execution.runners.ExecutionEnvironment;
 import com.intellij.execution.util.JavaParametersUtil;
 import com.intellij.execution.util.ProgramParametersUtil;
-import com.intellij.openapi.components.PathMacroManager;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.options.SettingsEditor;
 import com.intellij.openapi.options.SettingsEditorGroup;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.JavaSdk;
 import com.intellij.openapi.projectRoots.JavaSdkVersion;
+import com.intellij.openapi.projectRoots.Sdk;
+import com.intellij.openapi.projectRoots.SdkTypeId;
 import com.intellij.openapi.util.DefaultJDOMExternalizer;
-import com.intellij.openapi.util.InvalidDataException;
-import com.intellij.openapi.util.WriteExternalException;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiJavaModule;
 import com.intellij.psi.util.PsiMethodUtil;
 import com.intellij.refactoring.listeners.RefactoringElementListener;
+import com.intellij.util.PathsList;
 import org.jdom.Element;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -47,9 +50,6 @@ import org.jetbrains.annotations.Nullable;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Optional;
-
-import static com.intellij.openapi.util.Pair.pair;
 
 public class ApplicationConfiguration extends ModuleBasedConfiguration<JavaRunConfigurationModule>
   implements CommonJavaRunConfigurationParameters, SingleClassConfiguration, RefactoringListenerProvider {
@@ -238,8 +238,7 @@ public class ApplicationConfiguration extends ModuleBasedConfiguration<JavaRunCo
   }
 
   @Override
-  public void readExternal(final Element element) throws InvalidDataException {
-    PathMacroManager.getInstance(getProject()).expandPaths(element);
+  public void readExternal(final Element element) {
     super.readExternal(element);
     JavaRunConfigurationExtensionManager.getInstance().readExternal(this, element);
     DefaultJDOMExternalizer.readExternal(this, element);
@@ -248,7 +247,7 @@ public class ApplicationConfiguration extends ModuleBasedConfiguration<JavaRunCo
   }
 
   @Override
-  public void writeExternal(final Element element) throws WriteExternalException {
+  public void writeExternal(final Element element) {
     super.writeExternal(element);
     JavaRunConfigurationExtensionManager.getInstance().writeExternal(this, element);
     DefaultJDOMExternalizer.writeExternal(this, element);
@@ -285,18 +284,34 @@ public class ApplicationConfiguration extends ModuleBasedConfiguration<JavaRunCo
       return params;
     }
 
+    @NotNull
+    @Override
+    protected OSProcessHandler startProcess() throws ExecutionException {
+      OSProcessHandler processHandler = super.startProcess();
+      if (processHandler instanceof KillableProcessHandler && DebuggerSettings.getInstance().KILL_PROCESS_IMMEDIATELY) {
+        ((KillableProcessHandler)processHandler).setShouldKillProcessSoftly(false);
+      }
+      return processHandler;
+    }
+
     private static void setupModulePath(JavaParameters params, JavaRunConfigurationModule module) {
-      JavaSdkVersion version = Optional.ofNullable(params.getJdk())
-        .map(jdk -> pair(jdk.getSdkType(), jdk))
-        .map(p -> p.first instanceof JavaSdk ? ((JavaSdk)p.first).getVersion(p.second) : null)
-        .orElse(null);
+      JavaSdkVersion version = null;
+      Sdk jdk = params.getJdk();
+      if (jdk != null) {
+        SdkTypeId type = jdk.getSdkType();
+        if (type instanceof JavaSdk) {
+          version = ((JavaSdk)type).getVersion(jdk);
+        }
+      }
       if (version != null && version.isAtLeast(JavaSdkVersion.JDK_1_9)) {
         PsiClass mainClass = module.findClass(params.getMainClass());
         if (mainClass != null) {
           PsiJavaModule mainModule = JavaModuleGraphUtil.findDescriptorByElement(mainClass);
           if (mainModule != null) {
             params.setModuleName(mainModule.getModuleName());
-            params.getModulePath().addAll(params.getClassPath().getPathList());
+            PathsList classPath = params.getClassPath(), modulePath = params.getModulePath();
+            modulePath.addAll(classPath.getPathList());
+            classPath.clear();
           }
         }
       }

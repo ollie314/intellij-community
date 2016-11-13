@@ -304,8 +304,8 @@ public class StructuralReplaceTest extends StructuralReplaceTestCase {
     assertEquals("replace silly assignments", expectedResult12, replacer.testReplace(s31,s32,s33,options));
 
     String s34 = "ParamChecker.isTrue(1==1, \"!!!\");";
-    String s35 = "ParamChecker.isTrue('_expr, '_msg)";
-    String s36 = "assert $expr$ : $msg$";
+    String s35 = "ParamChecker.isTrue('_expr, '_msg);";
+    String s36 = "assert $expr$ : $msg$;";
 
     String expectedResult13 = "assert 1==1 : \"!!!\";";
     assertEquals("replace with assert", expectedResult13, replacer.testReplace(s34,s35,s36,options));
@@ -2201,5 +2201,26 @@ public class StructuralReplaceTest extends StructuralReplaceTestCase {
                  "  void m3() {}\n" +
                  "}",
                  replacer.testReplace(in2, what, by, options));
+  }
+
+  public void testReplaceQualifiedReference() {
+    String in = "class A {" +
+                "  String s;" +
+                "  void setS(String s) {" +
+                "    System.out.println(this.s);" +
+                "    this.s = s;" +
+                "  }" +
+                "}";
+    String what = "System.out.println('_a);";
+    String by = "System.out.println(\"$a$\" + $a$);";
+    assertEquals("don't drop this",
+                 "class A {" +
+                 "  String s;" +
+                 "  void setS(String s) {" +
+                 "    System.out.println(\"this.s\" + this.s);" +
+                 "    this.s = s;" +
+                 "  }" +
+                 "}",
+                 replacer.testReplace(in, what, by, options));
   }
 }

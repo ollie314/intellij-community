@@ -46,6 +46,7 @@ import com.intellij.openapi.actionSystem.ex.ActionUtil;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.TransactionGuard;
+import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Caret;
 import com.intellij.openapi.editor.Document;
@@ -53,6 +54,7 @@ import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.actionSystem.EditorAction;
 import com.intellij.openapi.editor.actionSystem.EditorWriteActionHandler;
 import com.intellij.openapi.editor.actions.SplitLineAction;
+import com.intellij.openapi.editor.ex.DocumentEx;
 import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.module.Module;
@@ -125,9 +127,9 @@ import static com.intellij.execution.runners.AbstractConsoleRunnerWithHistory.re
  * @author traff, oleg
  */
 public class PydevConsoleRunnerImpl implements PydevConsoleRunner {
-  public static final String WORKING_DIR_ENV = "WORKING_DIR_AND_PYTHON_PATHS";
+  public static final String WORKING_DIR_AND_PY_PATHS_ENV = "WORKING_DIR_AND_PYTHON_PATHS";
   public static final String CONSOLE_START_COMMAND = "import sys; print('Python %s on %s' % (sys.version, sys.platform))\n" +
-                                                     "sys.path.extend([" + WORKING_DIR_ENV + "])\n";
+                                                     "sys.path.extend([" + WORKING_DIR_AND_PY_PATHS_ENV + "])\n";
   private static final Logger LOG = Logger.getInstance(PydevConsoleRunnerImpl.class.getName());
   @SuppressWarnings("SpellCheckingInspection")
   public static final String PYDEV_PYDEVCONSOLE_PY = "pydev/pydevconsole.py";
@@ -588,7 +590,6 @@ public class PydevConsoleRunnerImpl implements PydevConsoleRunner {
       myConsoleView.attachToProcess(myProcessHandler);
       createContentDescriptorAndActions();
 
-
       // Run
       myProcessHandler.startNotify();
     });
@@ -635,6 +636,7 @@ public class PydevConsoleRunnerImpl implements PydevConsoleRunner {
     final List<AnAction> actions = fillToolBarActions(toolbarActions, contentDescriptor);
     registerActionShortcuts(actions, myConsoleView.getConsoleEditor().getComponent());
     registerActionShortcuts(actions, panel);
+    getConsoleView().addConsoleFolding(false);
 
     showContentDescriptor(contentDescriptor);
   }
@@ -681,10 +683,19 @@ public class PydevConsoleRunnerImpl implements PydevConsoleRunner {
     AnAction anAction = new AnAction() {
       @Override
       public void actionPerformed(final AnActionEvent e) {
-        if (myPydevConsoleCommunication.isExecuting()) {
+        if (myPydevConsoleCommunication.isExecuting() || myPydevConsoleCommunication.isWaitingForInput()) {
           myConsoleView.print("^C", ProcessOutputTypes.SYSTEM);
+          myPydevConsoleCommunication.interrupt();
+        } else{
+          DocumentEx document = myConsoleView.getConsoleEditor().getDocument();
+          if (!(document.getTextLength() == 0)) {
+            ApplicationManager.getApplication().runWriteAction(() ->
+            CommandProcessor
+              .getInstance()
+              .runUndoTransparentAction(() -> document.deleteString(0, document.getLineEndOffset(document.getLineCount() - 1))));
+          }
+
         }
-        myPydevConsoleCommunication.interrupt();
       }
 
       @Override

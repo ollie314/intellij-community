@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,9 @@ import com.intellij.lang.injection.InjectedLanguageManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.util.Couple;
+import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.*;
 import com.intellij.psi.stubs.StubElement;
 import com.intellij.psi.tree.IElementType;
@@ -424,9 +426,9 @@ public class PyPsiUtils {
   }
 
   @NotNull
-  static <T, U extends PsiElement> List<T> collectStubChildren(U e,
-                                                               final StubElement<U> stub, final IElementType elementType,
-                                                               final Class<T> itemClass) {
+  static <T, U extends PsiElement> List<T> collectStubChildren(@NotNull U e,
+                                                               @Nullable StubElement<U> stub,
+                                                               @NotNull IElementType elementType) {
     final List<T> result = new ArrayList<>();
     if (stub != null) {
       final List<StubElement> children = stub.getChildrenStubs();
@@ -628,6 +630,21 @@ public class PyPsiUtils {
       return (PsiFileSystemItem)element;
     }
     return element.getContainingFile();
+  }
+
+  @Nullable
+  public static String getContainingFilePath(@NotNull PsiElement element) {
+    final VirtualFile file;
+    if (element instanceof PsiFileSystemItem) {
+      file = ((PsiFileSystemItem)element).getVirtualFile();
+    }
+    else {
+      file = element.getContainingFile().getVirtualFile();
+    }
+    if (file != null) {
+      return FileUtil.toSystemDependentName(file.getPath());
+    }
+    return null;
   }
 
   private static abstract class TopLevelVisitor extends PyRecursiveElementVisitor {

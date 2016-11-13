@@ -15,6 +15,8 @@
  */
 package com.intellij.codeInsight.daemon.inlays
 
+import com.intellij.codeInsight.hints.settings.ParameterNameHintsSettings
+import com.intellij.lang.java.JavaLanguage
 import com.intellij.openapi.editor.ex.EditorSettingsExternalizable
 import org.assertj.core.api.Assertions
 
@@ -57,6 +59,22 @@ class Groo {
     onLineStartingWith("configure(testNow").assertNoInlays()
   }
 
+
+  fun `test do not show for Exceptions`() {
+    setup("""
+class Fooo {
+  
+  public void test() {
+    Throwable t = new IllegalStateException("crime");
+  }
+  
+}
+""")
+    
+    onLineStartingWith("Throw").assertNoInlays()
+  }
+  
+
   fun `test show hint for single string literal if there is multiple string params`() {
     setup("""class Groo {
 
@@ -75,6 +93,28 @@ class Groo {
 
     onLineStartingWith("assertEquals").assertInlays("expected->\"fooo\"")
     onLineStartingWith("show").assertInlays("message->\"Hi\"")
+  }
+  
+  fun `test no hints for generic builders`() {
+    setup("""
+class Foo {
+  void test() {
+    new IntStream().skip(10);
+    new Stream<Integer>().skip(10);
+  }
+}
+
+class IntStream {
+  public IntStream skip(int n) {}
+}
+
+class Stream<T> {
+  public Stream<T> skip(int n) {}
+}
+""")
+    
+    onLineStartingWith("new IntStream").assertNoInlays()
+    onLineStartingWith("new Stream").assertNoInlays()
   }
 
   fun `test do not show hints on setters`() {
@@ -283,6 +323,7 @@ public class Test {
     System.out.println("A");
     System.out.print("A");
     
+    list.add("sss");
     list.get(1);
     list.set(1, "sss");
     
@@ -676,6 +717,18 @@ class Test {
     
     onLineStartingWith("check").assertInlays("isShow->1")
     onLineStartingWith("int").assertInlays("isShow->1")
+  }
+  
+  fun `test incorrect pattern`() {
+    ParameterNameHintsSettings.getInstance().addIgnorePattern(JavaLanguage.INSTANCE, "")
+    setup("""
+class Test {
+  void test() {
+    check(1000);  
+  }
+  void check(int isShow) {}
+}
+""")
   }
 
 }

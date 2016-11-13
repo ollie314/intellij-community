@@ -221,6 +221,10 @@ public class UIUtil {
     }
   }
 
+  public static boolean isDialogFont(Font font) {
+    return Font.DIALOG.equals(font.getFamily(Locale.US));
+  }
+
   public enum FontSize {NORMAL, SMALL, MINI}
 
   public enum ComponentStyle {LARGE, REGULAR, SMALL, MINI}
@@ -2083,7 +2087,7 @@ public class UIUtil {
    */
   public static void drawCenteredString(Graphics2D g, Rectangle rect, String str, boolean horzCentered, boolean vertCentered) {
     FontMetrics fm = g.getFontMetrics(g.getFont());
-    int textWidth = fm.stringWidth(str);
+    int textWidth = fm.stringWidth(str) - 1;
     int x = horzCentered ? Math.max(rect.x, rect.x + (rect.width - textWidth) / 2) : rect.x;
     int y = vertCentered ? Math.max(rect.y, rect.y + rect.height / 2 + fm.getAscent() * 2 / 5) : rect.y;
     Shape oldClip = g.getClip();

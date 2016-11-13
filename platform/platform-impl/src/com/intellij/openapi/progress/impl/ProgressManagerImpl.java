@@ -19,6 +19,7 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.progress.*;
+import com.intellij.openapi.progress.util.ProgressIndicatorUtils;
 import com.intellij.openapi.progress.util.ProgressWindow;
 import com.intellij.openapi.progress.util.SmoothProgressAdapter;
 import com.intellij.openapi.util.Disposer;
@@ -95,13 +96,9 @@ public class ProgressManagerImpl extends CoreProgressManager implements Disposab
   @Override
   @NotNull
   public Future<?> runProcessWithProgressAsynchronously(@NotNull Task.Backgroundable task) {
-    final ProgressIndicator progressIndicator;
-    if (ApplicationManager.getApplication().isHeadlessEnvironment()) {
-      progressIndicator = new EmptyProgressIndicator();
-    }
-    else {
-      progressIndicator = new BackgroundableProcessIndicator(task);
-    }
+    ProgressIndicator progressIndicator = ApplicationManager.getApplication().isHeadlessEnvironment() ?
+                                          new EmptyProgressIndicator() :
+                                          new BackgroundableProcessIndicator(task);
     return runProcessWithProgressAsynchronously(task, progressIndicator, null);
   }
 
@@ -134,13 +131,13 @@ public class ProgressManagerImpl extends CoreProgressManager implements Disposab
           exception = e;
         }
         final long end = System.currentTimeMillis();
-        final long time = end - start;
 
         final boolean finalCanceled = processCanceled || progressIndicator.isCanceled();
         final Throwable finalException = exception;
 
         if (!finalCanceled) {
           final Task.NotificationInfo notificationInfo = task.notifyFinished();
+          final long time = end - start;
           if (notificationInfo != null && time > 5000) { // snow notification if process took more than 5 secs
             final Component window = KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow();
             if (window == null || notificationInfo.isShowWhenFocused()) {
@@ -154,5 +151,17 @@ public class ProgressManagerImpl extends CoreProgressManager implements Disposab
     };
 
     return ApplicationManager.getApplication().executeOnPooledThread(action);
+  }
+
+  @Override
+  public boolean runInReadActionWithWriteActionPriority(@NotNull Runnable action) {
+    if (ApplicationManager.getApplication().isReadAccessAllowed()) {
+      throw new AssertionError("runInReadActionWithWriteActionPriority shouldn't be invoked from read action");
+    }
+    boolean success = ProgressIndicatorUtils.runInReadActionWithWriteActionPriority(action);
+    if (!success) {
+      ProgressIndicatorUtils.yieldToPendingWriteActions();
+    }
+    return success;
   }
 }

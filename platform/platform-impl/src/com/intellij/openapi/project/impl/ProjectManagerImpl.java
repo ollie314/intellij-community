@@ -315,8 +315,8 @@ public class ProjectManagerImpl extends ProjectManagerEx implements Disposable {
     }
 
     for (Project p : myOpenProjects) {
-      if (ProjectUtil.isSameProject(project.getBasePath(), p)) {
-        ProjectUtil.focusProjectWindow(p, false);
+      if (ProjectUtil.isSameProject(project.getProjectFilePath(), p)) {
+        GuiUtils.invokeLaterIfNeeded(() -> ProjectUtil.focusProjectWindow(p, false), ModalityState.NON_MODAL);
         return false;
       }
     }
@@ -386,8 +386,7 @@ public class ProjectManagerImpl extends ProjectManagerEx implements Disposable {
   }
 
   private static boolean canCancelProjectLoading() {
-    ProgressIndicator indicator = ProgressIndicatorProvider.getGlobalProgressIndicator();
-    return !(indicator instanceof NonCancelableSection);
+    return !ProgressManager.getInstance().isInNonCancelableSection();
   }
 
   @Override

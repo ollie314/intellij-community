@@ -195,16 +195,28 @@ def max(*args, key=None, default=None):
     pass
 
 
-def map(function, sequence, *sequence_1):
-    """Return a list of the results of applying the function to the items of
-    the argument sequence(s).
+class map(object):
+    def __init__(self, function, sequence, *sequence_1):
+        """Return an iterable of the results of applying the function to the items of
+        the argument sequence(s).
 
-    :type function: ((T) -> V) | None
-    :type sequence: collections.Iterable[T]
-    :rtype: list[V] | bytes | str
-    """
-    pass
+        :type function: None | (T) -> V
+        :type sequence: collections.Iterable[T]
+        :rtype: map[T, V]
+        """
+        pass
 
+    def __iter__(self):
+        """
+        :rtype: collections.Iterator[V]
+        """
+        return self
+
+    def __next__(self):
+        """
+        :rtype: V
+        """
+        pass
 
 def min(*args, key=None, default=None):
     """Return the smallest item in an iterable or the smallest of two or more
@@ -791,6 +803,15 @@ class float(object):
         :rtype: float
         """
         return 0.0
+
+    @staticmethod
+    def fromhex(cls, string):
+        """Create a floating-point number from a hexadecimal string.
+
+        :type string: str
+        :rtype: float
+        """
+        pass
 
 
 class complex(object):
@@ -2452,12 +2473,6 @@ class __coroutine(object):
     def __await__(self):
         """
         :rtype: __generator[unknown, unknown, V]
-        """
-        return []
-
-    def __iter__(self):
-        """
-        :rtype: collections.Iterable[unknown]
         """
         return []
 

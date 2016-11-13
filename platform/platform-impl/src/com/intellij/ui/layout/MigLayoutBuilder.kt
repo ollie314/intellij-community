@@ -16,10 +16,12 @@
 package com.intellij.ui.layout
 
 import com.intellij.codeInspection.SmartHashMap
+import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionToolbar
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.ToggleAction
 import com.intellij.openapi.project.DumbAware
+import com.intellij.openapi.ui.ComponentWithBrowseButton
 import com.intellij.openapi.ui.OnePixelDivider
 import com.intellij.ui.SeparatorComponent
 import com.intellij.ui.components.Label
@@ -148,7 +150,8 @@ internal class MigLayoutBuilder : LayoutBuilderImpl {
                 cc.split()
               }
 
-              if (component !== lastComponent) {
+              // do not add gap if next component is gear action button
+              if (component !== lastComponent && !row.components.get(index + 1).let { it is JLabel && it.icon === AllIcons.General.Gear }) {
                 cc.horizontal.gapAfter = gapToBoundSize(HORIZONTAL_GAP * 2, true)
               }
             }
@@ -169,7 +172,7 @@ internal class MigLayoutBuilder : LayoutBuilderImpl {
 }
 
 private fun addGrowIfNeed(cc: CC, component: Component) {
-  if (component is JTextComponent || component is SeparatorComponent) {
+  if (component is JTextComponent || component is SeparatorComponent || component is ComponentWithBrowseButton<*>) {
     cc.growX()
   }
   else if (component is JPanel && component.componentCount == 1 &&
@@ -179,7 +182,7 @@ private fun addGrowIfNeed(cc: CC, component: Component) {
 }
 
 private class MigLayoutRow(private val componentConstraints: MutableMap<Component, CC>,
-                           private val builder: MigLayoutBuilder,
+                           override val builder: LayoutBuilderImpl,
                            val labeled: Boolean = false,
                            val noGrid: Boolean = false,
                            private val buttonGroup: ButtonGroup? = null,
@@ -187,6 +190,11 @@ private class MigLayoutRow(private val componentConstraints: MutableMap<Componen
                            val indented: Boolean = false) : Row() {
   val components = SmartList<Component>()
   var rightIndex = Int.MAX_VALUE
+
+  private var _subRows: MutableList<Row>? = null
+
+  override val subRows: List<Row>
+    get() = _subRows ?: emptyList()
 
   override var enabled: Boolean = true
     get() = field
@@ -199,6 +207,17 @@ private class MigLayoutRow(private val componentConstraints: MutableMap<Componen
       for (c in components) {
         c.isEnabled = value
       }
+    }
+
+  override var subRowsEnabled: Boolean = true
+    get() = field
+    set(value) {
+      if (field == value) {
+        return
+      }
+
+      field = value
+      _subRows?.forEach { it.enabled = value }
     }
 
   override operator fun JComponent.invoke(vararg constraints: CCFlags, gapLeft: Int, growPolicy: GrowPolicy?) {
@@ -223,9 +242,12 @@ private class MigLayoutRow(private val componentConstraints: MutableMap<Componen
     rightIndex = components.size
   }
 
-  override fun row(label: String, init: Row.() -> Unit): Row {
-    val row = builder.newRow(Label(label), indented = true)
-    row.init()
+  override fun createRow(label: String?): Row {
+    val row = builder.newRow(label?.let { Label(it) }, indented = true)
+    if (_subRows == null) {
+      _subRows = SmartList()
+    }
+    _subRows!!.add(row)
     return row
   }
 }

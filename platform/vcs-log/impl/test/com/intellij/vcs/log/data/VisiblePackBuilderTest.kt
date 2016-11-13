@@ -30,7 +30,7 @@ import com.intellij.vcs.log.graph.VisibleGraph
 import com.intellij.vcs.log.impl.*
 import com.intellij.vcs.log.impl.TestVcsLogProvider.BRANCH_TYPE
 import com.intellij.vcs.log.impl.TestVcsLogProvider.DEFAULT_USER
-import com.intellij.vcs.log.ui.filter.VcsLogUserFilterImpl
+import com.intellij.vcs.log.impl.VcsLogUserFilterImpl
 import org.junit.Test
 import java.util.*
 import kotlin.test.assertEquals
@@ -247,31 +247,5 @@ class VisiblePackBuilderTest {
     }
   }
 
-  class EmptyIndex : VcsLogIndex {
-    override fun isIndexed(root: VirtualFile): Boolean {
-      return false
-    }
-
-    override fun isIndexed(commit: Int): Boolean {
-      return false
-    }
-
-    override fun canFilter(filters: MutableList<VcsLogDetailsFilter>): Boolean {
-      return false
-    }
-
-    override fun scheduleIndex(full: Boolean) {
-    }
-
-    override fun markForIndexing(index: Int, root: VirtualFile) {
-    }
-
-    override fun filter(detailsFilters: MutableList<VcsLogDetailsFilter>): MutableSet<Int> {
-      throw UnsupportedOperationException()
-    }
-
-    override fun markCorrupted() {
-    }
-  }
 }
 

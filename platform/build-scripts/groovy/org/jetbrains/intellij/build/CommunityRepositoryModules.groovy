@@ -242,6 +242,7 @@ class CommunityRepositoryModules {
     plugin("terminal") {
       withResource("resources/.zshrc", "")
       withResource("resources/jediterm-bash.in", "")
+      withResource("resources/fish/config.fish", "fish")
     }
   ]
 
@@ -282,6 +283,7 @@ class CommunityRepositoryModules {
       withProjectLibrary("jgraphx-3.4.0.1") //todo[nik] move to module libraries
       withProjectLibrary("kxml2") //todo[nik] move to module libraries
       withProjectLibrary("lombok-ast") //todo[nik] move to module libraries
+      withProjectLibrary("layoutlib") //todo[nik] move to module libraries
       withResource("device-art-resources", "lib/device-art-resources")
       withResourceFromModule("layoutlib-resources", ".", "lib/layoutlib")
       withResourceFromModule("sdklib", "../templates", "lib/templates")

@@ -15,6 +15,7 @@
  */
 package org.jetbrains.jps.backwardRefs;
 
+import com.intellij.openapi.util.LowMemoryWatcher;
 import com.intellij.util.Function;
 import com.intellij.util.SystemProperties;
 import com.intellij.util.containers.ContainerUtil;
@@ -34,7 +35,8 @@ import org.jetbrains.jps.model.java.compiler.JavaCompilers;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.*;
+import java.util.Collection;
+import java.util.Set;
 
 import static com.sun.tools.javac.code.Flags.PRIVATE;
 
@@ -45,10 +47,23 @@ public class BackwardReferenceIndexWriter {
 
   private final CompilerBackwardReferenceIndex myIndex;
   private final boolean myRebuild;
+  private final LowMemoryWatcher myMemWatcher;
+  private final Object myCloseLock = new Object();
+  private boolean myClosed;
 
   private BackwardReferenceIndexWriter(CompilerBackwardReferenceIndex index, boolean rebuild) {
     myIndex = index;
     myRebuild = rebuild;
+    myMemWatcher = LowMemoryWatcher.register(new Runnable() {
+      @Override
+      public void run() {
+        synchronized (myCloseLock) {
+          if (!myClosed) {
+            myIndex.flush();
+          }
+        }
+      }
+    });
   }
 
   public static void closeIfNeed() {
@@ -66,9 +81,9 @@ public class BackwardReferenceIndexWriter {
   }
 
   static void initialize(@NotNull final CompileContext context) {
+    final BuildDataManager dataManager = context.getProjectDescriptor().dataManager;
+    final File buildDir = dataManager.getDataPaths().getDataStorageRoot();
     if (isEnabled()) {
-      final BuildDataManager dataManager = context.getProjectDescriptor().dataManager;
-      final File buildDir = dataManager.getDataPaths().getDataStorageRoot();
       boolean isRebuild = JavaBuilderUtil.isForcedRecompilationAllJavaModules(context);
 
       if (!JavaCompilers.JAVAC_ID.equals(JavaBuilder.getUsedCompilerId(context))) {
@@ -79,21 +94,19 @@ public class BackwardReferenceIndexWriter {
         CompilerBackwardReferenceIndex.removeIndexFiles(buildDir);
       }
       else if (CompilerBackwardReferenceIndex.versionDiffers(buildDir)) {
-        throw new BuildDataCorruptedException(new IOException("backward reference index should be updated to actual version"));
+        throw new BuildDataCorruptedException("backward reference index should be updated to actual version");
       }
 
       if (CompilerBackwardReferenceIndex.exist(buildDir) || isRebuild) {
         ourInstance = new BackwardReferenceIndexWriter(new CompilerBackwardReferenceIndex(buildDir), isRebuild);
       }
+    } else {
+      CompilerBackwardReferenceIndex.removeIndexFiles(buildDir);
     }
   }
 
   public static boolean isEnabled() {
     return SystemProperties.getBooleanProperty(PROP_KEY, false);
-  }
-
-  void close() {
-    myIndex.close();
   }
 
   synchronized LightRef.JavaLightClassRef asClassUsage(Symbol name) {
@@ -151,7 +164,7 @@ public class BackwardReferenceIndexWriter {
 
   synchronized void writeReferences(int fileId, Collection<JavacRefSymbol> refs) {
     final ByteArrayEnumerator byteSeqEum = myIndex.getByteSeqEum();
-    final List<LightRef> usages = ContainerUtil.mapNotNull(refs, new Function<JavacRefSymbol, LightRef>() {
+    final Set<LightRef> usages = ContainerUtil.map2SetNotNull(refs, new Function<JavacRefSymbol, LightRef>() {
       @Override
       public LightRef fun(JavacRefSymbol symbol) {
         return fromSymbol(symbol, byteSeqEum);
@@ -171,7 +184,7 @@ public class BackwardReferenceIndexWriter {
 
   private void updateReferenceIndicesIncrementally(int fileId, Collection<LightRef> usages) {
     final Collection<LightRef> rawOldUsages = myIndex.getReferenceMap().get(fileId);
-    Collection<LightRef> oldUsages = rawOldUsages == null ? null : new ArrayList<LightRef>(rawOldUsages);
+    Collection<LightRef> oldUsages = rawOldUsages == null ? null : new THashSet<LightRef>(rawOldUsages);
     for (LightRef usage : usages) {
       if (oldUsages == null || !oldUsages.remove(usage)) {
         myIndex.getBackwardReferenceMap().put(usage, fileId);
@@ -202,6 +215,14 @@ public class BackwardReferenceIndexWriter {
     }
     catch (IOException e) {
       throw new BuildDataCorruptedException(e);
+    }
+  }
+
+  private void close() {
+    synchronized (myCloseLock) {
+      myClosed = true;
+      myMemWatcher.stop();
+      myIndex.close();
     }
   }
 
@@ -240,7 +261,7 @@ public class BackwardReferenceIndexWriter {
     if (oldSuperClasses != null && !oldSuperClasses.isEmpty()) {
       myIndex.getHierarchyMap().removeAll(classId, oldSuperClasses);
       for (LightRef anOldClass : oldSuperClasses) {
-        myIndex.getBackwardHierarchyMap().put(anOldClass, classId);
+        myIndex.getBackwardHierarchyMap().removeFrom(anOldClass, classId);
       }
     }
   }

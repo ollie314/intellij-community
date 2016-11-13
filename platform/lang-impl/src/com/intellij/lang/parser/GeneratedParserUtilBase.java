@@ -555,6 +555,7 @@ public class GeneratedParserUtilBase {
     state.hooks = Hooks.concat(hook, param, state.level, state.hooks);
   }
 
+  @SafeVarargs
   public static <T> void register_hook_(PsiBuilder builder, Hook<T[]> hook, T... param) {
     ErrorState state = ErrorState.get(builder);
     state.hooks = Hooks.concat(hook, param, state.level, state.hooks);
@@ -839,7 +840,7 @@ public class GeneratedParserUtilBase {
 
     @Override
     public String fun(Object o) {
-      return o.toString();
+      return convertItem(o);
     }
 
     public void addItem(@NotNull PsiBuilder builder, @NotNull String text) {
