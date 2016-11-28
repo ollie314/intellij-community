@@ -32,6 +32,7 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager;
 import com.intellij.profile.codeInspection.ProjectInspectionProfileManager;
 import com.intellij.psi.*;
+import com.jetbrains.python.PyBundle;
 import com.jetbrains.python.codeInsight.imports.AddImportHelper;
 import com.jetbrains.python.codeInsight.stdlib.PyStdlibUtil;
 import com.jetbrains.python.packaging.*;
@@ -39,6 +40,7 @@ import com.jetbrains.python.packaging.ui.PyChooseRequirementsDialog;
 import com.jetbrains.python.psi.*;
 import com.jetbrains.python.psi.impl.PyPsiUtils;
 import com.jetbrains.python.sdk.PythonSdkType;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -88,11 +90,19 @@ public class PyPackageRequirementsInspection extends PyInspection {
 
     @Override
     public void visitPyFile(PyFile node) {
-      final Module module = ModuleUtilCore.findModuleForPsiElement(node);
-      if (module != null) {
-        if (isRunningPackagingTasks(module)) {
-          return;
-        }
+      checkPackagesHaveBeenInstalled(node, ModuleUtilCore.findModuleForPsiElement(node));
+    }
+
+    @Override
+    public void visitPlainTextFile(PsiPlainTextFile file) {
+      final Module module = ModuleUtilCore.findModuleForPsiElement(file);
+      if (module != null && file.getVirtualFile().equals(PyPackageUtil.findRequirementsTxt(module))) {
+        checkPackagesHaveBeenInstalled(file, module);
+      }
+    }
+
+    private void checkPackagesHaveBeenInstalled(@NotNull PsiElement file, @Nullable Module module) {
+      if (module != null && !isRunningPackagingTasks(module)) {
         final Sdk sdk = PythonSdkType.findPythonSdk(module);
         if (sdk != null) {
           final List<PyRequirement> unsatisfied = findUnsatisfiedRequirements(module, sdk, myIgnoredPackages);
@@ -109,7 +119,7 @@ public class PyPackageRequirementsInspection extends PyInspection {
             final List<LocalQuickFix> quickFixes = new ArrayList<>();
             quickFixes.add(new PyInstallRequirementsFix(null, module, sdk, unsatisfied));
             quickFixes.add(new IgnoreRequirementFix(unsatisfiedNames));
-            registerProblem(node, msg,
+            registerProblem(file, msg,
                             ProblemHighlightType.GENERIC_ERROR_OR_WARNING, null,
                             quickFixes.toArray(new LocalQuickFix[quickFixes.size()]));
           }
@@ -273,6 +283,11 @@ public class PyPackageRequirementsInspection extends PyInspection {
     }
 
     @Override
+    public boolean startInWriteAction() {
+      return false;
+    }
+
+    @Override
     public void applyFix(@NotNull final Project project, @NotNull ProblemDescriptor descriptor) {
       boolean installManagement = false;
       final PyPackageManager manager = PyPackageManager.getInstance(mySdk);
@@ -350,10 +365,22 @@ public class PyPackageRequirementsInspection extends PyInspection {
       mySdk = PythonSdkType.findPythonSdk(myModule);
     }
 
+    @Nls
+    @NotNull
+    @Override
+    public String getName() {
+      return PyBundle.message("QFIX.NAME.install.and.import.package", myPackageName);
+    }
+    
     @Override
     @NotNull
     public String getFamilyName() {
-      return "Install and import package " + myPackageName;
+      return PyBundle.message("QFIX.install.and.import.package");
+    }
+
+    @Override
+    public boolean startInWriteAction() {
+      return false;
     }
 
     @Override
@@ -412,6 +439,11 @@ public class PyPackageRequirementsInspection extends PyInspection {
     }
 
     @Override
+    public boolean startInWriteAction() {
+      return false;
+    }
+
+    @Override
     public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
       final PsiElement element = descriptor.getPsiElement();
       if (element != null) {
@@ -442,6 +474,11 @@ public class PyPackageRequirementsInspection extends PyInspection {
       myModule = module;
       myPackageName = packageName;
       myLanguageLevel = languageLevel;
+    }
+
+    @Override
+    public boolean startInWriteAction() {
+      return false;
     }
 
     @NotNull

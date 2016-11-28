@@ -39,7 +39,6 @@ import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.impl.BackgroundableProcessIndicator;
-import com.intellij.openapi.progress.util.ProgressIndicatorUtils;
 import com.intellij.openapi.project.*;
 import com.intellij.openapi.roots.*;
 import com.intellij.openapi.roots.impl.PushedFilePropertiesUpdaterImpl;
@@ -668,6 +667,8 @@ public class FileBasedIndexImpl extends FileBasedIndex {
       handleDumbMode(project);
     }
 
+    NoAccessDuringPsiEvents.checkCallContext();
+
     if (myReentrancyGuard.get().booleanValue()) {
       //assert false : "ensureUpToDate() is not reentrant!";
       return;
@@ -913,9 +914,9 @@ public class FileBasedIndexImpl extends FileBasedIndex {
                                               @NotNull K dataKey,
                                               @Nullable VirtualFile restrictToFile,
                                               @NotNull GlobalSearchScope scope,
-                                              @NotNull Processor<ValueContainer.ValueIterator<V>> valueProcessor) {
+                                              @NotNull Processor<InvertedIndexValueIterator<V>> valueProcessor) {
     final Boolean result = processExceptions(indexId, restrictToFile, scope,
-                                             index -> valueProcessor.process(index.getData(dataKey).getValueIterator()));
+                                             index -> valueProcessor.process((InvertedIndexValueIterator<V>)index.getData(dataKey).getValueIterator()));
     return result == null || result.booleanValue();
   }
 
@@ -1052,10 +1053,10 @@ public class FileBasedIndexImpl extends FileBasedIndex {
   }
 
   @Nullable
-  private static <K, V, I> TIntHashSet collectInputIdsContainingAllKeys(@NotNull UpdatableIndex<K, V, I> index,
+  private static <K, V, I> TIntHashSet collectInputIdsContainingAllKeys(@NotNull InvertedIndex<K, V, I> index,
                                                                         @NotNull Collection<K> dataKeys,
                                                                         @Nullable Condition<V> valueChecker,
-                                                                        @Nullable ValueContainer.IntPredicate idChecker)
+                                                                        @Nullable IntPredicate idChecker)
     throws StorageException {
     TIntHashSet mainIntersection = null;
 
@@ -1064,7 +1065,7 @@ public class FileBasedIndexImpl extends FileBasedIndex {
       final TIntHashSet copy = new TIntHashSet();
       final ValueContainer<V> container = index.getData(dataKey);
 
-      for (final ValueContainer.ValueIterator<V> valueIt = container.getValueIterator(); valueIt.hasNext(); ) {
+      for (InvertedIndexValueIterator<V> valueIt = (InvertedIndexValueIterator<V>)container.getValueIterator(); valueIt.hasNext(); ) {
         final V value = valueIt.next();
         if (valueChecker != null && !valueChecker.value(value)) {
           continue;
@@ -1084,7 +1085,7 @@ public class FileBasedIndexImpl extends FileBasedIndex {
         }
         else {
           mainIntersection.forEach(new TIntProcedure() {
-            final ValueContainer.IntPredicate predicate = valueIt.getValueAssociationPredicate();
+            final IntPredicate predicate = valueIt.getValueAssociationPredicate();
 
             @Override
             public boolean execute(int id) {
@@ -1106,7 +1107,7 @@ public class FileBasedIndexImpl extends FileBasedIndex {
 
 
   @NotNull
-  public static <K, V, I> ValueContainer.IntIterator collectInputIdsContainingAllKeys(@NotNull UpdatableIndex<K, V, I> index,
+  public static <K, V, I> ValueContainer.IntIterator collectInputIdsContainingAllKeys(@NotNull InvertedIndex<K, V, I> index,
                                                                                       @NotNull Collection<K> dataKeys)
     throws StorageException {
     TIntHashSet result = collectInputIdsContainingAllKeys(index, dataKeys, null, null);
@@ -1756,7 +1757,7 @@ public class FileBasedIndexImpl extends FileBasedIndex {
         clearUpToDateStateForPsiIndicesOfUnsavedDocuments(file);
 
         // the file is for sure not a dir and it was previously indexed by at least one index
-        if (!isTooLarge(file)) myChangedFilesCollector.scheduleForUpdate(file);
+        if (file.isValid() && !isTooLarge(file)) myChangedFilesCollector.scheduleForUpdate(file);
       }
     }
     else if (!fileIndexedStatesToUpdate.isEmpty()) { // file was removed, its data should be (lazily) wiped for every index
@@ -2003,11 +2004,7 @@ public class FileBasedIndexImpl extends FileBasedIndex {
     private void processFilesInReadActionWithYieldingToWriteAction() {
       try {
         while (myVfsEventsMerger.hasChanges()) {
-          boolean result = ProgressIndicatorUtils
-            .runInReadActionWithWriteActionPriority(this::processFilesInReadAction, null);
-          if (!result) {
-            ProgressIndicatorUtils.yieldToPendingWriteActions();
-          }
+          ProgressManager.getInstance().runInReadActionWithWriteActionPriority(this::processFilesInReadAction);
         }
       }
       finally {

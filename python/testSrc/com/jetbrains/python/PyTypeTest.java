@@ -1398,6 +1398,122 @@ public class PyTypeTest extends PyTestCase {
            "expr = float.fromhex(\"0.5\")");
   }
 
+  // PY-20409
+  public void testGetFromDictWithDefaultNoneValue() {
+    doTest("Any",
+           "d = {}\n" +
+           "expr = d.get(\"abc\", None)");
+  }
+
+  // PY-20757
+  public void testMinOrNone() {
+    doTest("Union[None, Any]",
+           "def get_value(v):\n" +
+           "    if v:\n" +
+           "        return min(v)\n" +
+           "    else:\n" +
+           "        return None\n" +
+           "expr = get_value([])");
+  }
+
+  // PY-21350
+  public void testBuiltinInput() {
+    doTest("Any",
+           "expr = input()");
+  }
+
+  // PY-21350
+  public void testBuiltinRawInput() {
+    doTest("str",
+           "expr = raw_input()");
+  }
+
+  // PY-19723
+  public void testPositionalArgs() {
+    doTest("Tuple[int, ...]",
+           "def foo(*args):\n" +
+           "    \"\"\"\n" +
+           "    :type args: int\n" +
+           "    \"\"\"\n" +
+           "    expr = args");
+  }
+
+  // PY-19723
+  public void testKeywordArgs() {
+    doTest("Dict[str, int]",
+           "def foo(**kwargs):\n" +
+           "    \"\"\"\n" +
+           "    :type kwargs: int\n" +
+           "    \"\"\"\n" +
+           "    expr = kwargs");
+  }
+
+  // PY-19723
+  public void testIterateOverKeywordArgs() {
+    doTest("str",
+           "def foo(**kwargs):\n" +
+           "    for expr in kwargs:\n" +
+           "        pass");
+  }
+
+  // PY-19723
+  public void testTypeVarSubstitutionInPositionalArgs() {
+    doTest("int",
+           "def foo(*args):" +
+           "  \"\"\"\n" +
+           "  :type args: T\n" +
+           "  :rtype: T\n" +
+           "  \"\"\"\n" +
+           "  pass\n" +
+           "expr = foo(1)");
+  }
+
+  // PY-19723
+  public void testTypeVarSubstitutionInHeterogeneousPositionalArgs() {
+    doTest("Union[int, str]",
+           "def foo(*args):" +
+           "  \"\"\"\n" +
+           "  :type args: T\n" +
+           "  :rtype: T\n" +
+           "  \"\"\"\n" +
+           "  pass\n" +
+           "expr = foo(1, \"2\")");
+  }
+
+  // PY-19723
+  public void testTypeVarSubstitutionInKeywordArgs() {
+    doTest("int",
+           "def foo(**kwargs):" +
+           "  \"\"\"\n" +
+           "  :type kwargs: T\n" +
+           "  :rtype: T\n" +
+           "  \"\"\"\n" +
+           "  pass\n" +
+           "expr = foo(a=1)");
+  }
+
+  // PY-19723
+  public void testTypeVarSubstitutionInHeterogeneousKeywordArgs() {
+    doTest("Union[int, str]",
+           "def foo(**kwargs):" +
+           "  \"\"\"\n" +
+           "  :type kwargs: T\n" +
+           "  :rtype: T\n" +
+           "  \"\"\"\n" +
+           "  pass\n" +
+           "expr = foo(a=1, b=\"2\")");
+  }
+
+  // PY-21474
+  public void testReassigningOptionalListWithDefaultValue() {
+    doTest("Union[List[str], list]",
+           "def x(things):\n" +
+           "    \"\"\"\n" +
+           "    :type things: None | list[str]\n" +
+           "    \"\"\"\n" +
+           "    expr = things if things else []");
+  }
+
   private static List<TypeEvalContext> getTypeEvalContexts(@NotNull PyExpression element) {
     return ImmutableList.of(TypeEvalContext.codeAnalysis(element.getProject(), element.getContainingFile()).withTracing(),
                             TypeEvalContext.userInitiated(element.getProject(), element.getContainingFile()).withTracing());

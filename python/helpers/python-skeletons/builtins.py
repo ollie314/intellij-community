@@ -1,6 +1,9 @@
 """Skeletons for Python 3 built-in symbols."""
 
 
+import os
+
+
 def abs(number):
     """Return the absolute value of the argument.
 
@@ -222,7 +225,8 @@ def min(*args, key=None, default=None):
     """Return the smallest item in an iterable or the smallest of two or more
     arguments.
 
-    :rtype: object | unknown
+    :type args: tuple[T]
+    :rtype: T
     """
     pass
 
@@ -249,7 +253,7 @@ def open(name, mode='r', buffering=-1, encoding=None, errors=None, newline=None,
          closefd=None, opener=None):
     """Open a file, returns a file object.
 
-    :type name: str
+    :type name: str | os.PathLike
     :type mode: str
     :type buffering: numbers.Integral
     :type encoding: str | None
@@ -805,7 +809,7 @@ class float(object):
         return 0.0
 
     @staticmethod
-    def fromhex(cls, string):
+    def fromhex(string):
         """Create a floating-point number from a hexadecimal string.
 
         :type string: str
@@ -2573,3 +2577,11 @@ class __method(object):
     def __init__(self):
         self.__func__ = None
         self.__self__ = None
+
+
+def input(prompt=None):
+    """
+    :type prompt: Any
+    :rtype: str
+    """
+    pass

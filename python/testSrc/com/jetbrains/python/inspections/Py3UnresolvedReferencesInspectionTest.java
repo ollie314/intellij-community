@@ -95,6 +95,16 @@ public class Py3UnresolvedReferencesInspectionTest extends PyTestCase {
     doTest();
   }
 
+  // PY-19702
+  public void testMetaclassAttribute() {
+    doTest();
+  }
+
+  // PY-19702
+  public void testNonexistentMetaclassAttribute() {
+    doTest();
+  }
+
   public void testMetaclassStub() {
     doMultiFileTest("a.py");
     final Project project = myFixture.getProject();

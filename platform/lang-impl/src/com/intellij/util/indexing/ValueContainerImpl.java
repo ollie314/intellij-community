@@ -21,6 +21,7 @@ import com.intellij.util.SmartList;
 import com.intellij.util.containers.EmptyIterator;
 import com.intellij.util.indexing.containers.ChangeBufferingList;
 import com.intellij.util.indexing.containers.IdSet;
+import com.intellij.util.indexing.containers.IntIdsIterator;
 import com.intellij.util.io.DataExternalizer;
 import com.intellij.util.io.DataInputOutputUtil;
 import gnu.trove.THashMap;
@@ -31,8 +32,6 @@ import org.jetbrains.annotations.Nullable;
 import java.io.DataInputStream;
 import java.io.DataOutput;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 
@@ -86,7 +85,7 @@ class ValueContainerImpl<Value> extends UpdatableValueContainer<Value> implement
     if (myInputIdMapping == null) return;
     List<Object> fileSetObjects = null;
     List<Value> valueObjects = null;
-    for (final ValueIterator<Value> valueIterator = getValueIterator(); valueIterator.hasNext();) {
+    for (final InvertedIndexValueIterator<Value> valueIterator = getValueIterator(); valueIterator.hasNext();) {
       final Value value = valueIterator.next();
 
       if (valueIterator.getValueAssociationPredicate().contains(inputId)) {
@@ -144,10 +143,10 @@ class ValueContainerImpl<Value> extends UpdatableValueContainer<Value> implement
 
   @NotNull
   @Override
-  public ValueIterator<Value> getValueIterator() {
+  public InvertedIndexValueIterator<Value> getValueIterator() {
     if (myInputIdMapping != null) {
       if (!(myInputIdMapping instanceof THashMap)) {
-        return new ValueIterator<Value>() {
+        return new InvertedIndexValueIterator<Value>() {
           private Value value = (Value)myInputIdMapping;
 
           @NotNull
@@ -186,7 +185,7 @@ class ValueContainerImpl<Value> extends UpdatableValueContainer<Value> implement
           }
         };
       } else {
-        return new ValueIterator<Value>() {
+        return new InvertedIndexValueIterator<Value>() {
           private Value current;
           private Object currentValue;
           private final THashMap<Value, Object> myMapping = ((THashMap<Value, Object>)myInputIdMapping);
@@ -235,7 +234,7 @@ class ValueContainerImpl<Value> extends UpdatableValueContainer<Value> implement
     }
   }
 
-  static class EmptyValueIterator<Value> extends EmptyIterator<Value> implements ValueIterator<Value> {
+  static class EmptyValueIterator<Value> extends EmptyIterator<Value> implements InvertedIndexValueIterator<Value> {
 
     @NotNull
     @Override
@@ -257,24 +256,6 @@ class ValueContainerImpl<Value> extends UpdatableValueContainer<Value> implement
 
   private static final EmptyValueIterator emptyIterator = new EmptyValueIterator();
 
-  @NotNull
-  @Override
-  public List<Value> toValueList() {
-    if (myInputIdMapping == null) {
-      return Collections.emptyList();
-    } else if (myInputIdMapping instanceof THashMap) {
-      return new ArrayList<>(((THashMap<Value, Object>)myInputIdMapping).keySet());
-    } else {
-      return new SmartList<>((Value)myInputIdMapping);
-    }
-  }
-
-  @NotNull
-  @Override
-  public IntPredicate getValueAssociationPredicate(Value value) {
-    return getPredicateOutOfFileSetObject(getFileSetObject(value));
-  }
-
   private static @NotNull IntPredicate getPredicateOutOfFileSetObject(@Nullable Object input) {
     if (input == null) return EMPTY_PREDICATE;
 
@@ -289,12 +270,6 @@ class ValueContainerImpl<Value> extends UpdatableValueContainer<Value> implement
       };
     }
     return ((ChangeBufferingList)input).intPredicate();
-  }
-
-  @NotNull
-  @Override
-  public IntIterator getInputIdsIterator(Value value) {
-    return getIntIteratorOutOfFileSetObject(getFileSetObject(value));
   }
 
   private static @NotNull IntIterator getIntIteratorOutOfFileSetObject(@Nullable Object input) {
@@ -337,7 +312,7 @@ class ValueContainerImpl<Value> extends UpdatableValueContainer<Value> implement
     }
   }
 
-  private static final IntIterator EMPTY_ITERATOR = new IntIterator() {
+  private static final IntIterator EMPTY_ITERATOR = new IntIdsIterator() {
     @Override
     public boolean hasNext() {
       return false;
@@ -359,7 +334,7 @@ class ValueContainerImpl<Value> extends UpdatableValueContainer<Value> implement
     }
 
     @Override
-    public IntIterator createCopyInInitialState() {
+    public IntIdsIterator createCopyInInitialState() {
       return this;
     }
   };
@@ -436,7 +411,7 @@ class ValueContainerImpl<Value> extends UpdatableValueContainer<Value> implement
   public void saveTo(DataOutput out, DataExternalizer<Value> externalizer) throws IOException {
     DataInputOutputUtil.writeINT(out, size());
 
-    for (final ValueIterator<Value> valueIterator = getValueIterator(); valueIterator.hasNext();) {
+    for (final InvertedIndexValueIterator<Value> valueIterator = getValueIterator(); valueIterator.hasNext();) {
       final Value value = valueIterator.next();
       externalizer.save(out, value);
       Object fileSetObject = valueIterator.getFileSetObject();
@@ -446,7 +421,7 @@ class ValueContainerImpl<Value> extends UpdatableValueContainer<Value> implement
       } else {
         // serialize positive file ids with delta encoding
         ChangeBufferingList originalInput = (ChangeBufferingList)fileSetObject;
-        IntIterator intIterator = originalInput.sortedIntIterator();
+        IntIdsIterator intIterator = originalInput.sortedIntIterator();
         if (DebugAssertions.DEBUG) DebugAssertions.assertTrue(intIterator.hasAscendingOrder());
 
         if (intIterator.size() == 1) {
@@ -524,7 +499,7 @@ class ValueContainerImpl<Value> extends UpdatableValueContainer<Value> implement
     }
   }
 
-  private static class SingleValueIterator implements IntIterator {
+  private static class SingleValueIterator implements IntIdsIterator {
     private final int myValue;
     private boolean myValueRead = false;
 
@@ -555,7 +530,7 @@ class ValueContainerImpl<Value> extends UpdatableValueContainer<Value> implement
     }
 
     @Override
-    public IntIterator createCopyInInitialState() {
+    public IntIdsIterator createCopyInInitialState() {
       return new SingleValueIterator(myValue);
     }
   }

@@ -22,7 +22,6 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.EmptyRunnable;
 import com.intellij.openapi.wm.IdeFocusManager;
@@ -120,6 +119,10 @@ public class ProgressWindow extends ProgressIndicatorBase implements BlockingPro
       }
     });
     ApplicationManager.getApplication().getMessageBus().syncPublisher(TOPIC).progressWindowCreated(this);
+
+    if (myProject != null) {
+      Disposer.register(myProject, this);
+    }
   }
 
   @Override
@@ -389,6 +392,9 @@ public class ProgressWindow extends ProgressIndicatorBase implements BlockingPro
   @Override
   public void dispose() {
     stopSystemActivity();
+    if (isRunning()) {
+      cancel();
+    }
   }
 
   @Override

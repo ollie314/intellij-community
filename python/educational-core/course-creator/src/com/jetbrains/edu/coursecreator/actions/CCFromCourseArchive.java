@@ -130,7 +130,7 @@ public class CCFromCourseArchive extends DumbAwareAction {
                                       @NotNull final Map.Entry<String, TaskFile> taskFileEntry) {
     final String name = taskFileEntry.getKey();
     final TaskFile taskFile = taskFileEntry.getValue();
-    VirtualFile file = userFileDir.findChild(name);
+    VirtualFile file = userFileDir.findFileByRelativePath(name);
     assert file != null;
     final Document originDocument = FileDocumentManager.getInstance().getDocument(file);
     if (originDocument == null) {
@@ -143,7 +143,7 @@ public class CCFromCourseArchive extends DumbAwareAction {
     EduDocumentListener listener = new EduDocumentListener(taskFile, false);
     document.addDocumentListener(listener);
     taskFile.sortAnswerPlaceholders();
-    for (int i = taskFile.getAnswerPlaceholders().size() - 1; i >= 0; i--) {
+    for (int i = taskFile.getActivePlaceholders().size() - 1; i >= 0; i--) {
       final AnswerPlaceholder answerPlaceholder = taskFile.getAnswerPlaceholders().get(i);
       replaceAnswerPlaceholder(project, document, answerPlaceholder);
     }

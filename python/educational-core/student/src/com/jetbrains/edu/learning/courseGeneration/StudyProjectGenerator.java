@@ -179,12 +179,12 @@ public class StudyProjectGenerator {
     final Map<String, TaskFile> taskFiles = firstTask.getTaskFiles();
     VirtualFile activeVirtualFile = null;
     for (Map.Entry<String, TaskFile> entry : taskFiles.entrySet()) {
-      final String name = entry.getKey();
+      final String relativePath = entry.getKey();
       final TaskFile taskFile = entry.getValue();
-      final VirtualFile virtualFile = ((VirtualDirectoryImpl)taskDir).refreshAndFindChild(name);
+      taskDir.refresh(false, true);
+      final VirtualFile virtualFile = taskDir.findFileByRelativePath(relativePath);
       if (virtualFile != null) {
-        FileEditorManager.getInstance(project).openFile(virtualFile, true);
-        if (!taskFile.getAnswerPlaceholders().isEmpty()) {
+        if (!taskFile.getActivePlaceholders().isEmpty()) {
           activeVirtualFile = virtualFile;
         }
       }
@@ -194,7 +194,7 @@ public class StudyProjectGenerator {
       StartupManager.getInstance(project).registerPostStartupActivity(() -> {
         final PsiFile file = PsiManager.getInstance(project).findFile(finalActiveVirtualFile);
         ProjectView.getInstance(project).select(file, finalActiveVirtualFile, false);
-        final FileEditor[] editors = FileEditorManager.getInstance(project).getEditors(finalActiveVirtualFile);
+        final FileEditor[] editors = FileEditorManager.getInstance(project).openFile(finalActiveVirtualFile, true);
         if (editors.length == 0) {
           return;
         }
@@ -270,7 +270,7 @@ public class StudyProjectGenerator {
   public static void flushTask(@NotNull final Task task, @NotNull final File taskDirectory) {
     FileUtil.createDirectory(taskDirectory);
     for (Map.Entry<String, TaskFile> taskFileEntry : task.taskFiles.entrySet()) {
-      final String name = taskFileEntry.getKey();
+      final String name = FileUtil.toSystemDependentName(taskFileEntry.getKey());
       final TaskFile taskFile = taskFileEntry.getValue();
       final File file = new File(taskDirectory, name);
       FileUtil.createIfDoesntExist(file);
@@ -401,11 +401,11 @@ public class StudyProjectGenerator {
 
   // Supposed to be called under progress
   public List<CourseInfo> getCourses(boolean force) {
-    if (OUR_COURSES_DIR.exists()) {
+    if (OUR_COURSES_DIR.exists() && !force) {
       myCourses = getCoursesFromCache();
     }
     if (force || myCourses.isEmpty()) {
-      myCourses = execCancelable(EduStepicConnector::getCourses);
+      myCourses = execCancelable(() -> EduStepicConnector.getCourses(myUser));
       flushCache(myCourses);
     }
     if (myCourses.isEmpty()) {

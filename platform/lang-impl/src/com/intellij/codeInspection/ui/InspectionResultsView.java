@@ -80,6 +80,7 @@ import javax.swing.*;
 import javax.swing.event.TreeSelectionEvent;
 import javax.swing.event.TreeSelectionListener;
 import javax.swing.tree.DefaultMutableTreeNode;
+import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 import java.awt.*;
@@ -211,7 +212,7 @@ public class InspectionResultsView extends JPanel implements Disposable, Occuren
           myTree.repaint();
         }
         else {
-          InspectionViewPsiTreeChangeAdapter.resetTree(InspectionResultsView.this);
+          resetTree();
         }
         syncRightPanel();
       }
@@ -967,14 +968,11 @@ public class InspectionResultsView extends JPanel implements Disposable, Occuren
           if (elementFromDescriptor == null) {
             final InspectionTreeNode node = (InspectionTreeNode)refElementNode.getChildAt(0);
             if (node.isValid()) {
-              return null;
+              return InspectionResultsViewUtil.getNavigatableForInvalidNode((ProblemDescriptionNode)node);
             }
           } else {
             psiElement = elementFromDescriptor;
           }
-        }
-        else {
-          return null;
         }
       }
 
@@ -991,6 +989,19 @@ public class InspectionResultsView extends JPanel implements Disposable, Occuren
     }
 
     return null;
+  }
+
+  public void resetTree() {
+    try {
+      myTree.setQueueUpdate(true);
+      final TreePath[] selectionPath = myTree.getSelectionPaths();
+      final List<TreePath> expandedPaths = TreeUtil.collectExpandedPaths(myTree);
+      ((DefaultTreeModel)myTree.getModel()).reload();
+      TreeUtil.restoreExpandedPaths(myTree, expandedPaths);
+      myTree.setSelectionPaths(selectionPath);
+    } finally {
+      myTree.setQueueUpdate(false);
+    }
   }
 
   @Nullable

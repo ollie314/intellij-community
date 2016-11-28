@@ -272,7 +272,7 @@ public class CopyClassesHandler extends CopyHandlerDelegateBase {
       if (targetDirectory instanceof PsiDirectory) {
         target = (PsiDirectory)targetDirectory;
       } else {
-        target = WriteAction.compute(() -> (MoveDestination)targetDirectory).getTargetDirectory(defaultTargetDirectory);
+        target = WriteAction.compute(() -> ((MoveDestination)targetDirectory).getTargetDirectory(defaultTargetDirectory));
       }
       try {
         Collection<PsiFile> files = doCopyClasses(classes, map, copyClassName, target, project);
@@ -365,7 +365,7 @@ public class CopyClassesHandler extends CopyHandlerDelegateBase {
         if (relativePath != null && !relativePath.isEmpty()) {
           finalTarget = WriteAction.compute(() -> buildRelativeDir(targetDirectory, relativePath).findOrCreateTargetDirectory());
         }
-        final PsiFile fileCopy = CopyFilesOrDirectoriesHandler.copyToDirectory(file, getNewFileName(file, copyClassName), finalTarget, choice);
+        final PsiFile fileCopy = CopyFilesOrDirectoriesHandler.copyToDirectory(file, getNewFileName(file, copyClassName), finalTarget, choice, null);
         if (fileCopy != null) {
           createdFiles.add(fileCopy);
         }

@@ -73,6 +73,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
+import javax.swing.event.HyperlinkEvent;
 import javax.swing.event.HyperlinkListener;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -506,8 +507,8 @@ public class XDebugSessionImpl implements XDebugSession {
   public <V extends XSmartStepIntoVariant> void smartStepInto(XSmartStepIntoHandler<V> handler, V variant) {
     if (!myDebugProcess.checkCanPerformCommands()) return;
 
-    doResume();
-    handler.startStepInto(variant);
+    final XSuspendContext context = doResume();
+    handler.startStepInto(variant, context);
   }
 
   @Override
@@ -875,8 +876,10 @@ public class XDebugSessionImpl implements XDebugSession {
         }
 
         if (mySessionTab != null) {
-          ((XWatchesViewImpl)mySessionTab.getWatchesView()).updateSessionData();
-          mySessionTab.detachFromSession();
+          AppUIUtil.invokeOnEdt(() -> {
+            ((XWatchesViewImpl)mySessionTab.getWatchesView()).updateSessionData();
+            mySessionTab.detachFromSession();
+          });
         }
         else if (myConsoleView != null) {
           AppUIUtil.invokeOnEdt(() -> Disposer.dispose(myConsoleView));
@@ -935,7 +938,11 @@ public class XDebugSessionImpl implements XDebugSession {
 
   @Override
   public void reportMessage(@NotNull final String message, @NotNull final MessageType type, @Nullable final HyperlinkListener listener) {
-    NotificationListener notificationListener = listener == null ? null : (notification, event) -> listener.hyperlinkUpdate(event);
+    NotificationListener notificationListener = listener == null ? null : (notification, event) -> {
+      if (event.getEventType() == HyperlinkEvent.EventType.ACTIVATED) {
+        listener.hyperlinkUpdate(event);
+      }
+    };
     NOTIFICATION_GROUP.createNotification("", message, type.toNotificationType(), notificationListener).notify(myProject);
   }
 

@@ -420,7 +420,11 @@ public class ProjectManagerImpl extends ProjectManagerEx implements Disposable {
     }
     if (!project.isOpen()) {
       WelcomeFrame.showIfNoProjectOpened();
-      ApplicationManager.getApplication().runWriteAction(() -> Disposer.dispose(project));
+      ApplicationManager.getApplication().runWriteAction(() -> {
+        if (!project.isDisposed()) {
+          Disposer.dispose(project);
+        }
+      });
     }
     return project;
   }

@@ -81,14 +81,17 @@ public class ModuleHighlightUtil {
       return null;
     }
     else {
-      Module module = index.getModuleForFile(file);
-      return Optional.ofNullable(module)
-        .map(m -> FilenameIndex.getVirtualFilesByName(project, MODULE_INFO_FILE, m.getModuleScope(false)))
-        .map(c -> c.size () == 1 ? c.iterator().next() : null)
-        .map(PsiManager.getInstance(project)::findFile)
-        .map(f -> f instanceof PsiJavaFile ? ((PsiJavaFile)f).getModuleDeclaration() : null)
-        .orElse(null);
+      return getModuleDescriptor(index.getModuleForFile(file));
     }
+  }
+
+  static PsiJavaModule getModuleDescriptor(Module module) {
+    return Optional.ofNullable(module)
+      .map(m -> FilenameIndex.getVirtualFilesByName(module.getProject(), MODULE_INFO_FILE, m.getModuleScope(false)))
+      .map(c -> c.size() == 1 ? c.iterator().next() : null)
+      .map(f -> PsiManager.getInstance(module.getProject()).findFile(f))
+      .map(f -> f instanceof PsiJavaFile ? ((PsiJavaFile)f).getModuleDeclaration() : null)
+      .orElse(null);
   }
 
   @Nullable
@@ -410,13 +413,20 @@ public class ModuleHighlightUtil {
   }
 
   private static HighlightInfo moduleResolveError(PsiJavaModuleReferenceElement refElement, PsiPolyVariantReference ref) {
-    boolean missing = ref.multiResolve(true).length == 0;
-    String message = JavaErrorMessages.message(missing ? "module.not.found" : "module.not.on.path", refElement.getReferenceText());
-    HighlightInfo info = HighlightInfo.newHighlightInfo(HighlightInfoType.WRONG_REF).range(refElement).description(message).create();
-    if (!missing) {
-      factory().registerOrderEntryFixes(new QuickFixActionRegistrarImpl(info), ref);
+    if (ref.multiResolve(true).length == 0) {
+      String message = JavaErrorMessages.message("module.not.found", refElement.getReferenceText());
+      return HighlightInfo.newHighlightInfo(HighlightInfoType.WRONG_REF).range(refElement).description(message).create();
     }
-    return info;
+    else if (ref.multiResolve(false).length > 1) {
+      String message = JavaErrorMessages.message("module.ambiguous", refElement.getReferenceText());
+      return HighlightInfo.newHighlightInfo(HighlightInfoType.WARNING).range(refElement).description(message).create();
+    }
+    else {
+      String message = JavaErrorMessages.message("module.not.on.path", refElement.getReferenceText());
+      HighlightInfo info = HighlightInfo.newHighlightInfo(HighlightInfoType.WRONG_REF).range(refElement).description(message).create();
+      factory().registerOrderEntryFixes(new QuickFixActionRegistrarImpl(info), ref);
+      return info;
+    }
   }
 
   private static QuickFixFactory factory() {

@@ -15,6 +15,7 @@
  */
 package com.intellij.openapi.project.impl;
 
+import com.intellij.ide.RecentProjectsManager;
 import com.intellij.ide.plugins.IdeaPluginDescriptor;
 import com.intellij.ide.startup.StartupManagerEx;
 import com.intellij.openapi.application.ApplicationManager;
@@ -133,6 +134,8 @@ public class ProjectImpl extends PlatformComponentManagerImpl implements Project
   public void setProjectName(@NotNull String projectName) {
     if (!projectName.equals(myName)) {
       myName = projectName;
+      RecentProjectsManager.getInstance().clearNameCache();
+      
       StartupManager.getInstance(this).runWhenProjectIsInitialized((DumbAwareRunnable)() -> {
         if (isDisposed()) return;
 
@@ -363,7 +366,7 @@ public class ProjectImpl extends PlatformComponentManagerImpl implements Project
     }
 
     // we use super here, because temporarilyDisposed will be true if project closed
-    LOG.assertTrue(!super.isDisposed());
+    LOG.assertTrue(!super.isDisposed(), this + " is disposed already");
     if (myProjectManagerListener != null) {
       myProjectManager.removeProjectManagerListener(this, myProjectManagerListener);
     }

@@ -105,7 +105,10 @@
                         serviceImplementation="com.jetbrains.python.packaging.PyCondaPackageService"/>
     <applicationService serviceInterface="com.jetbrains.python.module.PyModuleService"
                         serviceImplementation="com.jetbrains.python.module.PyModuleServiceImpl"/>
-
+    <applicationService serviceInterface="com.jetbrains.python.sdk.flavors.WinRegistryService"
+                        serviceImplementation="com.jetbrains.python.sdk.flavors.WinRegistryServiceImpl"/>
+    <applicationService
+        serviceImplementation="com.jetbrains.python.sdk.flavors.WinPythonSdkFlavor"/>
     <typedHandler implementation="com.jetbrains.python.codeInsight.PyKeywordTypedHandler" id="pyCommaAfterKwd"/>
     <typedHandler implementation="com.jetbrains.python.codeInsight.PyMethodNameTypedHandler" id="pyMethodNameTypedHandler"/>
     <typedHandler implementation="com.jetbrains.python.editor.PythonSpaceHandler"/>
@@ -180,7 +183,7 @@
       <className>com.jetbrains.python.codeInsight.intentions.PyConvertStaticMethodToFunctionIntention</className>
       <category>Python</category>
     </intentionAction>
-    
+
     <intentionAction>
       <className>com.jetbrains.python.codeInsight.intentions.SpecifyTypeInDocstringIntention</className>
       <category>Python</category>
@@ -310,7 +313,7 @@
       <className>com.jetbrains.python.codeInsight.intentions.PyYieldFromIntention</className>
       <category>Python</category>
     </intentionAction>
-    
+
     <intentionAction>
       <className>com.jetbrains.python.codeInsight.intentions.convertToFString.PyConvertToFStringIntention</className>
       <category>Python</category>
@@ -381,7 +384,7 @@
     <localInspection language="Python" shortName="PyTypeCheckerInspection" suppressId="PyTypeChecker" displayName="Type checker" groupKey="INSP.GROUP.python" enabledByDefault="true"  level="WARNING" implementationClass="com.jetbrains.python.inspections.PyTypeCheckerInspection"/>
     <localInspection language="Python" shortName="PyDeprecationInspection" suppressId="PyDeprecation" displayName="Deprecated function, class or module" groupKey="INSP.GROUP.python" enabledByDefault="true"  level="WARNING" implementationClass="com.jetbrains.python.inspections.PyDeprecationInspection"/>
     <localInspection language="Python" shortName="PyMandatoryEncodingInspection" suppressId="PyMandatoryEncoding" displayName="No encoding specified for file" groupKey="INSP.GROUP.python" enabledByDefault="false"  level="WARNING" implementationClass="com.jetbrains.python.inspections.PyMandatoryEncodingInspection"/>
-    <localInspection language="Python" shortName="PyPackageRequirementsInspection" suppressId="PyPackageRequirements" bundle="com.jetbrains.python.PyBundle" key="INSP.NAME.requirements" groupKey="INSP.GROUP.python" enabledByDefault="true"  level="WARNING" implementationClass="com.jetbrains.python.inspections.PyPackageRequirementsInspection"/>
+    <localInspection shortName="PyPackageRequirementsInspection" suppressId="PyPackageRequirements" bundle="com.jetbrains.python.PyBundle" key="INSP.NAME.requirements" groupKey="INSP.GROUP.python" enabledByDefault="true"  level="WARNING" implementationClass="com.jetbrains.python.inspections.PyPackageRequirementsInspection"/>
     <localInspection language="Python" shortName="PyPep8Inspection" suppressId="PyPep8" displayName="PEP 8 coding style violation" groupKey="INSP.GROUP.python" enabledByDefault="true" level="WEAK WARNING" implementationClass="com.jetbrains.python.inspections.PyPep8Inspection"/>
     <localInspection language="Python" shortName="PyAttributeOutsideInitInspection" suppressId="PyAttributeOutsideInit" displayName="Instance attribute defined outside __init__" groupKey="INSP.GROUP.python" enabledByDefault="true" level="WEAK WARNING" implementationClass="com.jetbrains.python.inspections.PyAttributeOutsideInitInspection"/>
     <localInspection language="Python" shortName="PyClassHasNoInitInspection" suppressId="PyClassHasNoInit" displayName="Class has no __init__ method" groupKey="INSP.GROUP.python" enabledByDefault="true" level="WEAK WARNING" implementationClass="com.jetbrains.python.inspections.PyClassHasNoInitInspection"/>
@@ -570,7 +573,7 @@
     <highlightErrorFilter implementation="com.jetbrains.python.documentation.doctest.PyDocstringErrorFilter"/>
 
     <!-- PyFunctionTypeAnnotation -->
-    <lang.parserDefinition language="PyFunctionTypeComment" 
+    <lang.parserDefinition language="PyFunctionTypeComment"
                            implementationClass="com.jetbrains.python.codeInsight.functionTypeComments.PyFunctionTypeAnnotationParserDefinition"/>
 
     <!-- Packaging -->
@@ -595,7 +598,7 @@
 
     <!-- f-strings -->
     <multiHostInjector implementation="com.jetbrains.python.codeInsight.fstrings.PyFStringsInjector"/>
-    
+
     <!-- postfix templates!-->
     <codeInsight.template.postfixTemplateProvider language="Python"
                                                   implementationClass="com.jetbrains.python.codeInsight.postfix.PyPostfixTemplateProvider"/>
@@ -644,6 +647,7 @@
     <extensionPoint qualifiedName="Pythonid.pep8ProblemSuppressor" interface="com.jetbrains.python.validation.Pep8ProblemSuppressor"/>
     <extensionPoint qualifiedName="Pythonid.pythonFlavorProvider" interface="com.jetbrains.python.sdk.flavors.PythonFlavorProvider"/>
     <extensionPoint qualifiedName="Pythonid.debugSessionFactory" interface="com.jetbrains.python.debugger.PyDebugSessionFactory"/>
+    <extensionPoint qualifiedName="Pythonid.customPackageIdentifier" interface="com.jetbrains.python.psi.PyCustomPackageIdentifier"/>
   </extensionPoints>
 
   <extensions defaultExtensionNs="Pythonid">
@@ -686,6 +690,7 @@
 
     <typeProvider implementation="com.jetbrains.python.debugger.PyCallSignatureTypeProvider"/>
     <pyReferenceResolveProvider implementation="com.jetbrains.python.psi.resolve.PythonBuiltinReferenceResolveProvider"/>
+    <pyReferenceResolveProvider implementation="com.jetbrains.python.psi.resolve.PythonOverridingBuiltinReferenceResolveProvider"/>
 
     <!-- NumPy -->
     <pyModuleMembersProvider implementation="com.jetbrains.numpy.codeInsight.NumpyModuleMembersProvider"/>

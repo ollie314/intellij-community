@@ -39,6 +39,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static com.intellij.util.containers.UtilKt.getIfSingle;
 import static git4idea.util.GitUIUtil.code;
 import static java.util.Arrays.stream;
 
@@ -52,8 +53,6 @@ import static java.util.Arrays.stream;
  *  @author Kirill Likhodedov
  */
 class GitCheckoutOperation extends GitBranchOperation {
-
-  public static final String ROLLBACK_PROPOSAL_FORMAT = "You may rollback (checkout back to previous branch) not to let branches diverge.";
 
   @NotNull private final String myStartPointReference;
   private final boolean myDetach;
@@ -192,8 +191,12 @@ class GitCheckoutOperation extends GitBranchOperation {
   @NotNull
   @Override
   protected String getRollbackProposal() {
+    String previousBranch = getIfSingle(getSuccessfulRepositories().stream().map(myCurrentHeads::get).distinct());
+    if (previousBranch == null) previousBranch = "previous branch";
+    String rollBackProposal = "You may rollback (checkout back to " + previousBranch + ") not to let branches diverge.";
     return "However checkout has succeeded for the following " + repositories() + ":<br/>" +
-           successfulRepositoriesJoined() + "<br/>" + ROLLBACK_PROPOSAL_FORMAT;
+           successfulRepositoriesJoined() + "<br/>" +
+           rollBackProposal;
   }
 
   @NotNull

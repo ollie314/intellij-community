@@ -203,19 +203,16 @@ public class PyTypeCheckerInspection extends PyInspection {
       for (Map.Entry<PyExpression, PyNamedParameter> entry : mapping.entrySet()) {
         final PyNamedParameter param = entry.getValue();
         final PyExpression arg = entry.getKey();
-        if (param.isPositionalContainer() || param.isKeywordContainer()) {
+        final PyType expectedArgType = PyTypeChecker.getExpectedArgumentType(param, myTypeEvalContext);
+        if (expectedArgType == null) {
           continue;
         }
-        final PyType paramType = myTypeEvalContext.getType(param);
-        if (paramType == null) {
-          continue;
-        }
-        final PyType argType = myTypeEvalContext.getType(arg);
+        final PyType actualArgType = myTypeEvalContext.getType(arg);
         if (!genericsCollected) {
           substitutions.putAll(PyTypeChecker.unifyReceiver(receiver, myTypeEvalContext));
           genericsCollected = true;
         }
-        final Pair<String, ProblemHighlightType> problem = checkTypes(paramType, argType, myTypeEvalContext, substitutions);
+        final Pair<String, ProblemHighlightType> problem = checkTypes(expectedArgType, actualArgType, myTypeEvalContext, substitutions);
         if (problem != null) {
           problems.put(arg, problem);
         }

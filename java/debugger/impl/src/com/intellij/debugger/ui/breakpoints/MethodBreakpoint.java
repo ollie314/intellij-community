@@ -47,7 +47,6 @@ import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.InvalidDataException;
 import com.intellij.openapi.util.JDOMExternalizerUtil;
 import com.intellij.openapi.util.Key;
-import com.intellij.openapi.util.registry.Registry;
 import com.intellij.psi.*;
 import com.intellij.util.StringBuilderSpinAllocator;
 import com.intellij.util.containers.ContainerUtil;
@@ -147,17 +146,21 @@ public class MethodBreakpoint extends BreakpointWithHighlighter<JavaMethodBreakp
     if (request != null) {
       requestsManager.registerRequest(this, request);
       request.enable();
+      debugProcess.getVirtualMachineProxy().clearCaches(); // to force reload classes available so far
     }
 
     AtomicReference<ProgressIndicator> indicatorRef = new AtomicReference<>();
-    ApplicationManager.getApplication().invokeAndWait(() -> indicatorRef.set(new ProgressWindowWithNotification(true, myProject)));
+    ApplicationManager.getApplication()
+      .invokeAndWait(() -> indicatorRef.set(new ProgressWindowWithNotification(true, false, myProject, "Cancel emulation")));
     ProgressIndicator indicator = indicatorRef.get();
     ProgressManager.getInstance().executeProcessUnderProgress(
       () -> processPreparedSubTypes(baseType, subType -> createRequestForPreparedClassEmulated(debugProcess, subType, false), indicator),
       indicator);
     if (indicator.isCanceled()) {
-      ApplicationManager.getApplication().invokeLater(
-        () -> DebuggerManagerEx.getInstanceEx(myProject).getBreakpointManager().removeBreakpoint(this));
+      ApplicationManager.getApplication().invokeLater(() -> {
+        getProperties().EMULATED = false;
+        fireBreakpointChanged();
+      });
     }
   }
 
@@ -493,7 +496,7 @@ public class MethodBreakpoint extends BreakpointWithHighlighter<JavaMethodBreakp
   }
 
   public boolean isEmulated() {
-    return getProperties().EMULATED && Registry.is("debugger.emulate.method.breakpoints");
+    return getProperties().EMULATED;
   }
 
   private boolean isWatchEntry() {

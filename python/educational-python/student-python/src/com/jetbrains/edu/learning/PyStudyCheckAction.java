@@ -1,7 +1,6 @@
 package com.jetbrains.edu.learning;
 
 import com.intellij.execution.ExecutionException;
-import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.diagnostic.Logger;
@@ -11,7 +10,6 @@ import com.intellij.openapi.ui.MessageType;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.jetbrains.edu.learning.actions.StudyCheckAction;
-import com.jetbrains.edu.learning.actions.StudyRunAction;
 import com.jetbrains.edu.learning.checker.StudyCheckTask;
 import com.jetbrains.edu.learning.checker.StudyCheckUtils;
 import com.jetbrains.edu.learning.checker.StudyTestRunner;
@@ -44,9 +42,6 @@ public class PyStudyCheckAction extends StudyCheckAction {
       }
       if (StudyCheckUtils.hasBackgroundProcesses(project)) return;
 
-      final Course course = StudyTaskManager.getInstance(project).getCourse();
-      if (course != null && !course.isAdaptive() && !runTask(project)) return;
-
       final Task task = studyState.getTask();
       final VirtualFile taskDir = studyState.getTaskDir();
       StudyCheckUtils.flushWindows(task, taskDir);
@@ -77,15 +72,6 @@ public class PyStudyCheckAction extends StudyCheckAction {
     }));
   }
 
-  private static boolean runTask(@NotNull Project project) {
-    final StudyRunAction runAction = (StudyRunAction)ActionManager.getInstance().getAction(StudyRunAction.ACTION_ID);
-    if (runAction == null) {
-      return false;
-    }
-    runAction.run(project);
-    return true;
-  }
-
   @NotNull
   private StudyCheckTask getCheckTask(@NotNull final Project project,
                                       final StudyState studyState,
@@ -101,7 +87,7 @@ public class PyStudyCheckAction extends StudyCheckAction {
           for (Map.Entry<String, TaskFile> entry : myTask.getTaskFiles().entrySet()) {
             final String name = entry.getKey();
             final TaskFile taskFile = entry.getValue();
-            if (taskFile.getAnswerPlaceholders().size() < 2) {
+            if (taskFile.getActivePlaceholders().size() < 2) {
               continue;
             }
             final Course course = myTaskManger.getCourse();
@@ -139,9 +125,9 @@ public class PyStudyCheckAction extends StudyCheckAction {
     for (Map.Entry<String, TaskFile> entry : task.getTaskFiles().entrySet()) {
       String name = entry.getKey();
       TaskFile taskFile = entry.getValue();
-      VirtualFile virtualFile = taskDir.findChild(name);
+      VirtualFile virtualFile = taskDir.findFileByRelativePath(name);
       if (virtualFile != null) {
-        if (!taskFile.getAnswerPlaceholders().isEmpty()) {
+        if (!taskFile.getActivePlaceholders().isEmpty()) {
           taskVirtualFile = virtualFile;
         }
       }

@@ -109,7 +109,6 @@ public class RefJavaManagerImpl extends RefJavaManager {
     return refPackage;
   }
 
-
   public boolean isEntryPoint(final RefElement element) {
     UnusedDeclarationInspectionBase tool = getDeadCodeTool(element);
     return tool != null && tool.isEntryPoint(element) && isTestSource(tool, element);
@@ -252,6 +251,9 @@ public class RefJavaManagerImpl extends RefJavaManager {
     else if (elem instanceof PsiJavaFile) {
       return new RefJavaFileImpl((PsiJavaFile)elem, myRefManager);
     }
+    else if (elem instanceof PsiJavaModule) {
+      return new RefJavaModuleImpl(((PsiJavaModule)elem), myRefManager);
+    }
     return null;
   }
 
@@ -299,6 +301,9 @@ public class RefJavaManagerImpl extends RefJavaManager {
     }
     else if (ref instanceof RefPackage) {
       return PACKAGE;
+    }
+    else if (ref instanceof RefJavaModule) {
+      return JAVA_MODULE;
     }
     return null;
   }
@@ -541,6 +546,24 @@ public class RefJavaManagerImpl extends RefJavaManager {
             refClass.addInstanceReference(ownerClass);
           }
         }
+      }
+    }
+
+    @Override
+    public void visitModule(PsiJavaModule javaModule) {
+      super.visitModule(javaModule);
+      RefElement refElement = myRefManager.getReference(javaModule);
+      if (refElement != null) {
+        ((RefJavaModuleImpl)refElement).buildReferences();
+      }
+    }
+
+    @Override
+    public void visitJavaFile(PsiJavaFile file) {
+      super.visitJavaFile(file);
+      RefElement refElement = myRefManager.getReference(file);
+      if (refElement != null) {
+        ((RefJavaFileImpl)refElement).buildReferences();
       }
     }
   }

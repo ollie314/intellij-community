@@ -41,8 +41,12 @@ import groovy.transform.BaseScript
 
 $text
 """) as GroovyFileImpl
+    assert !file.contentsLoaded
+
     def clazz = fixture.findClass('Zzz')
     assert clazz instanceof GroovyScriptClass
+    assert !file.contentsLoaded
+
     assert InheritanceUtil.isInheritor(clazz as PsiClass, 'MyBaseScript')
     assert !file.contentsLoaded
   }

@@ -33,12 +33,12 @@ import com.intellij.openapi.ui.popup.ListSeparator;
 import com.intellij.openapi.ui.popup.PopupStep;
 import com.intellij.openapi.ui.popup.util.BaseListPopupStep;
 import com.intellij.openapi.wm.IdeFocusManager;
-import com.intellij.ui.ColoredTreeCellRenderer;
-import com.intellij.ui.SimpleTextAttributes;
+import com.intellij.ui.*;
 import com.intellij.ui.awt.RelativePoint;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.popup.list.ListPopupImpl;
 import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.table.ComponentsListFocusTraversalPolicy;
 import git4idea.GitRemoteBranch;
 import git4idea.commands.Git;
@@ -67,6 +67,10 @@ public class GitPushTargetPanel extends PushTargetPanel<GitPushTarget> {
 
   private static final Comparator<GitRemoteBranch> REMOTE_BRANCH_COMPARATOR = new MyRemoteBranchComparator();
   private static final String SEPARATOR = " : ";
+  private static final Color NEW_BRANCH_LABEL_FG = new JBColor(0x00b53d, 0x24953c);
+  private static final Color NEW_BRANCH_LABEL_BG = ColorUtil.toAlpha(NEW_BRANCH_LABEL_FG, 40);
+  private static final RelativeFont NEW_BRANCH_LABEL_FONT = RelativeFont.TINY.small();
+  private static final TextIcon NEW_BRANCH_LABEL = new TextIcon("New", NEW_BRANCH_LABEL_FG, NEW_BRANCH_LABEL_BG, 0);
 
   @NotNull private final GitPushSupport myPushSupport;
   @NotNull private final GitRepository myRepository;
@@ -266,12 +270,17 @@ public class GitPushTargetPanel extends PushTargetPanel<GitPushTarget> {
           return;
         }
         GitPushTarget target = getValue();
-        if (target != null && target.isNewBranchCreated()) {
-          renderer.append("+", PushLogTreeUtil.addTransparencyIfNeeded(SimpleTextAttributes.SYNTHETIC_ATTRIBUTES, isActive), this);
-        }
+        boolean newRemoteBranch = target != null && target.isNewBranchCreated();
         myTargetRenderer.setSelected(isSelected);
         myTargetRenderer.setTransparent(!isActive);
         myTargetRenderer.render(renderer);
+        if (newRemoteBranch) {
+          renderer.setIconOnTheRight(true);
+          NEW_BRANCH_LABEL.setInsets(JBUI.insets(2));
+          NEW_BRANCH_LABEL.setRound(JBUI.scale(4));
+          NEW_BRANCH_LABEL.setFont(NEW_BRANCH_LABEL_FONT.derive(renderer.getFont()));
+          renderer.setIcon(NEW_BRANCH_LABEL);
+        }
       }
     }
   }

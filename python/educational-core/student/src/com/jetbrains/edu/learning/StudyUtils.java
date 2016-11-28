@@ -13,6 +13,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.RangeMarker;
+import com.intellij.openapi.editor.ScrollType;
 import com.intellij.openapi.editor.actionSystem.EditorActionManager;
 import com.intellij.openapi.editor.colors.EditorColors;
 import com.intellij.openapi.editor.colors.EditorColorsManager;
@@ -31,6 +32,7 @@ import com.intellij.openapi.ui.popup.Balloon;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.io.FileUtil;
+import com.intellij.openapi.util.io.FileUtilRt;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VfsUtil;
@@ -81,7 +83,6 @@ public class StudyUtils {
   }
 
   private static final Logger LOG = Logger.getInstance(StudyUtils.class.getName());
-  private static final String EMPTY_TASK_TEXT = "Please, open any task to see task description";
   private static final String ourPrefix = "<html><head><script type=\"text/x-mathjax-config\">\n" +
                                           "            MathJax.Hub.Config({\n" +
                                           "                tex2jax: {\n" +
@@ -314,7 +315,7 @@ public class StudyUtils {
     if (course == null) {
       return null;
     }
-    VirtualFile taskDir = file.getParent();
+    VirtualFile taskDir = getTaskDir(file);
     if (taskDir == null) {
       return null;
     }
@@ -341,13 +342,13 @@ public class StudyUtils {
           return null;
         }
         final Task task = tasks.get(taskIndex);
-        return task.getFile(file.getName());
+        return task.getFile(pathRelativeToTask(file));
       }
     }
     return null;
   }
 
-  public static void drawAllWindows(Editor editor, TaskFile taskFile) {
+  public static void drawAllAnswerPlaceholders(Editor editor, TaskFile taskFile) {
     editor.getMarkupModel().removeAllHighlighters();
     final Project project = editor.getProject();
     if (project == null) return;
@@ -356,6 +357,7 @@ public class StudyUtils {
       final JBColor color = taskManager.getColor(answerPlaceholder);
       EduAnswerPlaceholderPainter.drawAnswerPlaceholder(editor, answerPlaceholder, color);
     }
+
     final Document document = editor.getDocument();
     EditorActionManager.getInstance()
       .setReadonlyFragmentModificationHandler(document, new EduAnswerPlaceholderDeleteHandler(editor));
@@ -477,28 +479,41 @@ public class StudyUtils {
 
   @Nullable
   public static String getTaskTextFromTask(@Nullable final VirtualFile taskDirectory, @Nullable final Task task) {
-    if (task == null) {
+    if (task == null || task.getLesson() == null || task.getLesson().getCourse() == null) {
       return null;
     }
-    String text = task.getText();
-    final Lesson lesson = task.getLesson();
-    if (lesson == null) return null;
-    final Course course = lesson.getCourse();
-    if (course != null && course.isAdaptive()) {
-      text += "\n\n<b>Note</b>: Use standard input to obtain input for the task.";
+    final Course course = task.getLesson().getCourse();
+    if (taskDirectory != null) {
+      String fileNameWithoutExtension = FileUtil.getNameWithoutExtension(EduNames.TASK_HTML);
+      int activeStepIndex = task.getActiveSubtaskIndex();
+      if (activeStepIndex != 0) {
+        fileNameWithoutExtension += EduNames.SUBTASK_MARKER + activeStepIndex;
+      }
+      final String taskTextFileHtml = getTaskTextFromTaskName(taskDirectory, getTaskDescriptionName(fileNameWithoutExtension, EduNames.TASK_HTML));
+      if (taskTextFileHtml != null) return wrapTextToDisplayLatex(taskTextFileHtml);
+
+      final String taskTextFileMd = getTaskTextFromTaskName(taskDirectory, getTaskDescriptionName(fileNameWithoutExtension, EduNames.TASK_MD));
+      if (taskTextFileMd != null) return wrapTextToDisplayLatex(convertToHtml(taskTextFileMd));
     }
 
-    if (text != null && !text.isEmpty()) {
+    String text = task.getText() != null ? task.getText() : getTaskTextFromTaskName(taskDirectory, EduNames.TASK_MD);
+
+    if (text == null) return null;
+    if (course.isAdaptive()) text = wrapAdaptiveCourseText(text);
+
+    if (!text.isEmpty()) {
       return wrapTextToDisplayLatex(text);
     }
-    if (taskDirectory != null) {
-      final String taskTextFileHtml = getTaskTextFromTaskName(taskDirectory, EduNames.TASK_HTML);
-      if (taskTextFileHtml != null) return wrapTextToDisplayLatex(taskTextFileHtml);
-      
-      final String taskTextFileMd = getTaskTextFromTaskName(taskDirectory, EduNames.TASK_MD);
-      if (taskTextFileMd != null) return wrapTextToDisplayLatex(convertToHtml(taskTextFileMd));      
-    }
     return null;
+  }
+
+  private static String wrapAdaptiveCourseText(@NotNull String text) {
+    return text + "\n\n<b>Note</b>: Use standard input to obtain input for the task.";
+  }
+
+  @NotNull
+  private static String getTaskDescriptionName(String fileNameWithoutExtension, String defaultName) {
+    return fileNameWithoutExtension + "." + FileUtilRt.getExtension(defaultName);
   }
 
   public static String wrapTextToDisplayLatex(String taskTextFileHtml) {
@@ -507,8 +522,8 @@ public class StudyUtils {
   }
 
   @Nullable
-  private static String getTaskTextFromTaskName(@NotNull VirtualFile taskDirectory, @NotNull String taskTextFilename) {
-    taskDirectory.refresh(false, true);
+  private static String getTaskTextFromTaskName(@Nullable VirtualFile taskDirectory, @NotNull String taskTextFilename) {
+    if (taskDirectory == null) return null;
     VirtualFile taskTextFile = taskDirectory.findChild(taskTextFilename);
     if (taskTextFile == null) {
       VirtualFile srcDir = taskDirectory.findChild(EduNames.SRC);
@@ -548,7 +563,7 @@ public class StudyUtils {
   public static String getTaskText(@NotNull final Project project) {
     TaskFile taskFile = getSelectedTaskFile(project);
     if (taskFile == null) {
-      return EMPTY_TASK_TEXT;
+      return StudyToolWindow.EMPTY_TASK_TEXT;
     }
     final Task task = taskFile.getTask();
     if (task != null) {
@@ -577,6 +592,14 @@ public class StudyUtils {
 
   public static boolean isStudyProject(@NotNull Project project) {
     return StudyTaskManager.getInstance(project).getCourse() != null;
+  }
+
+  public static boolean isStudentProject(@NotNull Project project) {
+    Course course = StudyTaskManager.getInstance(project).getCourse();
+    if (course == null) {
+      return false;
+    }
+    return EduNames.STUDY.equals(course.getCourseMode());
   }
 
   @Nullable
@@ -635,15 +658,18 @@ public class StudyUtils {
   @Nullable
   public static VirtualFile getTaskDir(@NotNull VirtualFile taskFile) {
     VirtualFile parent = taskFile.getParent();
-    if (parent == null) {
-      return null;
-    }
-    String name = parent.getName();
-    if (name.contains(EduNames.TASK)) {
-      return parent;
-    }
-    if (EduNames.SRC.equals(name)) {
-      return parent.getParent();
+
+    while (parent != null) {
+      String name = parent.getName();
+
+      if (name.contains(EduNames.TASK) && parent.isDirectory()) {
+        return parent;
+      }
+      if (EduNames.SRC.equals(name)) {
+        return parent.getParent();
+      }
+
+      parent = parent.getParent();
     }
     return null;
   }
@@ -696,12 +722,29 @@ public class StudyUtils {
   }
   
   public static boolean isTaskDescriptionFile(@NotNull final String fileName) {
-    return EduNames.TASK_HTML.equals(fileName) || EduNames.TASK_MD.equals(fileName);
+    if (EduNames.TASK_HTML.equals(fileName) || EduNames.TASK_MD.equals(fileName)) {
+      return true;
+    }
+    String extension = FileUtilRt.getExtension(fileName);
+    if (!extension.equals(FileUtilRt.getExtension(EduNames.TASK_HTML)) && !extension.equals(FileUtilRt.getExtension(EduNames.TASK_MD))) {
+      return false;
+    }
+    return fileName.contains(EduNames.TASK) && fileName.contains(EduNames.SUBTASK_MARKER);
   }
   
   @Nullable
-  public static VirtualFile findTaskDescriptionVirtualFile(@NotNull VirtualFile taskDir) {
-    return ObjectUtils.chooseNotNull(taskDir.findChild(EduNames.TASK_HTML), taskDir.findChild(EduNames.TASK_MD));
+  public static VirtualFile findTaskDescriptionVirtualFile(@NotNull Project project, @NotNull VirtualFile taskDir) {
+    Task task = getTask(project, taskDir.getName().contains(EduNames.TASK) ? taskDir: taskDir.getParent());
+    if (task == null) {
+      return null;
+    }
+    String fileNameWithoutExtension  = FileUtil.getNameWithoutExtension(EduNames.TASK_HTML);
+    int activeStepIndex = task.getActiveSubtaskIndex();
+    if (activeStepIndex != 0) {
+      fileNameWithoutExtension += EduNames.SUBTASK_MARKER + activeStepIndex;
+    }
+    return ObjectUtils.chooseNotNull(taskDir.findChild(getTaskDescriptionName(fileNameWithoutExtension, EduNames.TASK_HTML)),
+                                     taskDir.findChild(getTaskDescriptionName(fileNameWithoutExtension, EduNames.TASK_MD)));
   }
   
   @NotNull
@@ -732,11 +775,13 @@ public class StudyUtils {
     if (studyEditor == null) return;
     final Editor editor = studyEditor.getEditor();
     IdeFocusManager.getInstance(project).requestFocus(editor.getContentComponent(), true);
-    final List<AnswerPlaceholder> placeholders = studyEditor.getTaskFile().getAnswerPlaceholders();
+    final List<AnswerPlaceholder> placeholders = studyEditor.getTaskFile().getActivePlaceholders();
     if (placeholders.isEmpty()) return;
     final AnswerPlaceholder placeholder = placeholders.get(0);
     int startOffset = placeholder.getOffset();
     editor.getSelectionModel().setSelection(startOffset, startOffset + placeholder.getRealLength());
+    editor.getCaretModel().moveToOffset(startOffset);
+    editor.getScrollingModel().scrollToCaret(ScrollType.CENTER);
   }
 
   public static void registerStudyToolWindow(@Nullable final Course course, Project project) {
@@ -756,5 +801,22 @@ public class StudyUtils {
     if (toolWindow == null) {
       toolWindowManager.registerToolWindow(StudyToolWindowFactory.STUDY_TOOL_WINDOW, true, ToolWindowAnchor.RIGHT, project, true);
     }
+  }
+
+  @Nullable public static AnswerPlaceholder getAnswerPlaceholder(int offset, List<AnswerPlaceholder> placeholders) {
+    for (AnswerPlaceholder placeholder : placeholders) {
+      int placeholderStart = placeholder.getOffset();
+      int placeholderEnd = placeholderStart + placeholder.getRealLength();
+      if (placeholderStart <= offset && offset <= placeholderEnd) {
+        return placeholder;
+      }
+    }
+    return null;
+  }
+
+  public static String pathRelativeToTask(VirtualFile file) {
+    VirtualFile taskDir = getTaskDir(file);
+    if (taskDir == null) return file.getName();
+    return FileUtil.getRelativePath(taskDir.getPath(), file.getPath(), '/');
   }
 }

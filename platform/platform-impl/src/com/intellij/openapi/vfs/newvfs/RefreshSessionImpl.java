@@ -17,8 +17,6 @@ package com.intellij.openapi.vfs.newvfs;
 
 import com.intellij.openapi.application.*;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.project.DumbModePermission;
-import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.DumbServiceImpl;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -48,13 +46,12 @@ public class RefreshSessionImpl extends RefreshSession {
   private final boolean myIsRecursive;
   private final Runnable myFinishRunnable;
   private final ModalityState myModalityState;
-  private final DumbModePermission myDumbModePermission;
   private final Throwable myStartTrace;
   private final Semaphore mySemaphore = new Semaphore();
 
   private List<VirtualFile> myWorkQueue = new ArrayList<>();
   private List<VFileEvent> myEvents = new ArrayList<>();
-  private volatile boolean iHaveEventsToFire;
+  private volatile boolean myHaveEventsToFire;
   private volatile RefreshWorker myWorker;
   private volatile boolean myCancelled;
   private final TransactionId myTransaction;
@@ -68,11 +65,9 @@ public class RefreshSessionImpl extends RefreshSession {
     LOG.assertTrue(modalityState == ModalityState.NON_MODAL || modalityState != ModalityState.any(), "Refresh session should have a specific modality");
 
     if (modalityState == ModalityState.NON_MODAL) {
-      myDumbModePermission = null;
       myStartTrace = null;
     }
     else {
-      myDumbModePermission = DumbServiceImpl.getExplicitPermission();
       myStartTrace = new Throwable(); // please report exceptions here to peter
     }
   }
@@ -153,7 +148,7 @@ public class RefreshSessionImpl extends RefreshSession {
         count++;
         if (LOG.isTraceEnabled()) LOG.trace("events=" + myEvents.size());
       }
-      while (myIsRecursive && count < 3 && workQueue.stream().anyMatch(f -> ((NewVirtualFile)f).isDirty()));
+      while (!myCancelled && myIsRecursive && count < 3 && workQueue.stream().anyMatch(f -> ((NewVirtualFile)f).isDirty()));
 
       if (t != 0) {
         t = System.currentTimeMillis() - t;
@@ -162,7 +157,7 @@ public class RefreshSessionImpl extends RefreshSession {
     }
 
     myWorker = null;
-    iHaveEventsToFire = haveEventsToFire;
+    myHaveEventsToFire = haveEventsToFire;
   }
 
   void cancel() {
@@ -175,19 +170,14 @@ public class RefreshSessionImpl extends RefreshSession {
   }
 
   void fireEvents() {
-    if (!iHaveEventsToFire || ApplicationManager.getApplication().isDisposed()) {
+    if (!myHaveEventsToFire || ApplicationManager.getApplication().isDisposed()) {
       mySemaphore.up();
       return;
     }
 
     try (AccessToken ignore = myStartTrace == null ? null : DumbServiceImpl.forceDumbModeStartTrace(myStartTrace)) {
-      WriteAction.run(() -> {
-        if (myDumbModePermission != null) {
-          DumbService.allowStartingDumbModeInside(myDumbModePermission, this::fireEventsInWriteAction);
-        } else {
-          fireEventsInWriteAction();
-        }
-      });
+      if (LOG.isDebugEnabled()) LOG.debug("events are about to fire: " + myEvents);
+      WriteAction.run(this::fireEventsInWriteAction);
     }
     finally {
       mySemaphore.up();

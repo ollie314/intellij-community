@@ -61,6 +61,7 @@ public class EduAdaptiveStepicConnector {
   public static final String PYCHARM_COMMENT = "# Posted from PyCharm Edu\n";
   private static final Logger LOG = Logger.getInstance(EduAdaptiveStepicConnector.class);
   private static final int CONNECTION_TIMEOUT = 60 * 1000;
+  private static final String CODE_TASK_TYPE = "code";
 
   @Nullable
   public static Task getNextRecommendation(@NotNull final Project project, @NotNull Course course) {
@@ -85,17 +86,20 @@ public class EduAdaptiveStepicConnector {
         if (recomWrapper.recommendations.length != 0) {
           final StepicWrappers.Recommendation recommendation = recomWrapper.recommendations[0];
           final String lessonId = recommendation.lesson;
-          final StepicWrappers.LessonContainer
-            lessonContainer = EduStepicAuthorizedClient
-            .getFromStepic(EduStepicNames.LESSONS + lessonId, StepicWrappers.LessonContainer.class, project);
+          final StepicWrappers.LessonContainer lessonContainer = EduStepicAuthorizedClient.getFromStepic(EduStepicNames.LESSONS + lessonId,
+                                                                                                         StepicWrappers.LessonContainer.class,
+                                                                                                         project);
           if (lessonContainer.lessons.size() == 1) {
             final Lesson realLesson = lessonContainer.lessons.get(0);
             course.getLessons().get(0).setId(Integer.parseInt(lessonId));
 
             for (int stepId : realLesson.steps) {
-              final StepicWrappers.StepSource step = getStep(stepId);
-              if (step.block.name.equals("code")) {
+              final StepicWrappers.StepSource step = getStep(project, stepId);
+              if (step.block.name.equals(CODE_TASK_TYPE)) {
                 return getTaskFromStep(project, stepId, step.block, realLesson.getName());
+              }
+              else if (step.block.name.startsWith(EduStepicConnector.PYCHARM_PREFIX)) {
+                return EduStepicConnector.createTask(project, stepId);
               }
             }
 
@@ -279,16 +283,16 @@ public class EduAdaptiveStepicConnector {
         final VirtualFile taskDir = VfsUtil
           .findFileByIoFile(new File(lessonDir.getCanonicalPath(), EduNames.TASK + unsolvedTask.getIndex()), true);
         final File resourceRoot = new File(course.getCourseDirectory(), lessonDir.getName());
-        File newResourceRoot = null;
+        File newResourceRoot;
         if (taskDir != null) {
           newResourceRoot = new File(resourceRoot, taskDir.getName());
           File[] filesInTask = newResourceRoot.listFiles();
           if (filesInTask != null) {
             for (File file : filesInTask) {
-              String fileName = file.getName();
-              if (!task.isTaskFile(fileName)) {
-                File resourceFile = new File(newResourceRoot, fileName);
-                File fileInProject = new File(taskDir.getCanonicalPath(), fileName);
+              String taskRelativePath = FileUtil.getRelativePath(taskDir.getPath(), file.getPath(), '/');
+              if (taskRelativePath != null && !task.isTaskFile(taskRelativePath)) {
+                File resourceFile = new File(newResourceRoot, taskRelativePath);
+                File fileInProject = new File(taskDir.getCanonicalPath(), taskRelativePath);
                 FileUtil.copy(resourceFile, fileInProject);
               }
             }
@@ -355,7 +359,7 @@ public class EduAdaptiveStepicConnector {
     }
     else {
       final TaskFile taskFile = new TaskFile();
-      taskFile.name = "code";
+      taskFile.name = CODE_TASK_TYPE;
       final String templateForTask = getCodeTemplateForTask(step.options.codeTemplates, task, project);
       taskFile.text = templateForTask == null ? "# write your answer here \n" : templateForTask;
       task.taskFiles.put("code.py", taskFile);
@@ -544,5 +548,4 @@ public class EduAdaptiveStepicConnector {
     }
     return Collections.emptyList();
   }
-
 }

@@ -330,19 +330,6 @@ public class InitialConfigurationDialog extends DialogWrapper {
     }
 
     @Override
-    public boolean refreshDataSynch() {
-      return false;
-    }
-
-    @Override
-    public void dataChanged() {}
-
-    @Override
-    public boolean isStillValid(Object o) {
-      return false;
-    }
-
-    @Override
     public void refresh() {
       updateColorSchemePreview(false);
     }
@@ -350,14 +337,6 @@ public class InitialConfigurationDialog extends DialogWrapper {
     @Override
     public JPanel getPanel() {
       return (JPanel)myPreviewEditor.getPanel();
-    }
-
-    @Override
-    public void away() {}
-
-    @Override
-    public void dispose() {
-      disposeUIResources();
     }
 
     public void updateColorSchemePreview(final boolean recalculateDialogSize) {

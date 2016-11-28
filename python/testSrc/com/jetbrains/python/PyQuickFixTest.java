@@ -202,6 +202,23 @@ public class PyQuickFixTest extends PyTestCase {
     doInspectionTest("AddClass.py", PyUnresolvedReferencesInspection.class, "Create class 'Xyzzy'", true, true);
   }
 
+  // PY-21204
+  public void testAddClassFromTypeComment() {
+    doInspectionTest(PyUnresolvedReferencesInspection.class, "Create class 'MyClass'", true, true);
+  }
+
+  // PY-21204
+  public void testAddClassFromFString() {
+    runWithLanguageLevel(LanguageLevel.PYTHON36, 
+                         () -> doInspectionTest(PyUnresolvedReferencesInspection.class, "Create class 'MyClass'", true, true));
+  }
+
+  // PY-21204
+  public void testAddFunctionFromFString() {
+    runWithLanguageLevel(LanguageLevel.PYTHON36,
+                         () -> doInspectionTest(PyUnresolvedReferencesInspection.class, PyBundle.message("QFIX.NAME.unresolved.reference.create.function", "my_function"), true, true));
+  }
+
   // PY-1602
   public void testAddFunctionToModule() {
     doInspectionTest(
@@ -312,14 +329,14 @@ public class PyQuickFixTest extends PyTestCase {
   // PY-2092
   public void testUnresolvedRefCreateFunction() {
     doInspectionTest(PyUnresolvedReferencesInspection.class,
-                     PyBundle.message("QFIX.unresolved.reference.create.function.$0", "ref"), true, true);
+                     PyBundle.message("QFIX.NAME.unresolved.reference.create.function", "ref"), true, true);
   }
 
   public void testUnresolvedRefNoCreateFunction() {
     myFixture.enableInspections(PyUnresolvedReferencesInspection.class);
     myFixture.configureByFile("UnresolvedRefNoCreateFunction.py");
     myFixture.checkHighlighting(true, false, false);
-    final IntentionAction intentionAction = myFixture.getAvailableIntention(PyBundle.message("QFIX.unresolved.reference.create.function.$0", "ref"));
+    final IntentionAction intentionAction = myFixture.getAvailableIntention(PyBundle.message("QFIX.NAME.unresolved.reference.create.function", "ref"));
     assertNull(intentionAction);
   }
 

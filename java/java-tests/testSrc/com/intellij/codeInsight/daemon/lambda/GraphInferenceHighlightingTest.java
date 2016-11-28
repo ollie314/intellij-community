@@ -487,6 +487,14 @@ public class GraphInferenceHighlightingTest extends LightDaemonAnalyzerTestCase 
     doTest();
   }
 
+  public void testTwoDifferentParameterizationCheckWithInterfaceTypeArguments() throws Exception {
+    doTest();
+  }
+
+  public void testUncheckedConversionDuringProperTypeExpressionConstraintResolution() throws Exception {
+    doTest();
+  }
+
   private void doTest() throws Exception {
     doTest(false);
   }

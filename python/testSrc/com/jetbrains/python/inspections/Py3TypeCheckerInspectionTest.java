@@ -159,6 +159,11 @@ public class Py3TypeCheckerInspectionTest extends PyTestCase {
     doTest();
   }
 
+  // PY-20769
+  public void testPathLikePassedToStdlibFunctions() {
+    doMultiFileTest();
+  }
+
   // PY-21048
   public void testAsyncFunctionReturnType() {
     doTest();
@@ -171,6 +176,11 @@ public class Py3TypeCheckerInspectionTest extends PyTestCase {
 
   // PY-20073
   public void testMapArgumentsInOppositeOrder() {
+    doTest();
+  }
+
+  // PY-21350
+  public void testBuiltinInputPy3() {
     doTest();
   }
 }

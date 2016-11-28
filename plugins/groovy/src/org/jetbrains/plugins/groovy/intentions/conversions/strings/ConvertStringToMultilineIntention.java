@@ -25,6 +25,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Pass;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.refactoring.IntroduceTargetChooser;
 import com.intellij.util.Function;
@@ -250,6 +251,12 @@ public class ConvertStringToMultilineIntention extends Intention {
                || element instanceof GrBinaryExpression && isAppropriateBinary((GrBinaryExpression)element, null);
       }
     };
+  }
+
+  @Nullable
+  @Override
+  public PsiElement getElementToMakeWritable(@NotNull PsiFile file) {
+    return file;
   }
 
   @Override

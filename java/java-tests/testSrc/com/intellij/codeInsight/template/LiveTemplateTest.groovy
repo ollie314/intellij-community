@@ -42,15 +42,13 @@ import org.jetbrains.annotations.NotNull
 
 import static com.intellij.codeInsight.template.Template.Property.USE_STATIC_IMPORT_IF_POSSIBLE
 import static com.intellij.testFramework.EdtTestUtil.runInEdtAndWait
+
 /**
  * @author spleaner
  */
 @SuppressWarnings("SpellCheckingInspection")
 class LiveTemplateTest extends LightCodeInsightFixtureTestCase {
-  @Override
-  protected String getBasePath() {
-    return JavaTestUtil.getRelativeJavaTestDataPath() + "/codeInsight/template/"
-  }
+  final String basePath = JavaTestUtil.getRelativeJavaTestDataPath() + "/codeInsight/template/"
 
   @Override
   protected void setUp() {
@@ -115,8 +113,7 @@ class LiveTemplateTest extends LightCodeInsightFixtureTestCase {
     doTestTemplateWithThreeVariables("", "DefaultValue", "", "class A { void test() { for(TestValue1DefaultValueTestValue3) {} } }")
   }
 
-  private void doTestTemplateWithThreeVariables(String firstDefaultValue, String secondDefaultValue, String thirdDefaultValue,
-                                                String expectedText) {
+  private void doTestTemplateWithThreeVariables(String firstDefaultValue, String secondDefaultValue, String thirdDefaultValue, String expectedText) {
     configureFromFileText("dummy.java", "class A { void test() { <caret> } }")
 
     TemplateManager manager = TemplateManager.getInstance(getProject())
@@ -665,14 +662,12 @@ class Outer {
 
     def copy = defContext.createCopy()
 
-    def write = new Element("context")
-    copy.writeTemplateContext(write)
+    def write = copy.writeTemplateContext(null)
     assert write.children.size() == 2 : JDOMUtil.writeElement(write)
 
     copy.setEnabled(TemplateContextType.EP_NAME.findExtension(JavaCommentContextType), false)
 
-    write = new Element("context")
-    copy.writeTemplateContext(write)
+    write = copy.writeTemplateContext(null)
     assert write.children.size() == 3 : JDOMUtil.writeElement(write)
   }
 
@@ -700,8 +695,7 @@ class Outer {
     def javaContext = TemplateContextType.EP_NAME.findExtension(JavaCodeContextType.Generic)
     context.setEnabled(javaContext, true)
 
-    def saved = new Element('context')
-    context.writeTemplateContext(saved)
+    def saved = context.writeTemplateContext(null)
 
     context = new TemplateContext()
     context.readTemplateContext(saved)

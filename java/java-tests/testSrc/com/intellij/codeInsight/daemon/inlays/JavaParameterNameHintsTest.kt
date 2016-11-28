@@ -582,6 +582,27 @@ class Test {
     onLineStartingWith("builder.bwait").assertNoInlays()
   }
 
+  fun `test builder method only method with one param`() {
+    setup("""
+class Builder {
+  Builder qwit(boolean value, String sValue) {}
+  Builder trew(boolean value) {}
+}
+
+class Test {
+  public void test() {
+    Builder builder = new Builder();
+    builder
+    .trew(false)
+    .qwit(true, "value");
+  }
+}
+""")
+
+    onLineStartingWith(".trew").assertNoInlays()
+    onLineStartingWith(".qw").assertInlays("value->true", "sValue->\"value\"")
+  }
+
   fun `test do not show single parameter hint if it is string literal`() {
     setup("""
 public class Test {
@@ -708,15 +729,21 @@ class Key {
     setup("""
 class Test {
   void test() {
+    xxx(100);
     check(1 + 1);
     int i=1; check(1 + 1 + 1);
+    yyy(200);
   }
   void check(int isShow) {}
+  void xxx(int followTheSum) {}
+  void yyy(int followTheSum) {}
 }
 """)
-    
+
+    onLineStartingWith("xxx").assertInlays("followTheSum->100")
     onLineStartingWith("check").assertInlays("isShow->1")
     onLineStartingWith("int").assertInlays("isShow->1")
+    onLineStartingWith("yyy").assertInlays("followTheSum->200")
   }
   
   fun `test incorrect pattern`() {

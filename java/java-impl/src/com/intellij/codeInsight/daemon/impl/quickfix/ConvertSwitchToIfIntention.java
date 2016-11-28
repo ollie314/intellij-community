@@ -15,7 +15,6 @@
  */
 package com.intellij.codeInsight.daemon.impl.quickfix;
 
-import com.intellij.codeInsight.FileModificationService;
 import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
@@ -70,6 +69,12 @@ public class ConvertSwitchToIfIntention implements IntentionAction {
   @Override
   public void invoke(@NotNull Project project, Editor editor, PsiFile file) throws IncorrectOperationException {
     doProcessIntention(mySwitchExpression);
+  }
+
+  @NotNull
+  @Override
+  public PsiElement getElementToMakeWritable(@NotNull PsiFile file) {
+    return mySwitchExpression;
   }
 
   @Override
@@ -227,7 +232,6 @@ public class ConvertSwitchToIfIntention implements IntentionAction {
                         firstBranch, ifStatementText);
     }
     if (ifStatementText.length() == 0) return;
-    if (!FileModificationService.getInstance().preparePsiElementForWrite(switchStatement)) return;
     final JavaPsiFacade psiFacade = JavaPsiFacade.getInstance(project);
     final PsiElementFactory factory = psiFacade.getElementFactory();
     if (hadSideEffects) {

@@ -209,6 +209,16 @@ def map(function, sequence, *sequence_1):
     pass
 
 
+def min(*args, key=None, default=None):
+    """Return the smallest item in an iterable or the smallest of two or more
+    arguments.
+
+    :type args: tuple[T]
+    :rtype: T
+    """
+    pass
+
+
 def next(iterator, default=None):
     """Return the next item from the iterator.
 
@@ -1072,7 +1082,7 @@ class float(object):
         return 0.0
 
     @staticmethod
-    def fromhex(cls, string):
+    def fromhex(string):
         """Create a floating-point number from a hexadecimal string.
 
         :type string: str
@@ -2934,3 +2944,19 @@ class __method(object):
         if sys.version_info >= (2, 6):
             self.__func__ = None
             self.__self__ = None
+
+
+def input(prompt=None):
+    """
+    :type prompt: Any
+    :rtype: Any
+    """
+    pass
+
+
+def raw_input(prompt=None):
+    """
+    :type prompt: Any
+    :rtype: str
+    """
+    pass

@@ -84,7 +84,8 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
         String rcfile = "jediterm-" + shellName + ".in";
         if ("zsh".equals(shellName)) {
           rcfile = ".zshrc";
-        } else if ("fish".equals(shellName)) {
+        }
+        else if ("fish".equals(shellName)) {
           rcfile = "fish/config.fish";
         }
         URL resource = LocalTerminalDirectRunner.class.getClassLoader().getResource(rcfile);
@@ -169,11 +170,11 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
 
     String shellPath = getShellPath();
 
-    return getCommand(shellPath, envs, TerminalOptionsProvider.getInstance().shellIntegration());
+    return getCommand(shellPath, envs, TerminalOptionsProvider.Companion.getInstance().shellIntegration());
   }
 
-  private String getShellPath() {
-    return TerminalProjectOptionsProvider.Companion.getInstance(myProject).getShellPath();
+  private static String getShellPath() {
+    return TerminalOptionsProvider.Companion.getInstance().getShellPath();
   }
 
   @NotNull
@@ -227,6 +228,10 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
           result.add("-i");
         }
 
+        if (isLogin(command)) {
+          envs.put("LOGIN_SHELL", "1");
+        }
+
         result.addAll(command);
         return ArrayUtil.toStringArray(result);
       }
@@ -256,7 +261,11 @@ public class LocalTerminalDirectRunner extends AbstractTerminalRunner<PtyProcess
   }
 
   private static boolean loginOrInteractive(List<String> command) {
-    return command.contains("-i") || command.contains("--login") || command.contains("-l");
+    return command.contains("-i") || isLogin(command);
+  }
+
+  private static boolean isLogin(List<String> command) {
+    return command.contains("--login") || command.contains("-l");
   }
 
   private static class PtyProcessHandler extends ProcessHandler implements TaskExecutor {

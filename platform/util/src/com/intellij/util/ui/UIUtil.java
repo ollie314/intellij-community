@@ -1974,6 +1974,9 @@ public class UIUtil {
         eventQueue.getClass().getDeclaredMethod("dispatchEvent", AWTEvent.class).invoke(eventQueue, event);
       }
     }
+    catch (InvocationTargetException e) {
+      ExceptionUtil.rethrowAllAsUnchecked(e.getCause());
+    }
     catch (Exception e) {
       LOG.error(e);
     }
@@ -3752,6 +3755,10 @@ public class UIUtil {
     if (textComponent instanceof JTextArea) {
       ((JTextArea)textComponent).setColumns(columns);
     }
+  }
+
+  public static int getLineHeight(@NotNull JTextComponent textComponent) {
+    return textComponent.getFontMetrics(textComponent.getFont()).getHeight();
   }
 
   /**
